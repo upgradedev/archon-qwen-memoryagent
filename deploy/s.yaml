@@ -1,0 +1,48 @@
+# Serverless Devs manifest — deploy the MemoryAgent backend to Alibaba Cloud
+# Function Compute (FC 3.0) as a custom-container HTTP function.
+#
+# Prerequisites (user-provided):
+#   - Alibaba Cloud account + AccessKey (ALIBABA_CLOUD_ACCESS_KEY_ID / _SECRET)
+#   - A Container Registry (ACR) namespace in the SAME region as the function
+#   - `npm i -g @serverless-devs/s` and `s config add` with the AccessKey
+#
+# Deploy:  cd deploy && s deploy
+# The container must run an HTTP server on ${vars.caPort} (our server.ts → PORT).
+
+edition: 3.0.0
+name: archon-qwen-memoryagent
+access: default
+
+vars:
+  region: ap-southeast-1            # Singapore (international) — matches the Qwen intl endpoint
+  caPort: 9000
+  # Replace <namespace> with your ACR namespace; image is built + pushed by deploy-fc.sh.
+  image: registry.ap-southeast-1.aliyuncs.com/<namespace>/archon-qwen-memoryagent:latest
+
+resources:
+  memoryagent:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: archon-qwen-memoryagent
+      description: Archon MemoryAgent — persistent cross-session memory on Qwen + pgvector
+      runtime: custom-container
+      timeout: 60
+      memorySize: 1024
+      caPort: ${vars.caPort}
+      customContainerConfig:
+        image: ${vars.image}
+      environmentVariables:
+        PORT: "9000"
+        # Set at deploy time (never commit real values — see .env.example):
+        #   DATABASE_URL        → Alibaba AnalyticDB / ApsaraDB RDS for PostgreSQL (pgvector)
+        #   DASHSCOPE_API_KEY   → Model Studio key (omit to run the offline Fakes)
+        #   DASHSCOPE_BASE_URL  → https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      triggers:
+        - triggerName: http
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods:
+              - GET
+              - POST

@@ -1,0 +1,32 @@
+{
+  "name": "archon-qwen-memoryagent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Archon MemoryAgent — an agent with persistent, queryable, cross-session memory built on Qwen (Alibaba Cloud Model Studio / DashScope) with a pgvector memory layer, deployable on Alibaba Cloud Function Compute.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "db:schema": "tsx scripts/apply-schema.ts",
+    "memory:demo": "tsx scripts/demo-memory.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "node --import tsx --test tests/unit/embeddings.test.ts tests/unit/narrator.test.ts tests/unit/memory.test.ts",
+    "test:integration": "node --import tsx --test --test-concurrency=1 tests/integration/pgvector-store.test.ts",
+    "test:e2e": "node --import tsx --test --test-concurrency=1 tests/e2e/cross-session.test.ts",
+    "test": "node --import tsx --test --test-concurrency=1 tests/unit/embeddings.test.ts tests/unit/narrator.test.ts tests/unit/memory.test.ts tests/integration/pgvector-store.test.ts tests/e2e/cross-session.test.ts"
+  },
+  "dependencies": {
+    "fastify": "^5.1.0",
+    "openai": "^4.77.0",
+    "pg": "^8.13.1",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.5.3"
+  }
+}
