@@ -1,0 +1,11 @@
+Archon is a unified financial intelligence platform. It brings a business's whole financial picture — invoices, payments, bank statements, payroll and expenses — into one place, and gives an agent a memory that persists and can be queried across completely separate sessions. Everything you are about to see runs live, right now, on Alibaba Cloud, powered by real Qwen models.
+
+First, the proof it is real. A single call to the health endpoint on our Alibaba box shows the embedder is Qwen text-embedding-v4 and the narrator is qwen-plus, producing genuine one-thousand-and-twenty-four dimension embeddings. No stubs, no fakes.
+
+Now the heart of the MemoryAgent track: cross-session persistence. In Session A, the agent has reconciled a bank confirmation, a payroll register and the individual payslips into one accurate event, and it commits the salient facts to memory: the true cost of employing the team, and the gap the bank statement alone never shows. The memories are embedded with text-embedding-v4 and written to pgvector on Alibaba Cloud. Then Session A ends. The client disconnects. Nothing is kept in process memory; the facts now live only in the database.
+
+Session B is a completely fresh, later session. A different client, no shared variables, no cache; it has only a question. What did it truly cost to employ the team last month, compared with what actually left the bank? Qwen embeds the question, runs a cosine nearest-neighbour search over pgvector, and qwen-plus writes a grounded, cited answer, recalling that the true cost of employing the team was fifteen thousand eight hundred euros against just ten thousand that left the bank: a five thousand eight hundred euro gap. The scores are real cosine similarities over the vector index. A memory written in one session was recalled, by meaning, in a separate one. That is cross-session persistence.
+
+And the memory is genuinely queryable, not a canned reply. A second, different question, the total cost of employing one named person, returns a fresh grounded answer from the same persistent memory.
+
+Finally, the deployment. This runs on Alibaba Cloud: an ECS instance in Singapore, pgvector with an HNSW cosine index holding the memory, and Qwen text-embedding-v4 and qwen-plus from Model Studio. Persistent, queryable, and across sessions. The MemoryAgent track, proven live.
