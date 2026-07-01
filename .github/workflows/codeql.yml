@@ -1,0 +1,47 @@
+name: CodeQL
+
+# Static application security testing (SAST) via GitHub CodeQL.
+# Analyses the TypeScript source for injection, unsafe deserialization, and other
+# CWE-class weaknesses. Findings surface in the repo Security tab (Code scanning);
+# the workflow going green means the scan ran, not that it is finding-free.
+# Kept in its own file so the elevated security-events permission does not leak
+# into the offline test job in ci.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly re-scan to catch newly-published query updates against unchanged code.
+    - cron: "27 3 * * 1"
+
+permissions:
+  security-events: write
+  contents: read
+  packages: read
+  actions: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
