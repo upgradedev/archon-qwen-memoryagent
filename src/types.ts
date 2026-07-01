@@ -1,11 +1,11 @@
 // Domain types for the Archon finance-close pipeline (the memory's subject
 // matter). The typed PayrollEvent is the evidence-backed control finding:
 //   - bank_confirmation : the net salary cash that left the company account
-//   - payroll_register  : the full employer payroll cost (gross + employer IKA)
+//   - payroll_register  : the full employer payroll cost (gross + employer social-security)
 //   - payslip           : the per-employee payroll breakdown
 //
 // The bank confirmation alone *understates* the true employer payroll cost,
-// because it never sees employer social-security (IKA) contributions. Archon
+// because it never sees employer social-security contributions. Archon
 // fuses the three into one accurate PayrollEvent and remembers the gap.
 
 export interface EmployeePayslip {
@@ -29,9 +29,9 @@ export interface PayrollEvent {
   employer_ika_total: number;
   employee_ika_total: number;
   tax_withheld_total: number;
-  employer_cost_total: number; // THE accurate number (gross + employer IKA)
-  // The headline insight: employer social-security contributions are invisible
-  // on the bank salary-transfer confirmation, yet are ~28% of the net figure.
+  employer_cost_total: number; // THE accurate number (gross + employer social-security)
+  // One insight the platform surfaces: employer social-security contributions are
+  // invisible on the bank salary-transfer confirmation, yet are ~28% of the net figure.
   cost_gap_amount: number; // the hidden employer-contribution wedge
   cost_gap_pct: number; // cost_gap_amount / bank_net_total * 100  (~28%)
   hidden_total: number; // employer_cost_total - bank_net_total

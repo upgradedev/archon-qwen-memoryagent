@@ -1,7 +1,7 @@
 # Archon MemoryAgent — Build Plan (8-day sprint)
 
 **Hackathon:** Global AI Hackathon Series with Qwen Cloud — **MemoryAgent** track.
-**Deadline:** **July 9, 2026 @ 2:00pm PDT** (authoritative Devpost). Prize pool $70K+ ($7K cash + $3K credits per track). Greece eligible.
+**Deadline:** **July 9, 2026 @ 2:00pm PDT** (authoritative Devpost). Prize pool $70K+ ($7K cash + $3K credits per track). Entrant eligible.
 
 ## Deliverables (from the rules)
 
