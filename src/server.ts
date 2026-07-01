@@ -14,6 +14,7 @@
 // Compute listens on the container's CAPort — default 9000, overridable via PORT.
 
 import Fastify from "fastify";
+import { pathToFileURL } from "node:url";
 import { defaultEmbedder } from "./memory/embeddings.js";
 import { defaultNarrator } from "./agents/narrator.js";
 import { PgVectorStore, type MemoryKind } from "./memory/store.js";
@@ -60,8 +61,9 @@ export function buildServer() {
   return app;
 }
 
-// Only listen when run directly (not when imported by a test).
-const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1].replace(/\\/g, "/")}`;
+// Only listen when run directly (not when imported by a test). pathToFileURL
+// normalizes the path→URL form correctly on every OS (Windows uses file:///C:/…).
+const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]!).href;
 if (isMain) {
   const port = Number(process.env.PORT ?? 9000);
   buildServer()
