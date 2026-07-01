@@ -21,3 +21,10 @@ Thumbs.db
 
 # Serverless Devs local state
 .s/
+
+# demo-video pipeline artifacts (generated in CI from the live run)
+docs/screencast_transcript.txt
+*.mp4
+*.mp3
+caps/
+body.json

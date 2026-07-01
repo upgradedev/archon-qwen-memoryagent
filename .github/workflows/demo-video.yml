@@ -1,0 +1,212 @@
+name: Generate Demo Video
+
+# ~3-minute demo video for the Global AI Hackathon (Qwen Cloud) — MemoryAgent track.
+# No local recording needed:
+#   1. scripts/capture_live.sh drives the LIVE Alibaba Cloud box
+#      (http://43.106.13.19:9000): GET /health -> real Qwen proof; SESSION A
+#      POST /ingest -> writes memories to pgvector on Alibaba; a FRESH SESSION B
+#      POST /recall (x2) -> recalls them by meaning with real qwen-plus answers +
+#      real pgvector cosine scores. Structured jq HARD-CHECKS: a box that is down,
+#      or silently on the offline Fakes, or a blank recall, FAILS the job.
+#   2. ElevenLabs synthesizes the voiceover from docs/narration.txt (if the
+#      ELEVEN_LABS_KEY secret is set; else a SILENT pipeline-proof mp4 is produced).
+#   3. scripts/make_screencast.py renders the captured real run as a terminal
+#      screencast (docs/screencast_transcript.txt is written by step 1).
+#   4. ffmpeg composes a title card + burned captions + screencast + outro, then
+#      muxes the voiceover -> archon-memoryagent-demo.mp4 (uploaded as an artifact).
+#
+# Run: Actions -> "Generate Demo Video" -> Run workflow  (or gh workflow run demo-video.yml).
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Live Alibaba Cloud base URL to demo against."
+        required: false
+        default: "http://43.106.13.19:9000"
+      voice_id:
+        description: "ElevenLabs voice ID."
+        required: false
+        default: "pNInz6obpgDQGcFmaJgB"
+      model_id:
+        description: "ElevenLabs model ID."
+        required: false
+        default: "eleven_multilingual_v2"
+      repo_url:
+        description: "Repo URL shown on the outro card."
+        required: false
+        default: "github.com/upgradedev/archon-qwen-memoryagent"
+
+permissions:
+  contents: read
+
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure ffmpeg + fonts + Pillow
+        run: |
+          set -euo pipefail
+          command -v ffmpeg >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+          dpkg -s fonts-dejavu-core >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y fonts-dejavu-core)
+          # DejaVuSans-Bold: caption/title text. DejaVuSansMono: terminal screencast.
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+          command -v jq >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y jq)
+          python -m pip install --upgrade pip
+          python -m pip install "pillow>=10"
+
+      # Drive the LIVE Alibaba box and capture a REAL two-session run. This is the
+      # gate: if the box is unreachable, reverted to the offline Fakes, or returns
+      # a blank/stub recall, the structured jq checks fail the whole job here.
+      - name: Capture live two-session run (Alibaba Cloud)
+        env:
+          DEMO_BASE_URL: ${{ github.event.inputs.base_url }}
+        run: |
+          set -euo pipefail
+          bash scripts/capture_live.sh
+          test -s docs/screencast_transcript.txt \
+            || { echo "::error::transcript not produced — live capture failed"; exit 1; }
+
+      - name: Synthesize voiceover (ElevenLabs)
+        id: vo
+        env:
+          XI_API_KEY: ${{ secrets.ELEVEN_LABS_KEY }}
+          VOICE_ID: ${{ github.event.inputs.voice_id }}
+          MODEL_ID: ${{ github.event.inputs.model_id }}
+        run: |
+          set -euo pipefail
+          # No key -> SILENT pipeline-proof build (green): exercises the whole
+          # screencast/ffmpeg/caption/concat/upload chain; only narration is missing.
+          if [ -z "${XI_API_KEY:-}" ]; then
+            echo "::warning::ELEVEN_LABS_KEY not set — producing a SILENT pipeline-proof video. Add the secret and re-run."
+            echo "have_vo=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Key present -> a synthesis error is a HARD failure (never ship a silent
+          # video believing it is narrated).
+          jq -Rs --arg m "$MODEL_ID" \
+            '{text: ., model_id: $m, voice_settings: {stability: 0.45, similarity_boost: 0.8, use_speaker_boost: true}}' \
+            docs/narration.txt > body.json
+          HTTP=$(curl -sS -w "%{http_code}" -X POST \
+            "https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_44100_128" \
+            -H "xi-api-key: ${XI_API_KEY}" -H "Content-Type: application/json" -H "Accept: audio/mpeg" \
+            --data @body.json -o voiceover.mp3)
+          [ "$HTTP" = "200" ] || { echo "::error::ElevenLabs HTTP $HTTP"; cat voiceover.mp3 || true; exit 1; }
+          [ "$(wc -c < voiceover.mp3)" -gt 10000 ] || { echo "::error::audio too small"; exit 1; }
+          echo "have_vo=true" >> "$GITHUB_OUTPUT"
+
+      - name: Compute target duration
+        id: dur
+        env:
+          HAVE_VO: ${{ steps.vo.outputs.have_vo }}
+        run: |
+          set -euo pipefail
+          # Screencast must outlast BOTH the VO (+3s tail) AND the last caption end,
+          # so a fast VO never clips the closing captions. Silent path -> caption-driven.
+          CAP_END=$(awk -F'|' 'NF>=2{print $2}' scripts/captions.txt | sort -n | tail -1)
+          if [ "${HAVE_VO}" = "true" ] && [ -f voiceover.mp3 ]; then
+            AUDIO=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 voiceover.mp3)
+            echo "audio duration: ${AUDIO}s"
+            TARGET=$(python3 -c "print(round(max(float('${AUDIO}')+3.0, float('${CAP_END}')+2.0),1))")
+          else
+            echo "no voiceover — silent build"
+            TARGET=$(python3 -c "print(round(float('${CAP_END}')+2.0,1))")
+          fi
+          echo "caption end: ${CAP_END}s -> target=${TARGET}"
+          echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
+
+      - name: Render terminal screencast
+        env:
+          TARGET_SECONDS: ${{ steps.dur.outputs.target }}
+          FONT_MONO: /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+          FONT_MONO_BOLD: /usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf
+          OUTPUT: screencast.mp4
+        run: |
+          set -euo pipefail
+          python scripts/make_screencast.py
+          test -f screencast.mp4
+          ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 screencast.mp4
+
+      - name: Compose demo video (title + captions + screencast + outro + VO)
+        env:
+          REPO_URL: ${{ github.event.inputs.repo_url }}
+          HAVE_VO: ${{ steps.vo.outputs.have_vo }}
+        run: |
+          set -euo pipefail
+          FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+          VID=screencast.mp4
+          test -f "$VID" || { echo "::error::no screencast produced"; exit 1; }
+          mkdir -p caps
+
+          # ---- Title card (3s, silent) — dark emerald bg ----
+          printf '%s' 'Archon MemoryAgent' > caps/title1.txt
+          printf '%s' 'Cross-session memory, live on Alibaba Cloud' > caps/title2.txt
+          printf '%s' 'Qwen · pgvector · MemoryAgent track' > caps/title3.txt
+          ffmpeg -y -f lavfi -i color=c=0x0d2b22:s=1920x1080:d=3:r=30 -vf \
+            "drawtext=fontfile=$FONT:textfile=caps/title1.txt:expansion=none:fontcolor=0x34d399:fontsize=118:x=(w-text_w)/2:y=(h/2)-140,drawtext=fontfile=$FONT:textfile=caps/title2.txt:expansion=none:fontcolor=white:fontsize=52:x=(w-text_w)/2:y=(h/2)+20,drawtext=fontfile=$FONT:textfile=caps/title3.txt:expansion=none:fontcolor=0x9ca3af:fontsize=40:x=(w-text_w)/2:y=(h/2)+110,format=yuv420p" \
+            -c:v libx264 -pix_fmt yuv420p -r 30 title.mp4
+
+          # ---- Outro card (3s, silent) ----
+          printf '%s' 'Open source · MIT' > caps/outro1.txt
+          printf '%s' "$REPO_URL" > caps/outro2.txt
+          ffmpeg -y -f lavfi -i color=c=0x0d2b22:s=1920x1080:d=3:r=30 -vf \
+            "drawtext=fontfile=$FONT:textfile=caps/outro1.txt:expansion=none:fontcolor=white:fontsize=80:x=(w-text_w)/2:y=(h/2)-80,drawtext=fontfile=$FONT:textfile=caps/outro2.txt:expansion=none:fontcolor=0x34d399:fontsize=46:x=(w-text_w)/2:y=(h/2)+40,format=yuv420p" \
+            -c:v libx264 -pix_fmt yuv420p -r 30 outro.mp4
+
+          # ---- Burned-caption drawtext chain from scripts/captions.txt ----
+          # scale/pad FIRST (fontsize is output-pixel space), then one drawtext per line.
+          # Each text -> its own textfile (no escaping); expansion=none keeps % and \
+          # literal; enable= is single-quoted so its commas are protected inside the
+          # filtergraph. NO spaces between chained drawtext filters.
+          FILTER="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
+          i=0
+          while IFS='|' read -r s e text || [ -n "$s" ]; do
+            [ -z "$s" ] && continue
+            text="${text%$'\r'}"  # strip a trailing CR if checked out CRLF
+            printf '%s' "$text" > "caps/cap_$i.txt"
+            FILTER="$FILTER,drawtext=fontfile=$FONT:textfile=caps/cap_$i.txt:expansion=none:fontsize=40:fontcolor=white:line_spacing=8:box=1:boxcolor=black@0.55:boxborderw=18:x=(w-text_w)/2:y=h-140:enable='between(t,$s,$e)'"
+            i=$((i+1))
+          done < scripts/captions.txt
+          echo "built $i caption clauses"
+
+          # ---- Burn captions onto the screencast ----
+          # No -t trim: make_screencast.py holds the final frame to TARGET
+          # (>= VO and >= last caption end), so trimming could only clip the reveal.
+          ffmpeg -y -i "$VID" -vf "$FILTER" -c:v libx264 -preset veryfast -pix_fmt yuv420p -r 30 -an tour_cap.mp4
+
+          # ---- Concat title -> captioned screencast -> outro (filter concat) ----
+          ffmpeg -y -i title.mp4 -i tour_cap.mp4 -i outro.mp4 -filter_complex \
+            "[0:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v0];[1:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v1];[2:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v2];[v0][v1][v2]concat=n=3:v=1:a=0[outv]" \
+            -map "[outv]" -c:v libx264 -preset veryfast -pix_fmt yuv420p -r 30 full.mp4
+
+          if [ "${HAVE_VO}" = "true" ] && [ -f voiceover.mp3 ]; then
+            # ---- Mux the VO, delayed by the 3s title so it starts on the screencast ----
+            # apad makes the audio effectively infinite; -shortest then lands at the FULL
+            # video length (title + screencast + outro), so the outro is never truncated.
+            ffmpeg -y -i full.mp4 -i voiceover.mp3 \
+              -filter_complex "[1:a]adelay=3000:all=1,apad[a]" \
+              -map 0:v:0 -map "[a]" -c:v copy -c:a aac -b:a 192k -shortest archon-memoryagent-demo.mp4
+          else
+            cp full.mp4 archon-memoryagent-demo.mp4
+          fi
+          ls -la archon-memoryagent-demo.mp4
+          echo "final duration:"
+          ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 archon-memoryagent-demo.mp4
+
+      - name: Upload demo video
+        uses: actions/upload-artifact@v4
+        with:
+          name: archon-memoryagent-demo-video
+          path: |
+            archon-memoryagent-demo.mp4
+            voiceover.mp3
+            screencast.mp4
+            docs/screencast_transcript.txt
+          if-no-files-found: error
+          retention-days: 14
