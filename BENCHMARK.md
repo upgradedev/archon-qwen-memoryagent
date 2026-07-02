@@ -10,24 +10,31 @@ vibe.
 On **real `text-embedding-v4` embeddings**, hybrid retrieval (dense + lexical,
 fused with Reciprocal Rank Fusion) is the **robust** choice: it never recalls
 worse than pure dense, improves **Recall@3 coverage**, and **far outperforms
-lexical-only** on every ranking metric. It does *not* beat a strong dense
-embedder on top-of-list ordering (MRR / nDCG) on this corpus — and we report
-that honestly rather than hide it (see [What changed and why](#what-changed-and-why)).
+lexical-only** on every ranking metric. Hybrid alone does *not* beat a strong
+dense embedder on top-of-list ordering (MRR / nDCG) on this corpus — but adding a
+**cross-encoder re-rank stage** (`reranked-hybrid`) does: it **beats dense on
+every metric**, including the top-rank ones. Both results are measured on real
+embeddings and reported as they fall.
 
 | Condition | Recall@3 | Recall@5 | MRR | nDCG@5 |
 |---|---:|---:|---:|---:|
 | no-memory (stateless) | 0.0% | 0.0% | 0.000 | 0.000 |
+| shuffled-vector (sensitivity control) | 16.7% | 33.3% | 0.162 | 0.197 |
 | lexical-bm25 only | 73.3% | 83.3% | 0.680 | 0.701 |
 | naive-vector (dense baseline) | 90.0% | 100.0% | 0.883 | 0.903 |
-| **hybrid-rrf (ours)** | **93.3%** | 100.0% | 0.839 | 0.884 |
+| hybrid-rrf | 93.3% | 100.0% | 0.839 | 0.884 |
 | hybrid + MMR | 90.0% | 96.7% | 0.889 | 0.885 |
+| **reranked-hybrid (ours, top-rank winner)** | **96.7%** | 100.0% | **0.911** | **0.938** |
 
-**What holds:** hybrid **≥ dense on recall** (Recall@3 90.0% → **93.3%**, +3.3 pts;
-Recall@5 ties at 100%) and **≫ lexical** on every metric (MRR 0.680 → 0.839,
-nDCG@5 0.701 → 0.884). **What does not:** hybrid trails dense on MRR (0.883 →
-0.839) and nDCG@5 (0.903 → 0.884) — with a strong 1024-dim embedder, dense
-already ranks the right memory first, so rank-fusing a weaker lexical list can
-only jostle it down.
+**What holds:** hybrid **≥ dense on recall** (Recall@3 90.0% → 93.3%, +3.3 pts;
+Recall@5 ties at 100%) and **≫ lexical** on every metric. Hybrid alone trails
+dense on MRR (0.883 → 0.839) and nDCG@5 (0.903 → 0.884) — a strong 1024-dim
+embedder already ranks the right memory first, so rank-fusing a weaker lexical
+list only jostles it down. **The cross-encoder re-ranker fixes exactly that:**
+reading each (query, memory) pair jointly, it lifts **MRR 0.883 → 0.911 (+0.028)**,
+**nDCG@5 0.903 → 0.938 (+0.035)** and **Recall@3 90.0% → 96.7%** over the dense
+baseline — a genuine top-rank win on the rebalanced corpus (see
+[The cross-encoder re-ranker](#the-cross-encoder-re-ranker)).
 
 ## Why it wins where it wins: recall by genre (Recall@5)
 
@@ -61,10 +68,58 @@ So the old MRR headline was partly a **corpus artifact** (near-duplicate rows),
 not a pure method advantage. We measured this directly — re-running on the
 rebalanced corpus showed dense's MRR *rise* (0.813 → 0.883), not fall. Rather
 than tune the corpus back toward duplicates to recover the number, we report the
-honest result: **on a clean, diverse corpus with a modern embedder, hybrid's
-advantage is recall robustness, not top-rank ordering.** A genuine top-rank win
-over this embedder would need a different mechanism (e.g. a cross-encoder
-re-ranker), which is future work — not a claim we make here.
+honest result: **on a clean, diverse corpus with a modern embedder, hybrid *alone*
+gives recall robustness, not a top-rank win.** The genuine top-rank win needs a
+different mechanism — a **cross-encoder re-ranker** — which we then built and
+measured (next section). It is not future work anymore; it is a real, reproducible
+number over the same embeddings.
+
+## The cross-encoder re-ranker
+
+Dense and hybrid rank a memory by a similarity computed *independently* for the
+query and each memory (a bi-encoder). A **cross-encoder** instead reads the
+`(query, memory)` pair *together* and scores their relevance jointly — strictly
+more expressive, and the standard way to squeeze extra top-rank quality out of a
+retrieval stack. We add it as a **re-rank stage over the hybrid candidate pool**
+(`retrieveHybridReranked`): hybrid fixes recall, the re-ranker only re-orders the
+top ~10, so it can lift MRR/nDCG **without dropping a recalled gold memory**.
+
+Measured on the same real embeddings, `reranked-hybrid` **beats the dense
+baseline on every metric**: Recall@3 90.0% → **96.7%**, MRR 0.883 → **0.911**
+(+0.028, ≈ the first correct memory moving from rank 1.13 to rank 1.10 and fewer
+rank-2 firsts), nDCG@5 0.903 → **0.938** (+0.035). It also beats hybrid-rrf
+(MRR 0.839 → 0.911). **This is the restored top-rank headline** — earned by a
+real mechanism on the diverse corpus, not by reverting to a duplicate-heavy one.
+
+**Honesty + reproducibility caveats we own:**
+
+- **Provider substitution.** The intended model was Alibaba's dedicated
+  `gte-rerank`, but that service returned `AccessDenied` on the hackathon account
+  (rerank not activated). So the shipped `Reranker` is an **LLM cross-encoder
+  using `qwen-plus`** — the same Model Studio chat model the narrator uses, which
+  *is* accessible: it reads each query/memory pair and returns a joint relevance
+  score. The seam (`src/memory/rerank.ts`) is model-agnostic — swap in a
+  `GteReranker` once the rerank API is enabled; the benchmark path is unchanged.
+- **Cached once, replayed free.** `npm run bench:rerank` calls `qwen-plus` **once**
+  per query over the frozen corpus (15 calls, `temperature 0`) and commits the
+  scores to `bench/fixtures/rerank.json`. `npm run bench` and CI **replay** those
+  scores with **no key and no spend**, so the +0.028 MRR is reproducible offline,
+  exactly like the embedding fixture. Re-run only if the dataset changes.
+- **We do NOT gate on `re-rank > dense`.** A cross-encoder win over a strong
+  embedder is plausible but corpus-dependent; a hard CI gate on it would be
+  brittle. The benchmark *reports* the delta every run; the enforced gates stay on
+  the robust facts (regression guard + fusion value + discrimination).
+
+## Does the benchmark actually discriminate? (sensitivity control)
+
+A benchmark that scores a *broken* retriever as highly as a good one is measuring
+nothing. So we include an **ablation control**: `shuffled-vector` runs the exact
+dense retriever, but each query embedding has its components deterministically
+**permuted** (`degradeVector`) — same vector norm, but all semantic alignment
+with the corpus destroyed. It collapses to near chance (**Recall@5 33.3%, MRR
+0.162**) versus dense's 100% / 0.883. The gap is a **wide, enforced margin** (CI
+fails if `shuffled` Recall@5 is within 50 pts of dense), proving the metrics track
+real query→memory meaning, not a harness artifact.
 
 ## What did NOT help (reported honestly)
 
@@ -125,20 +180,62 @@ CI runs `npm run bench -- --gate` on every push. The gate is aligned to what is
 2. **Fusion value** — `hybrid > lexical-bm25` on MRR and nDCG@5. The dense half
    must genuinely add ranking signal over sparse-only.
 
+3. **Discrimination guard** — `shuffled-vector` Recall@5 must be ≥ 50 pts below
+   dense. A meaning-destroyed retriever must score near chance, or the benchmark
+   isn't measuring semantics.
+
 We deliberately **retired** the old `hybrid > naive on MRR/nDCG` gate: that
 top-rank win was a near-duplicate-corpus artifact and does not survive a strong
-embedder (above). Gating on it would be gating on a number the honest data no
-longer supports.
+embedder (above). We also deliberately **do not** gate on `reranked-hybrid > dense`
+even though it currently holds — a cross-encoder win is corpus-dependent, so we
+report the delta every run rather than freezing it into a brittle gate.
 
 ## Reproduce
 
 ```bash
 npm ci
-npm run bench            # replays the committed real-embedding fixture, prints the tables above
-npm run bench -- --gate  # CI gate: regression guard vs dense + fusion value vs lexical
-# optional, needs DASHSCOPE_API_KEY, rebuilds the fixture (one-time ~cents):
-npm run bench:embed
+npm run bench            # replays the committed fixtures (embeddings + re-rank scores)
+npm run bench -- --gate  # CI gate: regression guard + fusion value + discrimination
+npm run bench:consistency -- --gate   # self-auditing memory: detection + 0 false positives
+# optional, need DASHSCOPE_API_KEY, rebuild the fixtures (one-time ~cents each):
+npm run bench:embed      # re-embed the corpus/queries (text-embedding-v4)
+npm run bench:rerank     # re-score the cross-encoder re-rank (qwen-plus)
 ```
+
+## Self-auditing memory-consistency (the innovation headline)
+
+Retrieval quality is only half of a trustworthy memory. The other half is: does
+the agent notice when its OWN memory disagrees with itself? A cross-session
+MemoryAgent accumulates facts from many separate write events; nothing stops two
+of them from **contradicting** — session A stores invoice `INV-2043` at €18,400,
+a later session B stores €18,900 for the same record. Plain recall would hand back
+whichever ranked higher and stay silent.
+
+`auditConsistency` (`src/memory/consistency.ts`, exposed as `POST /consistency`)
+scans the agent's active memories and flags two memory-native problems:
+
+- **Contradiction** — two memories describing the **same record** (`metadata.record`
+  or `sourceRef`, never a coarse company::period key) assign **different values**
+  to the **same attribute**. Each memory is a distinct write event with its own
+  timestamp, so a contradiction = two sessions that remembered the record
+  differently.
+- **Absence** — a memory references another record (`metadata.refs`) that **no
+  memory stores** — a dangling reference / expected-but-missing counterpart.
+
+It is a **pure, domain-neutral** engine (not the financial R1–R4 validator): it
+compares *shared* attributes only, treats numbers within tolerance as equal
+(re-ingest float noise is not a conflict), and never collapses distinct records
+that merely share an attribute name.
+
+**Measured** on a labelled dataset (`bench/consistency-dataset.ts`,
+`npm run bench:consistency`) of injected conflicts plus a consistent control set
+(agreeing re-ingests, float-noise, different records sharing attribute names):
+
+> **5 / 5 injected problems detected (4 contradictions + 1 dangling reference),
+> with 0 false positives on the control** — 100% detection, 100% precision.
+
+The precision number is the load-bearing one: the control set exists specifically
+to prove the audit stays silent on things that only *look* like conflicts.
 
 ## Memory lifecycle: consolidation + forgetting
 

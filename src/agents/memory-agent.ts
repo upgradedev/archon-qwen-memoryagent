@@ -23,6 +23,11 @@ import {
   planForget,
   type ForgetPolicy,
 } from "../memory/consolidation.js";
+import {
+  auditConsistency,
+  type AuditMemory,
+  type ConsistencyReport,
+} from "../memory/consistency.js";
 import type { PayrollEvent } from "../types.js";
 
 export class MemoryAgent {
@@ -125,7 +130,13 @@ export class MemoryAgent {
   async recallAnswer(
     question: string,
     opts: { company?: string; kind?: MemoryKind; limit?: number; hybrid?: boolean } = {}
-  ): Promise<{ answer: string; hits: RecallHit[]; citations: Citation[]; modelId: string }> {
+  ): Promise<{
+    answer: string;
+    hits: RecallHit[];
+    citations: Citation[];
+    modelId: string;
+    consistency: ConsistencyReport;
+  }> {
     const hits = await recall(this.embedder, this.store, question, {
       company: opts.company,
       kind: opts.kind,
@@ -136,7 +147,24 @@ export class MemoryAgent {
       hybrid: opts.hybrid ?? true,
     });
     const { answer, citations, modelId } = await this.narrator.narrate(question, hits);
-    return { answer, hits, citations, modelId };
+    // Best-effort self-audit over the memories JUST recalled — no extra DB round
+    // trip, so the live /recall hot path is unchanged. It surfaces a conflict when
+    // both sides happen to be in the top-k. The exhaustive, guaranteed audit is
+    // `auditConsistency()` (the /consistency route), which scans the full scope.
+    const consistency = auditConsistency(hits.map(hitToAuditMemory));
+    return { answer, hits, citations, modelId, consistency };
+  }
+
+  // ── SELF-AUDIT (memory-consistency) ────────────────────────────────────────
+  // Exhaustively audit the agent's own memory for cross-session contradictions
+  // (two write events store different values for one record) and dangling
+  // references (a memory points at a record the agent never stored). Read-only:
+  // scans ACTIVE memories in scope via the store's audit read (no schema change).
+  async auditConsistency(
+    scope: { company?: string; period?: string; kind?: MemoryKind } = {}
+  ): Promise<ConsistencyReport> {
+    const memories = await this.store.listForAudit(scope);
+    return auditConsistency(memories);
   }
 
   // ── MEMORY LIFECYCLE ───────────────────────────────────────────────────────
@@ -167,4 +195,19 @@ export class MemoryAgent {
 function money(n: number | null | undefined): string {
   if (n == null) return "n/a";
   return `€${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
+// A RecallHit already carries every field the audit needs (it is a MemoryRecord
+// plus scores), so the audit view is just a projection — no extra read.
+function hitToAuditMemory(h: RecallHit): AuditMemory {
+  return {
+    id: h.id,
+    kind: h.kind,
+    company: h.company,
+    period: h.period,
+    sourceRef: h.sourceRef,
+    content: h.content,
+    metadata: h.metadata,
+    createdAt: h.createdAt,
+  };
 }

@@ -8,6 +8,9 @@
 //   GET  /memory/count   — how many memories the agent currently holds
 //   POST /ingest         — { event: PayrollEvent }  → writes memories, returns ids
 //   POST /recall         — { question, company?, kind?, limit? } → grounded, cited answer
+//                          (+ a best-effort self-audit over the recalled memories)
+//   POST /consistency    — { company?, period?, kind? } → cross-session memory audit
+//                          (contradictions + dangling references; read-only)
 //
 // Embedder + Narrator auto-select real Qwen when DASHSCOPE_API_KEY is set, the
 // deterministic Fakes otherwise. The store is pgvector (DATABASE_URL). Function
@@ -56,6 +59,18 @@ export function buildServer() {
     }
     const result = await agent.recallAnswer(question, { company, kind, limit, hybrid });
     return result;
+  });
+
+  // Self-auditing memory: scan stored memories for cross-session CONTRADICTIONS
+  // (two write events disagree on a record's value) and dangling references
+  // (a memory points at a record the agent never stored). Read-only, no schema
+  // change — the innovation headline: memory that audits itself.
+  app.post<{
+    Body: { company?: string; period?: string; kind?: MemoryKind };
+  }>("/consistency", async (req) => {
+    const { company, period, kind } = req.body ?? {};
+    const report = await agent.auditConsistency({ company, period, kind });
+    return report;
   });
 
   // Memory lifecycle: collapse near-duplicate memories (consolidation).
