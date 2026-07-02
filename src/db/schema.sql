@@ -75,16 +75,35 @@ CREATE TABLE IF NOT EXISTS agent_memory (
     metadata      JSONB,                    -- structured payload (amounts, doc_type, …)
     embedding     VECTOR(1024) NOT NULL,    -- Qwen text-embedding-v4 embedding of `content`
     embed_model   TEXT NOT NULL,
+    -- Memory lifecycle (consolidation / forgetting).
+    importance    REAL NOT NULL DEFAULT 0.5,   -- 0..1 salience, low + old = forgettable
+    superseded_at TIMESTAMPTZ,                 -- non-null → consolidated away (a duplicate/stale)
+    superseded_by UUID,                        -- the memory that replaced this one
     created_at    TIMESTAMPTZ DEFAULT now()
 );
+
+-- Additive migration for databases created before the lifecycle columns existed
+-- (e.g. the live deployment). Idempotent — safe to re-run the whole schema.
+ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS importance    REAL NOT NULL DEFAULT 0.5;
+ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ;
+ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS superseded_by UUID;
 
 -- HNSW cosine index — no training step, built incrementally as rows are inserted.
 -- `ORDER BY embedding <=> $q LIMIT k` is index-accelerated for semantic recall.
 CREATE INDEX IF NOT EXISTS idx_agent_memory_embedding
     ON agent_memory USING hnsw (embedding vector_cosine_ops);
 
+-- Full-text index for the LEXICAL half of hybrid retrieval (BM25-style ts_rank).
+-- Dense recall blurs exact tokens (ids, euro figures, company names); FTS keeps
+-- them, and the store fuses the two rankings with Reciprocal Rank Fusion.
+CREATE INDEX IF NOT EXISTS idx_agent_memory_content_fts
+    ON agent_memory USING gin (to_tsvector('simple', content));
+
 -- Conventional secondary indexes for exact-match filtering / housekeeping.
 CREATE INDEX IF NOT EXISTS idx_agent_memory_kind ON agent_memory (kind);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_company ON agent_memory (company);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_source_ref ON agent_memory (source_ref);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_period ON agent_memory (period);
+-- Recall skips superseded memories; this partial index keeps that filter cheap.
+CREATE INDEX IF NOT EXISTS idx_agent_memory_active
+    ON agent_memory (company) WHERE superseded_at IS NULL;

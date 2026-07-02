@@ -11,6 +11,8 @@ import assert from "node:assert/strict";
 import { FakeEmbedder } from "../../src/memory/embeddings.js";
 import { PgVectorStore } from "../../src/memory/store.js";
 import { remember, recall } from "../../src/memory/memory.js";
+import { MemoryAgent } from "../../src/agents/memory-agent.js";
+import { FakeNarrator } from "../../src/agents/narrator.js";
 import { closePool } from "../../src/db/client.js";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
@@ -65,4 +67,41 @@ test("PgVectorStore applies the company + kind pre-filters in SQL", { skip: !HAS
   assert.equal(scoped[0]!.kind, "insight");
 
   assert.equal(await store.count("Acme"), 2);
+});
+
+test("PgVectorStore hybrid recall fuses dense + full-text (lexical rescue)", { skip: !HAS_DB }, async () => {
+  await store.clear();
+  await remember(embedder, store, { kind: "payroll_event", company: "Acme", content: "Elena Dimitriou (id E-03) net €9,700 employer cost €14,700." });
+  await remember(embedder, store, { kind: "document", company: "Acme", content: "Office rent paid by bank transfer to the landlord." });
+  await remember(embedder, store, { kind: "insight", company: "Acme", content: "Electricity utilities bill for the quarter." });
+
+  const hits = await recall(embedder, store, "what did employee E-03 earn", {
+    company: "Acme",
+    hybrid: true,
+    limit: 3,
+  });
+  assert.ok(hits.length > 0, "hybrid recall returned nothing");
+  assert.match(hits[0]!.content, /E-03/, "the exact-id memory must rank first under hybrid fusion");
+});
+
+test("PgVectorStore consolidate supersedes duplicates and recall hides them", { skip: !HAS_DB }, async () => {
+  await store.clear();
+  const agent = new MemoryAgent(embedder, store, new FakeNarrator());
+  const fact = "Hidden employer social-security cost wedge at Acme for 2026-03.";
+  await agent.remember("insight", fact, { company: "Acme" });
+  await agent.remember("insight", fact, { company: "Acme" });
+  await agent.remember("insight", fact, { company: "Acme" });
+  assert.equal(await store.count("Acme"), 3);
+
+  const res = await agent.consolidate({ company: "Acme", threshold: 0.99 });
+  assert.equal(res.superseded, 2, "two of three identical memories superseded");
+
+  // Active recall now hides the superseded rows (count still 3 until forgotten).
+  const active = await recall(embedder, store, fact, { company: "Acme", limit: 10 });
+  assert.equal(active.filter((h) => h.content === fact).length, 1);
+  assert.equal(await store.count("Acme"), 3);
+
+  const { forgotten } = await agent.forget({ deleteSuperseded: true }, "Acme");
+  assert.equal(forgotten, 2);
+  assert.equal(await store.count("Acme"), 1);
 });

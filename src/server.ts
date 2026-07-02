@@ -48,14 +48,28 @@ export function buildServer() {
   });
 
   app.post<{
-    Body: { question: string; company?: string; kind?: MemoryKind; limit?: number };
+    Body: { question: string; company?: string; kind?: MemoryKind; limit?: number; hybrid?: boolean };
   }>("/recall", async (req, reply) => {
-    const { question, company, kind, limit } = req.body ?? {};
+    const { question, company, kind, limit, hybrid } = req.body ?? {};
     if (!question) {
       return reply.code(400).send({ error: "body.question is required" });
     }
-    const result = await agent.recallAnswer(question, { company, kind, limit });
+    const result = await agent.recallAnswer(question, { company, kind, limit, hybrid });
     return result;
+  });
+
+  // Memory lifecycle: collapse near-duplicate memories (consolidation).
+  app.post<{ Body: { company?: string; threshold?: number } }>("/consolidate", async (req) => {
+    const { company, threshold } = req.body ?? {};
+    return agent.consolidate({ company, threshold });
+  });
+
+  // Memory lifecycle: forget superseded (and optionally stale, low-importance) memories.
+  app.post<{
+    Body: { company?: string; deleteSuperseded?: boolean; olderThanDays?: number; maxImportance?: number };
+  }>("/forget", async (req) => {
+    const { company, deleteSuperseded, olderThanDays, maxImportance } = req.body ?? {};
+    return agent.forget({ deleteSuperseded, olderThanDays, maxImportance }, company);
   });
 
   return app;
