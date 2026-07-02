@@ -12,13 +12,15 @@
     "db:schema": "tsx scripts/apply-schema.ts",
     "memory:demo": "tsx scripts/demo-memory.ts",
     "bench:embed": "tsx bench/embed.ts",
+    "bench:rerank": "tsx bench/rerank.ts",
+    "bench:consistency": "tsx bench/consistency-run.ts",
     "bench": "tsx bench/run.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "test:unit": "node --import tsx --test tests/unit/embeddings.test.ts tests/unit/narrator.test.ts tests/unit/memory.test.ts tests/unit/retrieval.test.ts tests/unit/metrics.test.ts tests/unit/consolidation.test.ts",
+    "test:unit": "node --import tsx --test tests/unit/embeddings.test.ts tests/unit/narrator.test.ts tests/unit/memory.test.ts tests/unit/retrieval.test.ts tests/unit/metrics.test.ts tests/unit/consolidation.test.ts tests/unit/consistency.test.ts tests/unit/rerank.test.ts",
     "test:integration": "node --import tsx --test --test-concurrency=1 tests/integration/pgvector-store.test.ts",
     "test:e2e": "node --import tsx --test --test-concurrency=1 tests/e2e/cross-session.test.ts",
-    "test": "node --import tsx --test --test-concurrency=1 tests/unit/embeddings.test.ts tests/unit/narrator.test.ts tests/unit/memory.test.ts tests/unit/retrieval.test.ts tests/unit/metrics.test.ts tests/unit/consolidation.test.ts tests/integration/pgvector-store.test.ts tests/e2e/cross-session.test.ts"
+    "test": "node --import tsx --test --test-concurrency=1 tests/unit/embeddings.test.ts tests/unit/narrator.test.ts tests/unit/memory.test.ts tests/unit/retrieval.test.ts tests/unit/metrics.test.ts tests/unit/consolidation.test.ts tests/unit/consistency.test.ts tests/unit/rerank.test.ts tests/integration/pgvector-store.test.ts tests/e2e/cross-session.test.ts"
   },
   "dependencies": {
     "fastify": "^5.1.0",

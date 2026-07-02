@@ -95,6 +95,28 @@ export function cosineDistance(a: number[], b: number[]): number {
   return 1 - cosineSimilarity(a, b);
 }
 
+// Deterministically DEGRADE an embedding by permuting its components with a fixed
+// pseudo-random shuffle (seeded Fisher-Yates). The vector keeps its norm but loses
+// all alignment with un-permuted corpus vectors, so cosine recall collapses to
+// chance. Used only by the benchmark's sensitivity control — a broken retriever
+// that MUST score near-zero, proving the benchmark discriminates real matches.
+export function degradeVector(v: number[], seed = 1234567): number[] {
+  const idx = v.map((_, i) => i);
+  let s = seed >>> 0;
+  const rand = () => {
+    // xorshift32 — deterministic, dependency-free.
+    s ^= s << 13; s >>>= 0;
+    s ^= s >> 17;
+    s ^= s << 5; s >>>= 0;
+    return s / 0xffffffff;
+  };
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [idx[i], idx[j]] = [idx[j]!, idx[i]!];
+  }
+  return idx.map((p) => v[p] ?? 0);
+}
+
 // ── Ranking + fusion ──────────────────────────────────────────────────────────
 
 export interface Scored {
@@ -211,4 +233,27 @@ export function retrieveHybridMMR(
     .filter((c): c is Candidate => Boolean(c))
     .map((c) => ({ id: c.id, embedding: c.embedding }));
   return mmr(query.embedding, pool, k, lambda);
+}
+
+// HYBRID + CROSS-ENCODER RE-RANK: fuse hybrid to a candidate pool, then re-order
+// that pool by a cross-encoder relevance score (`scoreOf(id)`) and take top-k.
+// Recall is fixed by the hybrid pool; the re-ranker only refines ORDER, so it can
+// lift MRR/nDCG without dropping a recalled gold memory. `scoreOf` is injected —
+// a live cross-encoder in production, a cached fixture score in the benchmark.
+export function retrieveHybridReranked(
+  query: { text: string; embedding: number[] },
+  corpus: Candidate[],
+  k: number,
+  scoreOf: (id: string) => number | undefined,
+  poolK = 10
+): string[] {
+  const poolIds = retrieveHybrid(query, corpus, poolK, poolK);
+  const withIdx = poolIds.map((id, i) => ({ id, i, score: scoreOf(id) }));
+  withIdx.sort((a, b) => {
+    const as = a.score ?? -Infinity;
+    const bs = b.score ?? -Infinity;
+    if (as !== bs) return bs - as;
+    return a.i - b.i; // stable: preserve hybrid order on ties / unscored
+  });
+  return withIdx.slice(0, k).map((x) => x.id);
 }
