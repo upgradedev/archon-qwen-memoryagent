@@ -40,7 +40,7 @@ test("toVectorLiteral renders the pgvector text form", () => {
 test("remember + recall round trip ranks the semantically closest memory first", async () => {
   const embedder = new FakeEmbedder();
   const store = new InMemoryStore();
-  await remember(embedder, store, { kind: "insight", content: "hidden employer social security IKA cost wedge" });
+  await remember(embedder, store, { kind: "insight", content: "hidden employer social security contribution cost wedge" });
   await remember(embedder, store, { kind: "document", content: "quarterly sales invoice for office furniture" });
   assert.equal(await store.count(), 2);
 

@@ -49,7 +49,7 @@ export class MemoryAgent {
         kind: "payroll_event",
         sourceRef: event.event_id,
         content:
-          `Payroll for ${event.company} in ${event.period}: ` +
+          `Workforce cost for ${event.company} in ${event.period}: ` +
           `${event.employee_count} employees, gross ${money(event.gross_total)}, ` +
           `true employer cost ${money(event.employer_cost_total)}, ` +
           `net paid from bank ${money(event.bank_net_total)}.`,
@@ -69,9 +69,9 @@ export class MemoryAgent {
         kind: "insight",
         sourceRef: event.event_id,
         content:
-          `Hidden payroll cost at ${event.company} for ${event.period}: the bank ` +
+          `Hidden workforce cost at ${event.company} for ${event.period}: the bank ` +
           `salary transfer of ${money(event.bank_net_total)} understates the true ` +
-          `employer cost by ${money(event.hidden_total)} ` +
+          `cost of employing the team by ${money(event.hidden_total)} ` +
           `(${event.cost_gap_pct.toFixed(1)}%), mostly employer social-security ` +
           `contributions of ${money(event.employer_ika_total)}.`,
         // The hidden-cost insight is the highest-salience memory the agent keeps,

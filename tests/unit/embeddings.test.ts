@@ -19,7 +19,7 @@ function cosine(a: number[], b: number[]): number {
 }
 
 test("FakeEmbedder produces vectors of the configured dimension", async () => {
-  const v = await new FakeEmbedder().embed("employer social security IKA");
+  const v = await new FakeEmbedder().embed("employer social security contributions");
   assert.equal(v.length, EMBED_DIM);
 });
 

@@ -6,7 +6,7 @@
 
 An agent that gives a small business's financial-intelligence pipeline a **memory**. Every fused financial event, validation finding, and narrated insight is embedded with **Qwen `text-embedding-v4`** (Alibaba Cloud Model Studio / DashScope) and stored in a **pgvector** memory layer. On any later run — a different session, a different process, a fresh container — the agent **recalls the relevant prior facts by meaning** and grounds a **Qwen `qwen-plus`** answer in them. It reasons with continuity instead of starting cold on every request.
 
-Archon itself is a **unified financial-intelligence platform** — it ingests *all* of a business's financial documents and data (sales and purchase invoices, orders, receipts, payments, bank transfers and statements, payroll, expenses) into one environment and produces consolidated, period-over-period P&L, EBITDA, cash, and workforce-cost metrics, while **cross-checking the whole picture for missing or inconsistent information** (for example, a bank payment with no matching invoice — did the vendor never send it, did the accountant never register it, or is the payment wrong?). This MemoryAgent gives that pipeline a **memory**: it remembers each finding across sessions — for instance the **€22,800 workforce-cost wedge** (a bank salary transfer understates the *true* cost of employing a team by ~28%, because it never shows employer social-security contributions) — and can answer questions about it on any later run.
+Archon itself is a **unified financial-intelligence platform** — it ingests *all* of a business's financial documents and data (sales and purchase invoices, orders, receipts, payments, bank transfers and statements, expenses, and workforce costs) into one environment and produces a consolidated, period-over-period view: **P&L, EBITDA, cash, sales targets, and per-period metrics**, while **cross-checking the whole picture for missing or inconsistent information** — for example, *a bank payment that appears with no matching invoice: did the vendor never send it, did the accountant never register it, or is the payment wrong?* This MemoryAgent gives that pipeline a **memory**: it remembers each consolidated figure and each cross-check finding across sessions and can answer questions about them on any later run. The financial picture it remembers is broad — one memory might be a sales invoice, the next a cash position, the next a completeness anomaly, and among them the **true cost of employing a team** (a bank salary transfer understates it, because it never shows employer social-security contributions) as *one* business aspect among many.
 
 ## Why this is a MemoryAgent
 
@@ -23,16 +23,21 @@ A MemoryAgent lives or dies on **recall quality** and **memory hygiene**. This
 entry treats both as first-class, engineered, and *measured*:
 
 - **Hybrid retrieval (dense + lexical, RRF).** Agent memories are full of exact
-  tokens dense embeddings blur — employee ids (`E-03`), euro figures (`€22,800`),
-  company names, period codes. Recall fuses `text-embedding-v4` cosine search
-  with BM25/full-text lexical search using **Reciprocal Rank Fusion**, keeping the
-  paraphrase recall of dense *and* the exact-token precision of lexical.
-- **Measured against baselines.** A frozen, labelled benchmark (`bench/`) scores
-  retrieval with Recall@k / MRR / nDCG. On **real `text-embedding-v4`**, hybrid
-  beats naive vector RAG: **MRR 0.813 → 0.933 (+14.8%), nDCG@5 0.838 → 0.899,
-  Recall@3 86.7% → 93.3%**. The result is reproducible offline from a committed
-  embedding fixture (no key, no spend) and **gated in CI**. Full method + honest
-  caveats: **[BENCHMARK.md](./BENCHMARK.md)**.
+  tokens dense embeddings blur — document numbers (`INV-2043`, `PINV-771`), euro
+  figures, company names, period codes. Recall fuses `text-embedding-v4` cosine
+  search with BM25/full-text lexical search using **Reciprocal Rank Fusion**,
+  keeping the paraphrase recall of dense *and* the exact-token precision of
+  lexical — the retriever that does not fall over on *any* query genre.
+- **Measured against baselines — honestly.** A frozen, labelled benchmark
+  (`bench/`) scores retrieval with Recall@k / MRR / nDCG. On **real
+  `text-embedding-v4`**, hybrid is the **robust** retriever: it **never recalls
+  worse than pure dense** (Recall@3 90.0% → **93.3%**, Recall@5 ties at 100%) and
+  **far outperforms lexical-only** (MRR 0.680 → 0.839, nDCG@5 0.701 → 0.884). It
+  does *not* beat a strong dense embedder on top-of-list ordering on this diverse
+  corpus — a finding we report rather than hide. Reproducible offline from a
+  committed embedding fixture (no key, no spend) and **gated in CI** (regression
+  guard vs dense + fusion value vs lexical). Full method + the honest "what
+  changed and why": **[BENCHMARK.md](./BENCHMARK.md)**.
 - **Consolidation + forgetting.** The agent doesn't just append. `consolidate()`
   collapses near-duplicate memories (re-ingested facts) into one canonical memory;
   `forget()` drops superseded and stale low-importance memories while protecting
@@ -87,7 +92,7 @@ pgvector runs as a docker service. Same code path, zero credentials.
 ```
 
 ### Write path (`remember`)
-An agent states a fact in natural language (`"Hidden payroll cost at Acme for 2026-03: the bank transfer of €41,000 understates true employer cost by €22,800 (28.8%)…"`) → Qwen `text-embedding-v4` embeds it → the text, structured metadata, and the 1024-dim vector are stored in `agent_memory`.
+An agent states a fact in natural language (`"Completeness check for Helios Retail 2026-02: a €3,200 bank payment to Pallas Freight has no matching purchase invoice (high severity)…"`, or `"P&L for ByteCraft Software 2026-05: revenue €210,000, operating profit €41,200"`) → Qwen `text-embedding-v4` embeds it → the text, structured metadata, and the 1024-dim vector are stored in `agent_memory`.
 
 ### Read path (`recall` → `narrate`)
 A question is embedded and run as an ANN search over the HNSW cosine index (`ORDER BY embedding <=> $query`). The top-k memories are handed to the **narrator** (`qwen-plus`), which writes a grounded answer that **cites the exact memories** it used — RAG over the agent's own persistent memory.
@@ -208,8 +213,8 @@ Every stage runs **fully offline** — no DashScope / Alibaba credentials — be
 | Criterion (weight) | Where to look |
 |---|---|
 | **Technical Depth & Engineering (30%)** | Hybrid dense+lexical retrieval with RRF, consolidation/forgetting lifecycle, injectable Qwen/Fake seams, full test pyramid + benchmark gate + CodeQL, real pgvector on Alibaba. A *measured* memory system, not a wrapper. |
-| **Innovation & AI Creativity (30%)** | Memory that fuses meaning + exact tokens, prunes its own duplicates, and proves recall quality with a reproducible benchmark — plus the domain insight (fusing three financial documents to recover the hidden ~28% employer-cost wedge). |
-| **Problem Value & Impact (25%)** | A real, recurring SMB pain: financial facts that must be remembered and cross-checked across sessions; the hidden workforce-cost wedge is money owners routinely under-count. |
+| **Innovation & AI Creativity (30%)** | Memory that fuses meaning + exact tokens, prunes its own duplicates, and proves recall quality with a reproducible benchmark — over a business's *whole* financial picture (invoices, orders, payments, bank, P&L, cash, cross-checks), surfacing completeness anomalies like a bank payment with no matching invoice. |
+| **Problem Value & Impact (25%)** | A real, recurring SMB pain: consolidated financial facts and cross-check findings that must be remembered across sessions — from an unbilled sales order to a payment with no matching invoice to the true cost of employing a team. |
 | **Presentation & Documentation (15%)** | This README + architecture diagram + [BENCHMARK.md](./BENCHMARK.md) (method + honest caveats) + the ~3-min demo + live Alibaba URL. |
 
 ## Provenance / reuse
