@@ -41,6 +41,34 @@ export interface AuditMemory {
   createdAt: string; // ISO — the write-event timestamp (our "session" signal)
 }
 
+// A RECOMMENDATION for which side of a contradiction to trust. This is a
+// recommender, NOT ground truth: the audit cannot know which write was correct,
+// only which one a defensible, domain-neutral policy would prefer. It NEVER
+// mutates memory — the caller decides what to do with the recommendation.
+//
+// The policy is a fixed priority ladder over signals ALREADY present on the
+// memories (no new data, no finance rulebook):
+//   1. importance       — an explicit `metadata.importance` (0..1 salience) is the
+//                         strongest signal: a memory a human/agent flagged as
+//                         important outranks a later write with none.
+//   2. source-authority — a STRUCTURED record (`document`/`payroll_event`/
+//                         `validation`) is a more authoritative source of a RAW
+//                         value than a DERIVED narrative (`insight`). Conservative
+//                         and overridable (see `AuditOptions.kindAuthority`).
+//   3. recency          — the DEFAULT: the later write wins (the newest session
+//                         presumably corrected the older one).
+export interface Resolution {
+  recommendedMemoryId: string; // a real memory id carrying the winning value
+  recommendedValue: unknown; // the value the policy recommends trusting
+  rule: "recency" | "importance" | "source-authority";
+  // Heuristic ordinal confidence in [0,1] — NOT a calibrated probability. It
+  // reflects how cleanly the winning signal separated the sides (bigger gap /
+  // stronger signal → higher), and is deliberately modest for recency (a later
+  // write is only a *default*, it can itself be the mistake).
+  confidence: number;
+  rationale: string; // one-line human-readable justification
+}
+
 // One conflicting attribute across two-or-more memories of the same record.
 export interface Contradiction {
   type: "contradiction";
@@ -53,6 +81,8 @@ export interface Contradiction {
     value: unknown;
     createdAt: string;
   }>;
+  // A recommendation for which value to trust (recommender, not ground truth).
+  resolution: Resolution;
 }
 
 // A referenced record that no memory in the audited set actually stores.
@@ -74,6 +104,10 @@ export interface AuditOptions {
   // Absolute tolerance for treating two numbers as "the same value" (rounding /
   // float noise). Two totals within this band are NOT a contradiction.
   numericTolerance?: number;
+  // Optional override for the source-authority ranking over memory `kind`. Higher
+  // = more authoritative for a RAW attribute value. Anything not in the map falls
+  // back to the neutral/structured rank; see DEFAULT_KIND_AUTHORITY.
+  kindAuthority?: Record<string, number>;
 }
 
 // Metadata keys that name the record itself or its cross-references — they are
@@ -124,6 +158,152 @@ function attributesOf(m: AuditMemory): Map<string, unknown> {
   return out;
 }
 
+// ── Resolution (recommender) ────────────────────────────────────────────────
+// Conservative, OVERRIDABLE authority ranking over the memory `kind` enum.
+// Grounded in the data model: `document` / `payroll_event` / `validation` are
+// STRUCTURED, system-of-record memories, whereas `insight` is a DERIVED narrative
+// the agent wrote *about* other memories. For a RAW attribute value the structured
+// record is the more authoritative source than a narrated derivation. We ONLY ever
+// demote a memory we KNOW is derived (`insight`); every other/unknown kind keeps
+// the neutral structured rank, so the audit never invents authority it can't
+// justify. Callers can supply their own map via `AuditOptions.kindAuthority`.
+const STRUCTURED_AUTHORITY = 2;
+const DEFAULT_KIND_AUTHORITY: Record<string, number> = { insight: 1 };
+
+function authorityOf(kind: string, map: Record<string, number>): number {
+  const v = map[kind];
+  return typeof v === "number" ? v : STRUCTURED_AUTHORITY;
+}
+
+// The explicit salience a memory carries, if the caller stored one in metadata.
+// NOTE: `ingestEvent` writes importance as a top-level COLUMN, not into metadata,
+// so this signal fires only when a caller deliberately puts `importance` in the
+// memory's metadata. Returns null when absent/non-numeric (→ "no signal").
+function importanceOf(m: AuditMemory): number | null {
+  const v = m.metadata?.["importance"];
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+const MS_PER_DAY = 86_400_000;
+
+// A distinct-value cluster: the value plus every memory (write event) asserting it.
+interface ValueCluster {
+  value: unknown;
+  memories: AuditMemory[];
+}
+
+function latestOf(mems: AuditMemory[]): AuditMemory {
+  return [...mems].sort((a, b) =>
+    a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : a.id < b.id ? -1 : 1
+  )[0]!;
+}
+
+// Recommend which distinct value to trust, using the fixed priority ladder
+// (importance → source-authority → recency). Pure; a recommender, not truth.
+export function resolveContradiction(
+  clusters: ValueCluster[],
+  kindAuthority: Record<string, number> = DEFAULT_KIND_AUTHORITY
+): Resolution {
+  // Per-cluster aggregates of each signal + the representative memory carrying it.
+  const agg = clusters.map((c) => {
+    const impCarrier = c.memories
+      .filter((m) => importanceOf(m) !== null)
+      .sort((a, b) => importanceOf(b)! - importanceOf(a)!)[0];
+    const authCarrier = [...c.memories].sort(
+      (a, b) => authorityOf(b.kind, kindAuthority) - authorityOf(a.kind, kindAuthority)
+    )[0]!;
+    const latest = latestOf(c.memories);
+    return {
+      value: c.value,
+      importance: impCarrier ? importanceOf(impCarrier) : null,
+      importanceCarrier: impCarrier ?? null,
+      authority: authorityOf(authCarrier.kind, kindAuthority),
+      authorityCarrier: authCarrier,
+      latest,
+    };
+  });
+
+  // ── Rule 1: importance — a memory flagged with higher salience wins. ─────────
+  const withImp = agg.filter((a) => a.importance !== null);
+  if (withImp.length > 0) {
+    const sorted = [...agg].sort((a, b) => (b.importance ?? -1) - (a.importance ?? -1));
+    const top = sorted[0]!;
+    const second = sorted[1]!;
+    const margin = (top.importance ?? -1) - (second.importance ?? -1);
+    if (top.importance !== null && margin >= 0.05) {
+      const win = top.importanceCarrier!;
+      const conf = clamp(0.6 + Math.min(0.3, margin * 0.5), 0, 0.95);
+      return {
+        recommendedMemoryId: win.id,
+        recommendedValue: top.value,
+        rule: "importance",
+        confidence: round2(conf),
+        rationale:
+          `Memory ${win.id} carries higher importance (${fmt(top.importance)} vs ` +
+          `${second.importance === null ? "none" : fmt(second.importance)}); ` +
+          `explicit salience outranks a later write.`,
+      };
+    }
+  }
+
+  // ── Rule 2: source-authority — a structured record outranks a derived note. ──
+  const sortedAuth = [...agg].sort((a, b) => b.authority - a.authority);
+  const topAuth = sortedAuth[0]!;
+  const secondAuth = sortedAuth[1]!;
+  if (topAuth.authority > secondAuth.authority) {
+    const win = topAuth.authorityCarrier;
+    return {
+      recommendedMemoryId: win.id,
+      recommendedValue: topAuth.value,
+      rule: "source-authority",
+      confidence: 0.75,
+      rationale:
+        `Structured '${win.kind}' record outranks derived '${secondAuth.authorityCarrier.kind}' ` +
+        `for a raw value; source authority overrides recency.`,
+    };
+  }
+
+  // ── Rule 3: recency (default) — the later write wins. ────────────────────────
+  const sortedRec = [...agg].sort((a, b) =>
+    a.latest.createdAt < b.latest.createdAt
+      ? 1
+      : a.latest.createdAt > b.latest.createdAt
+        ? -1
+        : a.latest.id < b.latest.id // timestamp tie → deterministic by id
+          ? -1
+          : 1
+  );
+  const win = sortedRec[0]!;
+  const runnerUp = sortedRec[1]!;
+  const tie = win.latest.createdAt === runnerUp.latest.createdAt;
+  const gapDays = tie
+    ? 0
+    : (Date.parse(win.latest.createdAt) - Date.parse(runnerUp.latest.createdAt)) / MS_PER_DAY;
+  const conf = tie ? 0.4 : clamp(0.5 + Math.min(0.35, (gapDays / 30) * 0.35), 0, 0.85);
+  return {
+    recommendedMemoryId: win.latest.id,
+    recommendedValue: win.value,
+    rule: "recency",
+    confidence: round2(conf),
+    rationale: tie
+      ? `Writes share a timestamp; no stronger signal available — defaulting to ` +
+        `memory ${win.latest.id} (deterministic tie-break). Low confidence.`
+      : `Later write (${win.latest.createdAt.slice(0, 10)}) supersedes the earlier ` +
+        `value ${fmt(runnerUp.value)} (${runnerUp.latest.createdAt.slice(0, 10)}); ` +
+        `recency is the default tie-breaker.`,
+  };
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+function fmt(v: unknown): string {
+  return typeof v === "number" ? String(v) : JSON.stringify(v);
+}
+
 // Audit a set of memories for cross-session contradictions and dangling
 // references. Pure — no I/O. The caller supplies ACTIVE (non-superseded) rows.
 export function auditConsistency(
@@ -167,6 +347,11 @@ export function auditConsistency(
       }
       if (distinct.length < 2) continue; // all agree → consistent
 
+      const resolution = resolveContradiction(
+        distinct.map((d) => ({ value: d.value, memories: d.carriers.map((c) => c.m) })),
+        opts.kindAuthority ?? DEFAULT_KIND_AUTHORITY
+      );
+
       contradictions.push({
         type: "contradiction",
         subject,
@@ -187,6 +372,7 @@ export function auditConsistency(
           .sort((a, b) =>
             a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0
           ),
+        resolution,
       });
     }
   }
