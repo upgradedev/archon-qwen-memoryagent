@@ -91,3 +91,21 @@ jobs:
 
       - name: Vector-recall smoke (offline Fakes — no DashScope key)
         run: npm run memory:demo
+
+  # Stage 3 — retrieval quality gate. Replays the COMMITTED real-embedding fixture
+  # (bench/fixtures/embeddings.json, from text-embedding-v4) and fails if the
+  # hybrid retriever regresses below the naive-vector RAG baseline. No key, no
+  # spend — the fixture makes the SOTA claim reproducible offline.
+  benchmark:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install deps
+        run: npm ci
+      - name: Retrieval benchmark gate (hybrid >= naive on real embeddings)
+        run: npm run bench -- --gate
