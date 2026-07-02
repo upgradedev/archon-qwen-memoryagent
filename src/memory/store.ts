@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { query, toVectorLiteral } from "../db/client.js";
 import { rrfFuse, topK, BM25, cosineSimilarity } from "./retrieval.js";
 import type { ConsolidatableMemory, ForgetCandidate } from "./consolidation.js";
+import type { AuditMemory } from "./consistency.js";
 
 export type MemoryKind = "document" | "payroll_event" | "validation" | "insight";
 
@@ -76,6 +77,10 @@ export interface MemoryStore {
   supersede(loserIds: string[], winnerId: string): Promise<number>;
   listForForget(company?: string): Promise<ForgetCandidate[]>;
   deleteMemories(ids: string[]): Promise<number>;
+  // ── self-auditing (consistency) ──
+  // Read-only: return ACTIVE memories in scope for a consistency audit. Selects
+  // only columns that already exist (no schema change — the live table is safe).
+  listForAudit(scope?: { company?: string; period?: string; kind?: MemoryKind }): Promise<AuditMemory[]>;
 }
 
 const POOL_K = 20; // depth of each ranked list fed into hybrid fusion
@@ -252,6 +257,44 @@ export class PgVectorStore implements MemoryStore {
     );
     return rows.length;
   }
+
+  // Read-only audit read. Only ACTIVE (non-superseded) rows, only existing
+  // columns — safe against the live table (DEPLOY_STATE.md: a new column 500s).
+  async listForAudit(
+    scope: { company?: string; period?: string; kind?: MemoryKind } = {}
+  ): Promise<AuditMemory[]> {
+    const params: unknown[] = [];
+    const filters = ["superseded_at IS NULL"];
+    if (scope.company) {
+      params.push(scope.company);
+      filters.push(`company = $${params.length}`);
+    }
+    if (scope.period) {
+      params.push(scope.period);
+      filters.push(`period = $${params.length}`);
+    }
+    if (scope.kind) {
+      params.push(scope.kind);
+      filters.push(`kind = $${params.length}`);
+    }
+    const rows = await query<PgRow>(
+      `SELECT id, kind, company, period, source_ref, content, metadata, created_at,
+              0 AS distance
+         FROM agent_memory
+        WHERE ${filters.join(" AND ")}`,
+      params
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      company: r.company,
+      period: r.period,
+      sourceRef: r.source_ref,
+      content: r.content,
+      metadata: r.metadata,
+      createdAt: r.created_at,
+    }));
+  }
 }
 
 // Shared row shape + mappers for the pgvector store.
@@ -416,6 +459,26 @@ export class InMemoryStore implements MemoryStore {
     const before = this.rows.length;
     this.rows = this.rows.filter((r) => !del.has(r.id));
     return before - this.rows.length;
+  }
+
+  async listForAudit(
+    scope: { company?: string; period?: string; kind?: MemoryKind } = {}
+  ): Promise<AuditMemory[]> {
+    return this.rows
+      .filter((r) => r.supersededAt === null)
+      .filter((r) => (scope.company ? r.company === scope.company : true))
+      .filter((r) => (scope.period ? r.period === scope.period : true))
+      .filter((r) => (scope.kind ? r.kind === scope.kind : true))
+      .map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        company: r.company,
+        period: r.period,
+        sourceRef: r.sourceRef,
+        content: r.content,
+        metadata: r.metadata,
+        createdAt: r.createdAt,
+      }));
   }
 }
 
