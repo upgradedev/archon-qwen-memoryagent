@@ -18,6 +18,11 @@ import type { Embedder } from "../memory/embeddings.js";
 import { remember, recall } from "../memory/memory.js";
 import type { MemoryKind, MemoryStore, RecallHit } from "../memory/store.js";
 import { defaultNarrator, type Narrator, type Citation } from "./narrator.js";
+import {
+  planConsolidation,
+  planForget,
+  type ForgetPolicy,
+} from "../memory/consolidation.js";
 import type { PayrollEvent } from "../types.js";
 
 export class MemoryAgent {
@@ -69,6 +74,9 @@ export class MemoryAgent {
           `employer cost by ${money(event.hidden_total)} ` +
           `(${event.cost_gap_pct.toFixed(1)}%), mostly employer social-security ` +
           `contributions of ${money(event.employer_ika_total)}.`,
+        // The hidden-cost insight is the highest-salience memory the agent keeps,
+        // so it survives forgetting and wins consolidation ties.
+        importance: 0.9,
         metadata: {
           hidden_total: event.hidden_total,
           cost_gap_pct: event.cost_gap_pct,
@@ -116,15 +124,43 @@ export class MemoryAgent {
   // deterministic FakeNarrator — same recall path either way.
   async recallAnswer(
     question: string,
-    opts: { company?: string; kind?: MemoryKind; limit?: number } = {}
+    opts: { company?: string; kind?: MemoryKind; limit?: number; hybrid?: boolean } = {}
   ): Promise<{ answer: string; hits: RecallHit[]; citations: Citation[]; modelId: string }> {
     const hits = await recall(this.embedder, this.store, question, {
       company: opts.company,
       kind: opts.kind,
       limit: opts.limit ?? 5,
+      // Hybrid (dense + lexical RRF) is the default retrieval path — it beats
+      // naive vector recall on the benchmark (see bench/ + BENCHMARK.md). Pass
+      // hybrid:false to force pure vector recall.
+      hybrid: opts.hybrid ?? true,
     });
     const { answer, citations, modelId } = await this.narrator.narrate(question, hits);
     return { answer, hits, citations, modelId };
+  }
+
+  // ── MEMORY LIFECYCLE ───────────────────────────────────────────────────────
+  // Consolidate near-duplicate memories: cluster active memories by embedding
+  // similarity (same kind, cosine >= threshold), keep the most-important/newest
+  // in each cluster, and supersede the rest so recall stops returning duplicates.
+  async consolidate(
+    opts: { company?: string; threshold?: number } = {}
+  ): Promise<{ clusters: number; superseded: number }> {
+    const memories = await this.store.listForConsolidation(opts.company);
+    const plan = planConsolidation(memories, opts.threshold ?? 0.95);
+    let superseded = 0;
+    for (const g of plan.groups) superseded += await this.store.supersede(g.losers, g.winner);
+    return { clusters: plan.groups.length, superseded };
+  }
+
+  // Forget memories under a retention policy: by default drop rows already
+  // superseded by consolidation; optionally also forget stale, low-importance
+  // active memories (olderThanDays + maxImportance).
+  async forget(policy: ForgetPolicy = {}, company?: string): Promise<{ forgotten: number }> {
+    const candidates = await this.store.listForForget(company);
+    const ids = planForget(candidates, policy);
+    const forgotten = await this.store.deleteMemories(ids);
+    return { forgotten };
   }
 }
 

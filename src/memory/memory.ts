@@ -35,5 +35,7 @@ export async function recall(
   opts: RecallOptions = {}
 ): Promise<RecallHit[]> {
   const qvec = await embedder.embed(queryText);
-  return store.recall(qvec, opts);
+  // Thread the raw query text through so hybrid recall has the lexical half. The
+  // store uses it only when opts.hybrid is set.
+  return store.recall(qvec, { queryText, ...opts });
 }
