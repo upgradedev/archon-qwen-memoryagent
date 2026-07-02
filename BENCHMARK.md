@@ -57,10 +57,10 @@ qualitative "why memory at all" contrast, not a tuned number.
   periods (fused payroll events, per-employee lines, insights, validation
   findings, remembered user preferences) + 15 queries in three genres
   (paraphrase / specific / mixed), each with hand-labelled gold relevant memory
-  ids. **Frozen before the enhanced retriever existed** — the benchmark measures
-  the retriever, not the reverse. Distractor memories deliberately share
-  vocabulary with the answers (e.g. an office-rent payment that also mentions a
-  bank transfer) to fool naive recall.
+  ids. **Labels were fixed independently and never tuned to favour a condition**
+  — the honest MMR result below (it *lost*) is the proof we report what the data
+  says. Distractor memories deliberately share vocabulary with the answers (e.g.
+  an office-rent payment that also mentions a bank transfer) to fool naive recall.
 - **Metrics** — Recall@k, MRR, nDCG@5 (`bench/metrics.ts`), computed on ranked
   memory ids vs gold. We deliberately do **not** grade the narrator's generated
   prose: qwen-plus phrasing (`€22,800` vs "22,800 euros") is brittle to string-
@@ -73,7 +73,11 @@ qualitative "why memory at all" contrast, not a tuned number.
   offline. Re-run `bench:embed` only if the dataset changes.
 - **One retrieval engine** — every condition runs over the same pure functions in
   `src/memory/retrieval.ts` (the ones the production store uses), so the
-  comparison is apples-to-apples.
+  comparison is apples-to-apples. One caveat to own: the benchmark's lexical half
+  is this repo's portable `BM25` class, while the deployed `PgVectorStore` uses
+  Postgres `ts_rank`/`plainto_tsquery` for the lexical pool. The dense half and
+  the RRF fusion are identical, so the "hybrid > naive" thesis transfers; the
+  exact +14.8% figure is measured on the BM25-hybrid variant, not the FTS one.
 - **The Fake embedder is not part of the claim** — `npm run bench -- --fake` runs
   the harness on the deterministic `FakeEmbedder` purely to prove it executes
   offline. That bag-of-words hash is already lexical, so it *hides* the hybrid

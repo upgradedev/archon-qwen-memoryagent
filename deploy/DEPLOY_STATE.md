@@ -2,6 +2,24 @@
 
 Crash-recoverable checkpoint. Updated after EVERY step. Secrets MASKED.
 
+> ## ⚠️ REDEPLOY RUNBOOK (READ FIRST after PR #4 merges)
+> The SOTA branch adds columns (`importance`, `superseded_at`, `superseded_by`) +
+> a GIN full-text index to `agent_memory`. The live pgvector volume has the OLD
+> table; `CREATE TABLE IF NOT EXISTS` will NOT add them — only the new
+> `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in `schema.sql` will. **A code-only
+> redeploy without re-applying the schema will 500 on every `/ingest` and every
+> hybrid `/recall`.** So a clean redeploy is, in order:
+> 1. SSH in; `cd /root/memoryagent`; pull the merged code.
+> 2. **Re-apply the schema FIRST** (migrates the live table):
+>    `docker compose run --rm backend npm run db:schema`
+>    (or run `apply-schema.ts` against the live `DATABASE_URL`).
+> 3. `docker compose up -d --build` to serve the new code.
+> 4. Verify: `curl /health`, then a hybrid `/recall` returns 200.
+>
+> Also: the verification run left demo rows for company **`VerifyCo SA`** in the
+> live DB. Clear them (or `TRUNCATE agent_memory` and re-ingest) before recording
+> the demo so `/memory/count` isn't inflated.
+
 - Region: **ap-southeast-1** (Singapore / international)
 - Repo: `C:\dev\solutions\private_nebius_aiserverless_challenge\repos\qwen-memoryagent`
 - App: Node/TS Fastify HTTP server, port 9000. Endpoints: `/health` (200, embedDim 1024, no DB), `/memory/count`, `/ingest`, `/recall`. Needs DATABASE_URL (pgvector). DashScope key optional (falls back to deterministic Fakes).

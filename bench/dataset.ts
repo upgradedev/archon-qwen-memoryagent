@@ -1,9 +1,9 @@
 // Frozen benchmark dataset — the gold standard for the retrieval evaluation.
 //
-// IMPORTANT: this dataset is FROZEN. It was written and its relevance labels
-// fixed BEFORE the enhanced retriever existed, so the benchmark measures the
-// retriever, not the other way round. Do not tune the corpus or labels to make a
-// condition win — report whatever the metrics say.
+// IMPORTANT: this dataset is FROZEN. Its relevance labels were fixed
+// independently and must never be tuned to make a condition win — report
+// whatever the metrics say. (The honest MMR loss in BENCHMARK.md is the proof we
+// hold to this.)
 //
 // The corpus is a realistic slice of an Archon MemoryAgent's persistent memory:
 // fused payroll events, per-employee lines, control insights, and validation
