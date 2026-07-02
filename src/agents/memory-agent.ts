@@ -4,7 +4,7 @@
 //
 //   ingestEvent()   WRITE  — an agent has fused a financial event; it commits the
 //                            salient facts to memory (event, per-employee lines,
-//                            the headline insight) so FUTURE SESSIONS can recall them.
+//                            key insights) so FUTURE SESSIONS can recall them.
 //   recallAnswer()  READ   — a user (or another agent) asks a question; the agent
 //                            recalls the most relevant memories by meaning and
 //                            grounds its answer in them (RAG over agent memory).
@@ -57,7 +57,7 @@ export class MemoryAgent {
       })
     );
 
-    // 2. The headline insight — the hidden employer-cost gap.
+    // 2. An insight — the hidden workforce-cost gap (one of several the agents remember).
     ids.push(
       await remember(this.embedder, this.store, {
         ...base,
@@ -68,7 +68,7 @@ export class MemoryAgent {
           `salary transfer of ${money(event.bank_net_total)} understates the true ` +
           `employer cost by ${money(event.hidden_total)} ` +
           `(${event.cost_gap_pct.toFixed(1)}%), mostly employer social-security ` +
-          `(IKA) of ${money(event.employer_ika_total)}.`,
+          `contributions of ${money(event.employer_ika_total)}.`,
         metadata: {
           hidden_total: event.hidden_total,
           cost_gap_pct: event.cost_gap_pct,
