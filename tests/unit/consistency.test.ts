@@ -7,10 +7,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   auditConsistency,
+  resolveContradiction,
   subjectKey,
   type AuditMemory,
 } from "../../src/memory/consistency.js";
+import { InMemoryStore } from "../../src/memory/store.js";
 import { CONSISTENCY_CASE } from "../../bench/consistency-dataset.js";
+import { RESOLUTION_CASE } from "../../bench/resolution-dataset.js";
 
 const S_A = "2026-05-01T09:00:00.000Z";
 const S_B = "2026-05-08T14:30:00.000Z";
@@ -139,4 +142,129 @@ test("MEASURED: detects every injected contradiction/absence with 0 false positi
     report.contradictions.length + report.absences.length,
     expectContradictions.length + expectAbsences.length
   );
+});
+
+// ── Resolution (recommender) — DETECT+RESOLVE ────────────────────────────────
+
+test("every contradiction carries a resolution recommending a real memory", () => {
+  const report = auditConsistency([
+    mem("a", "INV-1", S_A, { total: 100 }),
+    mem("b", "INV-1", S_B, { total: 200 }),
+  ]);
+  const r = report.contradictions[0]!.resolution;
+  assert.ok(r, "resolution must be present");
+  assert.ok(["recency", "importance", "source-authority"].includes(r.rule));
+  assert.ok(r.confidence >= 0 && r.confidence <= 1, "confidence in [0,1]");
+  assert.ok(["a", "b"].includes(r.recommendedMemoryId), "must point at a real memory");
+  assert.ok(r.rationale.length > 0);
+});
+
+test("recency (default): the later write wins", () => {
+  const report = auditConsistency([
+    mem("a", "INV-1", S_A, { total: 100 }),
+    mem("b", "INV-1", S_B, { total: 200 }),
+  ]);
+  const r = report.contradictions[0]!.resolution;
+  assert.equal(r.rule, "recency");
+  assert.equal(r.recommendedMemoryId, "b");
+  assert.equal(r.recommendedValue, 200);
+});
+
+test("importance overrides recency: a flagged older memory beats a later one", () => {
+  const report = auditConsistency([
+    { ...mem("a", "P-1", S_A, { limit: 1000 }), metadata: { record: "P-1", limit: 1000, importance: 0.9 } },
+    mem("b", "P-1", S_B, { limit: 1500 }),
+  ]);
+  const r = report.contradictions[0]!.resolution;
+  assert.equal(r.rule, "importance");
+  assert.equal(r.recommendedMemoryId, "a");
+  assert.equal(r.recommendedValue, 1000);
+});
+
+test("source-authority overrides recency: a structured record beats a derived insight", () => {
+  const report = auditConsistency([
+    { ...mem("a", "ACCT-1", S_A, { balance: 5000 }), kind: "document" },
+    { ...mem("b", "ACCT-1", S_B, { balance: 5200 }), kind: "insight" },
+  ]);
+  const r = report.contradictions[0]!.resolution;
+  assert.equal(r.rule, "source-authority");
+  assert.equal(r.recommendedMemoryId, "a");
+  assert.equal(r.recommendedValue, 5000);
+});
+
+test("resolveContradiction falls back to recency for equal kinds + no importance", () => {
+  const r = resolveContradiction([
+    { value: 1, memories: [mem("a", "X", S_A, { v: 1 })] },
+    { value: 2, memories: [mem("b", "X", S_B, { v: 2 })] },
+  ]);
+  assert.equal(r.rule, "recency");
+  assert.equal(r.recommendedMemoryId, "b");
+});
+
+test("a timestamp tie is resolved deterministically with low confidence", () => {
+  const r = resolveContradiction([
+    { value: 1, memories: [mem("z", "X", S_A, { v: 1 })] },
+    { value: 2, memories: [mem("a", "X", S_A, { v: 2 })] },
+  ]);
+  assert.equal(r.rule, "recency");
+  assert.ok(r.confidence <= 0.5, "tie confidence must be modest");
+  // deterministic tie-break: lexically smallest id among the latest carriers
+  assert.equal(r.recommendedMemoryId, "a");
+});
+
+test("importance rule fires on a PRODUCTION-shaped memory (importance = the column)", async () => {
+  // Real ingest writes salience to the top-level `importance` COLUMN, never into
+  // metadata. This proves the whole chain end-to-end: store.remember(column) →
+  // listForAudit → AuditMemory.importance → resolver's importance rule — with
+  // NOTHING hand-placed in metadata. Both writes land at ~the same instant, so a
+  // recency-only resolver would tie; importance must be what decides it.
+  const store = new InMemoryStore();
+  const embed = [1, 0, 0];
+  const idImportant = await store.remember({
+    kind: "document",
+    company: "Acme",
+    sourceRef: "INV-1",
+    content: "Invoice INV-1 total 100 (flagged important).",
+    metadata: { record: "INV-1", total: 100 }, // NB: no `importance` in metadata
+    importance: 0.9, // ← the column, the production path
+    embedding: embed,
+    embedModel: "fake",
+  });
+  await store.remember({
+    kind: "document",
+    company: "Acme",
+    sourceRef: "INV-1",
+    content: "Invoice INV-1 total 200 (casual later write).",
+    metadata: { record: "INV-1", total: 200 },
+    importance: 0.3, // ← the column
+    embedding: embed,
+    embedModel: "fake",
+  });
+
+  const audit = await store.listForAudit({ company: "Acme" });
+  // the column survived the store → AuditMemory mapping
+  assert.ok(
+    audit.every((m) => typeof m.importance === "number"),
+    "listForAudit must surface the importance column"
+  );
+
+  const report = auditConsistency(audit);
+  assert.equal(report.contradictions.length, 1);
+  const r = report.contradictions[0]!.resolution;
+  assert.equal(r.rule, "importance", "the top-priority rule must fire on column-sourced salience");
+  assert.equal(r.recommendedMemoryId, idImportant);
+  assert.equal(r.recommendedValue, 100);
+});
+
+// The measured resolution claim, pinned as a test (same data bench:resolution reports).
+test("MEASURED: recommends the labelled winner + rule on every resolution case", () => {
+  const { memories, expect } = RESOLUTION_CASE;
+  const report = auditConsistency(memories);
+  const byKey = new Map(report.contradictions.map((c) => [`${c.subject}::${c.attribute}`, c]));
+  for (const e of expect) {
+    const c = byKey.get(`${e.subject}::${e.attribute}`);
+    assert.ok(c, `expected a contradiction for ${e.subject}.${e.attribute}`);
+    assert.equal(c!.resolution.recommendedMemoryId, e.winnerMemoryId, `${e.subject} winner`);
+    assert.equal(c!.resolution.rule, e.rule, `${e.subject} rule`);
+  }
 });

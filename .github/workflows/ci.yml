@@ -111,3 +111,5 @@ jobs:
         run: npm run bench -- --gate
       - name: Self-auditing memory-consistency gate (100% detection, 0 false positives)
         run: npm run bench:consistency -- --gate
+      - name: Contradiction-resolution gate (structural invariants + policy-conformance)
+        run: npm run bench:resolution -- --gate

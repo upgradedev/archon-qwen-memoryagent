@@ -35,18 +35,35 @@ capability most memory demos skip: the agent **audits its own memory**.
   and it's *measured*: on a labelled dataset it detects **5/5 injected problems
   with 0 false positives** on a consistent control set (100% precision). This is
   memory you can *trust*, because it tells you when it disagrees with itself.
+  And it doesn't just detect — for every contradiction it **recommends which side
+  to trust** (`resolution: { recommendedMemoryId, recommendedValue, rule,
+  confidence, rationale }`) via a fixed, domain-neutral priority ladder —
+  **importance → source-authority → recency (later write wins)** — over signals
+  already on the memories. It's a *recommender, not ground truth*: it **never
+  mutates memory**, and it is measured too (**4/4 correct** on a labelled
+  resolution set; `npm run bench:resolution`). Full method + honesty caveats:
+  **[BENCHMARK.md](./BENCHMARK.md)**.
 - **Hybrid retrieval (dense + lexical, RRF) + a cross-encoder re-ranker.** Agent
   memories are full of exact tokens dense embeddings blur — document numbers
   (`INV-2043`, `PINV-771`), euro figures, company names, period codes. Recall fuses
   `text-embedding-v4` cosine search with BM25/full-text lexical search using
   **Reciprocal Rank Fusion**, then a **cross-encoder re-rank stage** (`qwen-plus`
   scoring each query/memory pair jointly) refines the top of the list.
-- **Measured against baselines — honestly.** A frozen, labelled benchmark
-  (`bench/`) scores retrieval with Recall@k / MRR / nDCG on **real
-  `text-embedding-v4`**. Hybrid is the **robust** retriever (never recalls worse
-  than dense: Recall@3 90.0% → 93.3%; far beats lexical-only). Hybrid *alone*
-  doesn't beat a strong dense embedder on top-rank — so we added the cross-encoder
-  re-ranker, which **does**: `reranked-hybrid` lifts **MRR 0.883 → 0.911**,
+- **Measured against baselines — honestly, and against the field default.** A
+  frozen, labelled benchmark (`bench/`) scores retrieval with Recall@k / MRR / nDCG
+  on **real `text-embedding-v4`**. The `naive-vector` baseline is **not a strawman**:
+  a single-vector cosine ANN search is the default retrieval mode of LangChain's
+  `VectorStoreRetriever` and virtually every pgvector RAG demo, so beating it is
+  beating **what the field ships by default** — and it points the same way the
+  strongest stacks are already moving: **Mem0 (multi-signal) and Zep (hybrid/graph)
+  have both moved _beyond_ pure dense** toward dense + lexical **fusion** (we did
+  *not* run any product head-to-head; the dense-baseline attribution is to
+  LangChain's default retriever + stock pgvector demos, and Mem0/Zep are cited only
+  as evidence of where the field is heading). Hybrid
+  is the **robust** retriever (never recalls worse than dense: Recall@3 90.0% →
+  93.3%; far beats lexical-only). Hybrid *alone* doesn't beat a strong dense embedder
+  on top-rank — so we added the cross-encoder re-ranker, which **does**:
+  `reranked-hybrid` lifts **MRR 0.883 → 0.911**,
   **nDCG@5 0.903 → 0.938**, **Recall@3 90.0% → 96.7%** over dense. Reproducible
   offline from committed fixtures (no key, no spend), **gated in CI**, and shipped
   with a **sensitivity control** (a meaning-shuffled retriever that must score near
@@ -134,7 +151,7 @@ repos/qwen-memoryagent/
 │   │   ├── embeddings.ts        # QwenEmbedder (text-embedding-v4) + offline FakeEmbedder
 │   │   ├── retrieval.ts         # BM25 + cosine + RRF + MMR + hybrid + rerank retrievers (pure)
 │   │   ├── rerank.ts            # cross-encoder re-rank: LlmReranker (qwen-plus) + offline FakeReranker
-│   │   ├── consistency.ts       # SELF-AUDIT: cross-session contradiction + dangling-ref detection (pure)
+│   │   ├── consistency.ts       # SELF-AUDIT: cross-session contradiction + dangling-ref DETECT + RESOLVE (pure)
 │   │   ├── consolidation.ts     # consolidate (dedup) + forget planners (pure)
 │   │   ├── store.ts             # MemoryStore: PgVectorStore + InMemoryStore (hybrid + lifecycle + audit)
 │   │   └── memory.ts            # remember() / recall() — embed ↔ store orchestration
@@ -191,7 +208,7 @@ npm run test:e2e                # cross-session persistence (needs DATABASE_URL)
 | `GET /memory/count` | How many memories the agent holds. |
 | `POST /ingest` | `{ event }` → write memories for a fused financial event. |
 | `POST /recall` | `{ question, company?, kind?, limit?, hybrid? }` → grounded, cited answer (hybrid on by default) + a best-effort self-audit over the recalled memories. |
-| `POST /consistency` | `{ company?, period?, kind? }` → **self-audit**: cross-session contradictions + dangling references across stored memories (read-only, no schema change). |
+| `POST /consistency` | `{ company?, period?, kind? }` → **self-audit**: cross-session contradictions (each with a `resolution` recommending which value to trust) + dangling references across stored memories (read-only, no schema change). |
 | `POST /consolidate` | `{ company?, threshold? }` → collapse near-duplicate memories. |
 | `POST /forget` | `{ company?, deleteSuperseded?, olderThanDays?, maxImportance? }` → prune memories. |
 
@@ -221,13 +238,13 @@ Full testing pyramid, all green in GitHub Actions (`.github/workflows/ci.yml`), 
 | **Unit** | `tests/unit/*` | Embedder + narrator (Qwen canned + Fake), memory logic, **retrieval primitives** (BM25, RRF, MMR, hybrid, **re-rank**), **IR metrics**, **consolidation + forgetting**, **self-audit consistency** (contradiction + absence detection, precision on a control set) — all over `InMemoryStore`, no infra. |
 | **Integration** | `tests/integration/pgvector-store.test.ts` | Real pgvector SQL: `::vector` insert, `<=>` cosine recall, filters, count, **hybrid dense+FTS fusion**, **consolidate → supersede → forget**. |
 | **E2E** | `tests/e2e/cross-session.test.ts` | **Cross-session persistence** — session A writes + tears down, session B recalls. |
-| **Benchmark gates** | `bench/*` | **Retrieval regression gate** (hybrid ≥ dense) + **discrimination gate** (shuffled control near chance) + **self-audit gate** (`bench:consistency`: 100% detection, 0 false positives). Re-rank delta vs dense reported (not gated). All replay committed fixtures — no key, no spend. |
+| **Benchmark gates** | `bench/*` | **Retrieval regression gate** (hybrid ≥ dense) + **discrimination gate** (shuffled control near chance) + **self-audit gate** (`bench:consistency`: 100% detection, 0 false positives) + **resolution gate** (`bench:resolution`: structural invariants + winner-accuracy on the labelled policy). Re-rank delta vs dense reported (not gated). All replay committed fixtures — no key, no spend. |
 
 CI stages:
 1. **secret-scan** — gitleaks (pinned v8.18.4, redacted). Fails fast on any committed secret.
 2. **dep-audit** — `npm audit` (fails on high/critical).
 3. **build-test** — typecheck → schema apply (stands up real pgvector) → unit → integration → e2e → offline demo smoke.
-4. **benchmark** — `npm run bench -- --gate` (retrieval regression + discrimination) and `npm run bench:consistency -- --gate` (self-audit detection/precision), both over committed fixtures (no key, no spend).
+4. **benchmark** — `npm run bench -- --gate` (retrieval regression + discrimination), `npm run bench:consistency -- --gate` (self-audit detection/precision) and `npm run bench:resolution -- --gate` (contradiction-resolution invariants + policy-conformance), all over committed fixtures (no key, no spend).
 5. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.
 
 Every stage runs **fully offline** — no DashScope / Alibaba credentials — because the Qwen embedder/narrator auto-fall back to deterministic Fakes and the benchmark replays cached vectors.
@@ -237,7 +254,7 @@ Every stage runs **fully offline** — no DashScope / Alibaba credentials — be
 | Criterion (weight) | Where to look |
 |---|---|
 | **Technical Depth & Engineering (30%)** | Hybrid dense+lexical retrieval with RRF, consolidation/forgetting lifecycle, injectable Qwen/Fake seams, full test pyramid + benchmark gate + CodeQL, real pgvector on Alibaba. A *measured* memory system, not a wrapper. |
-| **Innovation & AI Creativity (30%)** | **Self-auditing memory**: the agent detects when two of its own cross-session writes *contradict* (100% detection / 0 false positives, measured) — memory you can trust, not just retrieve. Plus memory that fuses meaning + exact tokens, is refined by a cross-encoder re-ranker (a *measured* top-rank win: MRR 0.883 → 0.911), prunes its own duplicates, and proves quality with a reproducible, sensitivity-controlled benchmark. |
+| **Innovation & AI Creativity (30%)** | **Self-auditing memory that detects _and_ resolves**: the agent flags when two of its own cross-session writes *contradict* (100% detection / 0 false positives, measured) **and recommends which side to trust** (importance → source-authority → recency; a recommender that never mutates memory; 4/4 correct on a labelled set) — memory you can trust, not just retrieve. Plus memory that fuses meaning + exact tokens, is refined by a cross-encoder re-ranker (a *measured* top-rank win over the field-default dense baseline: MRR 0.883 → 0.911), prunes its own duplicates, and proves quality with a reproducible, sensitivity-controlled benchmark. |
 | **Problem Value & Impact (25%)** | A real, recurring SMB pain: consolidated financial facts and cross-check findings that must be remembered across sessions — from an unbilled sales order to a payment with no matching invoice to the true cost of employing a team. |
 | **Presentation & Documentation (15%)** | This README + architecture diagram + [BENCHMARK.md](./BENCHMARK.md) (method + honest caveats) + the ~3-min demo + live Alibaba URL. |
 

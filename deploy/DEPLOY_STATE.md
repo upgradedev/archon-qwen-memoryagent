@@ -2,6 +2,19 @@
 
 Crash-recoverable checkpoint. Updated after EVERY step. Secrets MASKED.
 
+> ## ⚡ TURNKEY REDEPLOY (one command)
+> The manual steps below are now scripted in **`deploy/redeploy.sh`** (idempotent,
+> schema-first + fail-closed, health + ingest/recall smoke, optional `--truncate`).
+> On the box:
+> ```bash
+> # sync latest code first (the box has no git checkout):
+> #   rsync -a --exclude node_modules --exclude .git ./ root@43.106.13.19:/root/memoryagent/
+> ssh -i C:/tools/aliyun/archon-mem-kp.pem root@43.106.13.19
+> cd /root/memoryagent && bash deploy/redeploy.sh            # or: --truncate for a clean demo
+> ```
+> It targets the live **ECS + docker compose** box (PATH B below), NOT Function
+> Compute. The manual runbook that follows is the same steps, longhand.
+>
 > ## ⚠️ REDEPLOY RUNBOOK (READ FIRST after PR #4 merges)
 > The SOTA branch adds columns (`importance`, `superseded_at`, `superseded_by`) +
 > a GIN full-text index to `agent_memory`. The live pgvector volume has the OLD

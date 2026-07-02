@@ -14,6 +14,7 @@
     "bench:embed": "tsx bench/embed.ts",
     "bench:rerank": "tsx bench/rerank.ts",
     "bench:consistency": "tsx bench/consistency-run.ts",
+    "bench:resolution": "tsx bench/resolution-run.ts",
     "bench": "tsx bench/run.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
