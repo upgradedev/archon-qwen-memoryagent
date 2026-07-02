@@ -32,9 +32,13 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/postgres
       PORT: 9000
-      # Uncomment to use real Qwen instead of the offline Fakes:
-      # DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
-      # DASHSCOPE_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      # Real Qwen when DASHSCOPE_API_KEY is present (from the shell env or a .env
+      # file next to this compose file); otherwise it resolves to empty and the
+      # app falls back to the deterministic offline Fakes (see src/qwen/client.ts
+      # hasQwenCreds()). The `:-` defaults keep `docker compose config` valid even
+      # when neither is set, so a fresh clone works with or without a key.
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
     ports:
       - "9000:9000"
 

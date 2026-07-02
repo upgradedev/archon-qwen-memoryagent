@@ -5,13 +5,15 @@ Crash-recoverable checkpoint. Updated after EVERY step. Secrets MASKED.
 > ## ⚡ TURNKEY REDEPLOY (one command)
 > The manual steps below are now scripted in **`deploy/redeploy.sh`** (idempotent,
 > schema-first + fail-closed, health + ingest/recall smoke, optional `--truncate`).
-> On the box:
+> On the box (the box now runs from a git clone — `git pull` is enough; the old
+> rsync-tarball seed still works too):
 > ```bash
-> # sync latest code first (the box has no git checkout):
-> #   rsync -a --exclude node_modules --exclude .git ./ root@43.106.13.19:/root/memoryagent/
 > ssh -i C:/tools/aliyun/archon-mem-kp.pem root@43.106.13.19
-> cd /root/memoryagent && bash deploy/redeploy.sh            # or: --truncate for a clean demo
+> cd /root/memoryagent && git pull                           # or rsync latest code in
+> bash deploy/redeploy.sh                                     # or: --truncate for a clean demo
 > ```
+> For REAL Qwen, keep a `.env` with `DASHSCOPE_API_KEY` next to `docker-compose.yml`
+> (compose interpolates it; without it the app runs the offline Fakes).
 > It targets the live **ECS + docker compose** box (PATH B below), NOT Function
 > Compute. The manual runbook that follows is the same steps, longhand.
 >
