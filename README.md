@@ -17,6 +17,37 @@ Archon itself is a **unified financial-intelligence platform** — it ingests *a
 | **Across sessions** | The headline e2e test (`tests/e2e/cross-session.test.ts`) proves it: **session A writes and tears down completely; a fresh session B — no shared in-process state — recalls those memories and answers from them.** The only thing shared is the database. |
 | **Increasingly accurate over time** | Each ingested event adds recallable facts; later questions retrieve the accumulated memory, not just the current request's context. |
 
+## What makes the memory strong (not just present)
+
+A MemoryAgent lives or dies on **recall quality** and **memory hygiene**. This
+entry treats both as first-class, engineered, and *measured*:
+
+- **Hybrid retrieval (dense + lexical, RRF).** Agent memories are full of exact
+  tokens dense embeddings blur — employee ids (`E-03`), euro figures (`€22,800`),
+  company names, period codes. Recall fuses `text-embedding-v4` cosine search
+  with BM25/full-text lexical search using **Reciprocal Rank Fusion**, keeping the
+  paraphrase recall of dense *and* the exact-token precision of lexical.
+- **Measured against baselines.** A frozen, labelled benchmark (`bench/`) scores
+  retrieval with Recall@k / MRR / nDCG. On **real `text-embedding-v4`**, hybrid
+  beats naive vector RAG: **MRR 0.813 → 0.933 (+14.8%), nDCG@5 0.838 → 0.899,
+  Recall@3 86.7% → 93.3%**. The result is reproducible offline from a committed
+  embedding fixture (no key, no spend) and **gated in CI**. Full method + honest
+  caveats: **[BENCHMARK.md](./BENCHMARK.md)**.
+- **Consolidation + forgetting.** The agent doesn't just append. `consolidate()`
+  collapses near-duplicate memories (re-ingested facts) into one canonical memory;
+  `forget()` drops superseded and stale low-importance memories while protecting
+  high-importance insights. So recall stays sharp as the memory grows across
+  sessions.
+
+```
+recall(question):
+  q  = text-embedding-v4(question)
+  D  = dense ANN over pgvector      (ORDER BY embedding <=> q)   ── meaning
+  L  = lexical full-text / BM25     (ts_rank over content)       ── exact tokens
+  hits = topK( RRF(D, L) )          rank-fusion, superseded hidden
+  answer = qwen-plus(question, hits)   grounded, citing [n]
+```
+
 ## Required stack (all three, confirmed against the hackathon rules)
 
 | Requirement | This entry |
@@ -76,19 +107,23 @@ repos/qwen-memoryagent/
 │   ├── qwen/client.ts          # OpenAI-compatible Qwen/DashScope client + injectable seams
 │   ├── memory/
 │   │   ├── embeddings.ts        # QwenEmbedder (text-embedding-v4) + offline FakeEmbedder
-│   │   ├── store.ts             # MemoryStore: PgVectorStore + InMemoryStore
+│   │   ├── retrieval.ts         # BM25 + cosine + RRF + MMR + hybrid retrievers (pure)
+│   │   ├── consolidation.ts     # consolidate (dedup) + forget planners (pure)
+│   │   ├── store.ts             # MemoryStore: PgVectorStore + InMemoryStore (hybrid + lifecycle)
 │   │   └── memory.ts            # remember() / recall() — embed ↔ store orchestration
 │   ├── agents/
 │   │   ├── narrator.ts          # QwenNarrator (qwen-plus RAG) + offline FakeNarrator
-│   │   └── memory-agent.ts      # MemoryAgent: ingestEvent → recallAnswer
-│   ├── db/{client.ts,schema.sql}  # pg pool + pgvector schema (vector(1024) + HNSW)
+│   │   └── memory-agent.ts      # MemoryAgent: ingestEvent · recallAnswer · consolidate · forget
+│   ├── db/{client.ts,schema.sql}  # pg pool + pgvector schema (vector(1024) + HNSW + FTS + lifecycle)
 │   ├── types.ts                 # PayrollEvent domain types
 │   └── server.ts                # Fastify HTTP backend (the Alibaba Cloud deploy target)
+├── bench/                        # frozen dataset + metrics + runner + committed real-embedding fixture
 ├── scripts/{apply-schema.ts,demo-memory.ts}
 ├── tests/{unit,integration,e2e}/  # the testing pyramid
 ├── deploy/{s.yaml,deploy-fc.sh}   # Alibaba Function Compute (custom container)
 ├── Dockerfile · docker-compose.yml
-└── .github/workflows/ci.yml       # gitleaks → typecheck → unit → integration → e2e
+├── BENCHMARK.md                   # retrieval benchmark: method, numbers, honest caveats
+└── .github/workflows/{ci.yml,codeql.yml}  # secret-scan → dep-audit → build/test → benchmark → SAST
 ```
 
 ## Quickstart
@@ -109,13 +144,27 @@ npm run db:schema
 npm run memory:demo
 
 # 3. Run the HTTP backend
-npm start                       # GET /health · POST /ingest · POST /recall
+npm start                       # /health · /ingest · /recall · /consolidate · /forget
+
+# 4. Reproduce the retrieval benchmark (replays the committed real-embedding fixture)
+npm run bench                   # prints the Recall@k / MRR / nDCG tables (no key)
 
 # Tests
-npm run test:unit               # no infra, no key
+npm run test:unit               # no infra, no key (logic, retrieval, metrics, consolidation)
 npm run test:integration        # real pgvector (needs DATABASE_URL)
 npm run test:e2e                # cross-session persistence (needs DATABASE_URL)
 ```
+
+### HTTP API
+
+| Method + path | Purpose |
+|---|---|
+| `GET /health` | Liveness; reports the live embedder/narrator model ids + dim. |
+| `GET /memory/count` | How many memories the agent holds. |
+| `POST /ingest` | `{ event }` → write memories for a fused financial event. |
+| `POST /recall` | `{ question, company?, kind?, limit?, hybrid? }` → grounded, cited answer (hybrid on by default). |
+| `POST /consolidate` | `{ company?, threshold? }` → collapse near-duplicate memories. |
+| `POST /forget` | `{ company?, deleteSuperseded?, olderThanDays?, maxImportance? }` → prune memories. |
 
 Without a `DASHSCOPE_API_KEY` the demo + backend run with deterministic offline `FakeEmbedder` + `FakeNarrator`, so the full pgvector write + vector-recall path still executes. Set the key to switch to real Qwen — same interface, same 1024 dimensions.
 
@@ -140,11 +189,28 @@ Full testing pyramid, all green in GitHub Actions (`.github/workflows/ci.yml`), 
 
 | Tier | File(s) | What it proves |
 |---|---|---|
-| **Unit** | `tests/unit/*` | Embedder (Qwen canned + Fake), narrator (Qwen canned + Fake), memory logic + top-k ranking over `InMemoryStore`. |
-| **Integration** | `tests/integration/pgvector-store.test.ts` | Real pgvector SQL: `::vector` insert, `<=>` cosine recall, filters, count. |
+| **Unit** | `tests/unit/*` | Embedder + narrator (Qwen canned + Fake), memory logic, **retrieval primitives** (BM25, RRF, MMR, hybrid), **IR metrics**, **consolidation + forgetting** — all over `InMemoryStore`, no infra. |
+| **Integration** | `tests/integration/pgvector-store.test.ts` | Real pgvector SQL: `::vector` insert, `<=>` cosine recall, filters, count, **hybrid dense+FTS fusion**, **consolidate → supersede → forget**. |
 | **E2E** | `tests/e2e/cross-session.test.ts` | **Cross-session persistence** — session A writes + tears down, session B recalls. |
+| **Benchmark gate** | `bench/*` | **Retrieval quality regression gate** — replays the committed real-embedding fixture; fails if hybrid drops below the naive-vector baseline. |
 
-CI order: **gitleaks (pinned v8.18.4)** → typecheck → schema apply → unit → integration → e2e → offline demo smoke.
+CI stages:
+1. **secret-scan** — gitleaks (pinned v8.18.4, redacted). Fails fast on any committed secret.
+2. **dep-audit** — `npm audit` (fails on high/critical).
+3. **build-test** — typecheck → schema apply (stands up real pgvector) → unit → integration → e2e → offline demo smoke.
+4. **benchmark** — `npm run bench -- --gate` over the committed fixture (no key, no spend).
+5. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.
+
+Every stage runs **fully offline** — no DashScope / Alibaba credentials — because the Qwen embedder/narrator auto-fall back to deterministic Fakes and the benchmark replays cached vectors.
+
+## How this maps to the judging rubric
+
+| Criterion (weight) | Where to look |
+|---|---|
+| **Technical Depth & Engineering (30%)** | Hybrid dense+lexical retrieval with RRF, consolidation/forgetting lifecycle, injectable Qwen/Fake seams, full test pyramid + benchmark gate + CodeQL, real pgvector on Alibaba. A *measured* memory system, not a wrapper. |
+| **Innovation & AI Creativity (30%)** | Memory that fuses meaning + exact tokens, prunes its own duplicates, and proves recall quality with a reproducible benchmark — plus the domain insight (fusing three financial documents to recover the hidden ~28% employer-cost wedge). |
+| **Problem Value & Impact (25%)** | A real, recurring SMB pain: financial facts that must be remembered and cross-checked across sessions; the hidden workforce-cost wedge is money owners routinely under-count. |
+| **Presentation & Documentation (15%)** | This README + architecture diagram + [BENCHMARK.md](./BENCHMARK.md) (method + honest caveats) + the ~3-min demo + live Alibaba URL. |
 
 ## Provenance / reuse
 
