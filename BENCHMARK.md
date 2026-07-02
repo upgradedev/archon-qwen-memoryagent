@@ -48,17 +48,21 @@ and of virtually every pgvector RAG demo. So `reranked-hybrid` beating
 nDCG@5 0.903 → 0.938) is a win over **what the field actually ships by default**,
 not over a weak control.
 
-To be explicit about what we are and are **not** claiming: we did **not** run
-Mem0, Zep or LangChain head-to-head — that would need each product's harness and
-is out of scope. What we *can* state precisely is that their **default retrieval
-mode is the dense-cosine ANN we measured against**, so the delta is meaningful.
-And it points the same way the strongest production stacks are already moving:
-Mem0's 2026 "multi-signal" retrieval (semantic + BM25 + entity) and Zep's
-hybrid/graph retrieval have both moved **beyond** pure dense toward exactly the
-lexical/dense **fusion** this benchmark measures. Our result therefore both
-**beats the common default** and **independently corroborates the direction the
-field's leaders are taking** — arrived at from Archon's own memory corpus, and
-reproducible offline from committed fixtures.
+To be explicit about what we are and are **not** claiming: we did **not** run any
+product head-to-head — that would need each product's harness and is out of scope.
+What we *can* state precisely is that **LangChain's `VectorStoreRetriever` and
+typical pgvector RAG demos default to exactly the dense-cosine ANN we measured
+against**, so the delta over `naive-vector` is a delta over a real, widely-shipped
+default. And our result points the same way the strongest *production* stacks are
+already moving: **Mem0's 2026 "multi-signal" retrieval (semantic + BM25 + entity)
+and Zep's hybrid/graph retrieval have both moved _beyond_ pure dense** toward
+exactly the lexical/dense **fusion** this benchmark measures. So the finding both
+**beats the common tutorial-grade default** and **independently corroborates the
+direction the field's leaders are taking** — arrived at from Archon's own memory
+corpus, and reproducible offline from committed fixtures. (Note: Mem0/Zep are cited
+as evidence of *where the field is heading*, not as the dense baseline — their
+current defaults are richer than dense; the dense-default attribution is only to
+LangChain's default retriever and stock pgvector demos.)
 
 ## Why it wins where it wins: recall by genre (Recall@5)
 

@@ -52,12 +52,14 @@ capability most memory demos skip: the agent **audits its own memory**.
 - **Measured against baselines — honestly, and against the field default.** A
   frozen, labelled benchmark (`bench/`) scores retrieval with Recall@k / MRR / nDCG
   on **real `text-embedding-v4`**. The `naive-vector` baseline is **not a strawman**:
-  a single-vector cosine ANN search is the default retrieval mode of mainstream
-  memory stacks (LangChain's `VectorStoreRetriever`, virtually every pgvector RAG
-  demo), so beating it is beating **what the field ships by default** — and it
-  points the same way the strongest stacks (Mem0 multi-signal, Zep hybrid/graph)
-  are already moving: dense + lexical **fusion** (we did *not* run them head-to-head;
-  we identify that their default retrieval == the dense baseline we measured). Hybrid
+  a single-vector cosine ANN search is the default retrieval mode of LangChain's
+  `VectorStoreRetriever` and virtually every pgvector RAG demo, so beating it is
+  beating **what the field ships by default** — and it points the same way the
+  strongest stacks are already moving: **Mem0 (multi-signal) and Zep (hybrid/graph)
+  have both moved _beyond_ pure dense** toward dense + lexical **fusion** (we did
+  *not* run any product head-to-head; the dense-baseline attribution is to
+  LangChain's default retriever + stock pgvector demos, and Mem0/Zep are cited only
+  as evidence of where the field is heading). Hybrid
   is the **robust** retriever (never recalls worse than dense: Recall@3 90.0% →
   93.3%; far beats lexical-only). Hybrid *alone* doesn't beat a strong dense embedder
   on top-rank — so we added the cross-encoder re-ranker, which **does**:
