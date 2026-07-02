@@ -279,7 +279,7 @@ export class PgVectorStore implements MemoryStore {
     }
     const rows = await query<PgRow>(
       `SELECT id, kind, company, period, source_ref, content, metadata, created_at,
-              0 AS distance
+              importance, 0 AS distance
          FROM agent_memory
         WHERE ${filters.join(" AND ")}`,
       params
@@ -293,6 +293,7 @@ export class PgVectorStore implements MemoryStore {
       content: r.content,
       metadata: r.metadata,
       createdAt: r.created_at,
+      importance: r.importance == null ? null : Number(r.importance),
     }));
   }
 }
@@ -308,6 +309,7 @@ interface PgRow {
   metadata: Record<string, unknown> | null;
   created_at: string;
   distance: string | number;
+  importance?: string | number | null; // present only on the audit SELECT
 }
 
 function rowToHitByDistance(r: PgRow): RecallHit {
@@ -478,6 +480,7 @@ export class InMemoryStore implements MemoryStore {
         content: r.content,
         metadata: r.metadata,
         createdAt: r.createdAt,
+        importance: r.importance,
       }));
   }
 }

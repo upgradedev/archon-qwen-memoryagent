@@ -305,13 +305,13 @@ source-authority):
   here means the pure recommender *faithfully implements its stated policy*, **not**
   that the policy is universally right. Real conflicts can defy any fixed rule —
   hence a *recommendation* with a confidence, never an auto-edit.
-- **The importance signal reads `metadata.importance`.** The current `ingestEvent`
-  path writes importance as a top-level **column**, not into `metadata`, so on
-  today's production memories the importance rule fires only when a caller puts
-  `importance` in a memory's metadata; the default resolver over ingested events
-  falls through to source-authority / recency. Surfacing the column into the audit
-  view is a one-line follow-up (out of scope here) that would make the importance
-  rule fire live.
+- **The importance signal reads the persisted `importance` column.** The store's
+  top-level 0..1 salience (e.g. the `0.9` hidden-cost insight `ingestEvent` writes)
+  is surfaced into the audit view by `listForAudit`, with a caller-placed
+  `metadata.importance` as a backward-compat fallback. So the importance rule fires
+  on **real ingested memories** on the live box, not only on hand-crafted metadata —
+  proven end-to-end by a store→`listForAudit`→resolver test in
+  `tests/unit/consistency.test.ts`.
 - **Confidence is heuristic, not calibrated.** It reflects how cleanly the winning
   signal separated the sides (bigger write-gap / stronger signal → higher), and is
   deliberately modest for recency. Treat it as an ordinal hint, not a probability.

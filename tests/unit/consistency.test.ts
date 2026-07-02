@@ -11,6 +11,7 @@ import {
   subjectKey,
   type AuditMemory,
 } from "../../src/memory/consistency.js";
+import { InMemoryStore } from "../../src/memory/store.js";
 import { CONSISTENCY_CASE } from "../../bench/consistency-dataset.js";
 import { RESOLUTION_CASE } from "../../bench/resolution-dataset.js";
 
@@ -209,6 +210,50 @@ test("a timestamp tie is resolved deterministically with low confidence", () => 
   assert.ok(r.confidence <= 0.5, "tie confidence must be modest");
   // deterministic tie-break: lexically smallest id among the latest carriers
   assert.equal(r.recommendedMemoryId, "a");
+});
+
+test("importance rule fires on a PRODUCTION-shaped memory (importance = the column)", async () => {
+  // Real ingest writes salience to the top-level `importance` COLUMN, never into
+  // metadata. This proves the whole chain end-to-end: store.remember(column) →
+  // listForAudit → AuditMemory.importance → resolver's importance rule — with
+  // NOTHING hand-placed in metadata. Both writes land at ~the same instant, so a
+  // recency-only resolver would tie; importance must be what decides it.
+  const store = new InMemoryStore();
+  const embed = [1, 0, 0];
+  const idImportant = await store.remember({
+    kind: "document",
+    company: "Acme",
+    sourceRef: "INV-1",
+    content: "Invoice INV-1 total 100 (flagged important).",
+    metadata: { record: "INV-1", total: 100 }, // NB: no `importance` in metadata
+    importance: 0.9, // ← the column, the production path
+    embedding: embed,
+    embedModel: "fake",
+  });
+  await store.remember({
+    kind: "document",
+    company: "Acme",
+    sourceRef: "INV-1",
+    content: "Invoice INV-1 total 200 (casual later write).",
+    metadata: { record: "INV-1", total: 200 },
+    importance: 0.3, // ← the column
+    embedding: embed,
+    embedModel: "fake",
+  });
+
+  const audit = await store.listForAudit({ company: "Acme" });
+  // the column survived the store → AuditMemory mapping
+  assert.ok(
+    audit.every((m) => typeof m.importance === "number"),
+    "listForAudit must surface the importance column"
+  );
+
+  const report = auditConsistency(audit);
+  assert.equal(report.contradictions.length, 1);
+  const r = report.contradictions[0]!.resolution;
+  assert.equal(r.rule, "importance", "the top-priority rule must fire on column-sourced salience");
+  assert.equal(r.recommendedMemoryId, idImportant);
+  assert.equal(r.recommendedValue, 100);
 });
 
 // The measured resolution claim, pinned as a test (same data bench:resolution reports).

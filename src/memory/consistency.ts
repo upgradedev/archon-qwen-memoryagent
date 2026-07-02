@@ -39,6 +39,10 @@ export interface AuditMemory {
   content: string;
   metadata: Record<string, unknown> | null;
   createdAt: string; // ISO — the write-event timestamp (our "session" signal)
+  // Explicit 0..1 salience — the top-level `importance` column the store persists
+  // (0.5 default). Surfaced here so the resolver's importance rule fires on REAL
+  // ingested memories, not only on ones with importance hand-placed in metadata.
+  importance?: number | null;
 }
 
 // A RECOMMENDATION for which side of a contradiction to trust. This is a
@@ -175,11 +179,13 @@ function authorityOf(kind: string, map: Record<string, number>): number {
   return typeof v === "number" ? v : STRUCTURED_AUTHORITY;
 }
 
-// The explicit salience a memory carries, if the caller stored one in metadata.
-// NOTE: `ingestEvent` writes importance as a top-level COLUMN, not into metadata,
-// so this signal fires only when a caller deliberately puts `importance` in the
-// memory's metadata. Returns null when absent/non-numeric (→ "no signal").
+// The explicit salience a memory carries. Prefers the top-level `importance`
+// COLUMN the store persists (so the rule fires on real ingested memories — the
+// production path writes salience there, e.g. the 0.9 hidden-cost insight), and
+// falls back to a caller-placed `metadata.importance` for backward-compat.
+// Returns null when absent/non-numeric (→ "no signal").
 function importanceOf(m: AuditMemory): number | null {
+  if (typeof m.importance === "number" && Number.isFinite(m.importance)) return m.importance;
   const v = m.metadata?.["importance"];
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
