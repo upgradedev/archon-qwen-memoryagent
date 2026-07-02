@@ -92,6 +92,60 @@ jobs:
       - name: Vector-recall smoke (offline Fakes — no DashScope key)
         run: npm run memory:demo
 
+  # Stage 2c — code-coverage measurement + gate. Runs the FULL testing pyramid
+  # (unit + integration + e2e) under c8 against a real pgvector service container,
+  # so store.ts / db/client.ts (the DB seam) are measured for real, not just the
+  # in-memory doubles. Emits a text summary + lcov; the gate step fails the build
+  # if src/ coverage regresses below the honest floor. Fully OFFLINE (no key).
+  coverage:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    services:
+      pgvector:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install deps
+        run: npm ci
+      - name: Apply schema (creates the vector(1024) memory table + HNSW index)
+        run: npm run db:schema
+      - name: Coverage gate (full pyramid under c8; fails below the src/ floor)
+        run: >-
+          npx c8 --check-coverage
+          --statements=80 --branches=80 --functions=80 --lines=80
+          node --import tsx --test --test-concurrency=1
+          tests/unit/embeddings.test.ts tests/unit/narrator.test.ts
+          tests/unit/memory.test.ts tests/unit/retrieval.test.ts
+          tests/unit/metrics.test.ts tests/unit/consolidation.test.ts
+          tests/unit/consistency.test.ts tests/unit/rerank.test.ts
+          tests/unit/server.test.ts
+          tests/integration/pgvector-store.test.ts
+          tests/e2e/cross-session.test.ts
+      - name: Upload lcov coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: warn
+
   # Stage 3 — retrieval quality gate. Replays the COMMITTED real-embedding fixture
   # (bench/fixtures/embeddings.json, from text-embedding-v4) and fails if the
   # hybrid retriever regresses below the naive-vector RAG baseline. No key, no
