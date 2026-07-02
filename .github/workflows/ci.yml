@@ -107,5 +107,7 @@ jobs:
           cache: npm
       - name: Install deps
         run: npm ci
-      - name: Retrieval benchmark gate (hybrid >= naive on real embeddings)
+      - name: Retrieval benchmark gate (hybrid >= naive; benchmark discriminates; re-rank reported)
         run: npm run bench -- --gate
+      - name: Self-auditing memory-consistency gate (100% detection, 0 false positives)
+        run: npm run bench:consistency -- --gate

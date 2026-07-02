@@ -1,0 +1,135 @@
+// Cross-encoder re-ranking stage — the optional top-rank refinement.
+//
+// Bi-encoder recall (dense vectors) and RRF hybrid rank memories by a SIMILARITY
+// computed independently for the query and each memory. A cross-encoder instead
+// reads the (query, memory) PAIR together and scores their relevance jointly,
+// which is strictly more expressive and the standard way to squeeze extra
+// top-rank quality out of a retrieval stack. We add it as a re-rank stage over
+// the hybrid candidate POOL (recall is already fixed by hybrid; the re-ranker only
+// re-orders), so it can lift MRR/nDCG without hurting recall.
+//
+// Provider note (honest): the intended model was Alibaba's `gte-rerank`, but that
+// service returned AccessDenied on the hackathon account (not activated). So the
+// real `Reranker` here is an LLM cross-encoder using `qwen-plus` (the same Model
+// Studio chat model the narrator uses, which IS accessible) — it reads each
+// query/memory pair and returns a joint relevance score. The seam is identical;
+// swap `LlmReranker` for a `GteReranker` once the rerank API is enabled.
+//
+// Everything stays offline-safe: `FakeReranker` (deterministic, key-free) drives
+// CI and unit tests, and the benchmark REPLAYS real qwen-plus scores from a
+// committed fixture (bench/fixtures/rerank.json) — no key, no spend at replay.
+
+import { BM25 } from "./retrieval.js";
+import {
+  createQwenClient,
+  hasQwenCreds,
+  type QwenChatClient,
+} from "../qwen/client.js";
+
+export interface RerankDoc {
+  id: string;
+  content: string;
+}
+export interface RerankScore {
+  id: string;
+  score: number; // higher = more relevant to the query
+}
+
+export interface Reranker {
+  readonly modelId: string;
+  rerank(query: string, docs: RerankDoc[]): Promise<RerankScore[]>;
+}
+
+// Re-order a candidate id pool by a relevance score map, highest first. Ties and
+// unscored ids keep their incoming (hybrid) order — a STABLE re-rank, so the
+// re-ranker can only improve on hybrid, never scramble it. Returns the top-k ids.
+export function applyRerank(poolIds: string[], scoreById: Map<string, number>, k: number): string[] {
+  const withIdx = poolIds.map((id, i) => ({ id, i, score: scoreById.get(id) }));
+  withIdx.sort((a, b) => {
+    const as = a.score ?? -Infinity;
+    const bs = b.score ?? -Infinity;
+    if (as !== bs) return bs - as;
+    return a.i - b.i; // stable: preserve hybrid order on ties
+  });
+  return withIdx.slice(0, k).map((x) => x.id);
+}
+
+const DEFAULT_RERANK_MODEL = process.env.QWEN_RERANK_MODEL || "qwen-plus";
+
+// LLM cross-encoder: send the query + every candidate memory to a Qwen chat model
+// and get back a joint relevance score per candidate. Listwise (one call scores
+// the whole pool) to keep it cheap. Injectable client → unit-testable, and the
+// benchmark caches its output so replay needs no key.
+export class LlmReranker implements Reranker {
+  readonly modelId: string;
+  constructor(
+    private client: QwenChatClient = createQwenClient(),
+    modelId: string = DEFAULT_RERANK_MODEL
+  ) {
+    this.modelId = modelId;
+  }
+
+  async rerank(query: string, docs: RerankDoc[]): Promise<RerankScore[]> {
+    if (docs.length === 0) return [];
+    const list = docs.map((d, i) => `[${i}] ${d.content}`).join("\n");
+    const system =
+      "You are a precise retrieval re-ranker. Given a QUERY and a numbered list of " +
+      "candidate MEMORY items, score how well each item ANSWERS the query on a scale " +
+      "from 0.0 (irrelevant) to 1.0 (directly and completely answers it). Judge the " +
+      "pair jointly; reward exact identifiers, figures, entities and periods that " +
+      "match the query. Respond with ONLY a compact JSON object mapping each item's " +
+      'index (as a string) to its score, e.g. {"0":0.9,"1":0.1}. No prose.';
+    const user = `QUERY: ${query}\n\nMEMORY ITEMS:\n${list}\n\nReturn the JSON scores now.`;
+    const res = await this.client.chat.completions.create({
+      model: this.modelId,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      temperature: 0,
+      max_tokens: 512,
+    });
+    const raw = res.choices?.[0]?.message?.content ?? "";
+    const map = parseScoreMap(raw);
+    return docs.map((d, i) => ({ id: d.id, score: map.get(i) ?? 0 }));
+  }
+}
+
+// Parse a JSON index→score object out of a model reply (tolerates code fences /
+// surrounding prose by extracting the first {...} block).
+function parseScoreMap(raw: string): Map<number, number> {
+  const out = new Map<number, number>();
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (!m) return out;
+  try {
+    const obj = JSON.parse(m[0]) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(obj)) {
+      const idx = Number(k);
+      const score = typeof v === "number" ? v : Number(v);
+      if (Number.isFinite(idx) && Number.isFinite(score)) out.set(idx, score);
+    }
+  } catch {
+    /* leave empty → scores default to 0, re-rank falls back to hybrid order */
+  }
+  return out;
+}
+
+// Deterministic, key-free re-ranker for CI + unit tests. Scores by BM25 lexical
+// overlap between query and candidate — enough to prove the re-rank plumbing
+// (pool → score → re-order) end-to-end offline. NOT the semantic claim: the real
+// top-rank numbers come from the LLM cross-encoder, replayed from the fixture.
+export class FakeReranker implements Reranker {
+  readonly modelId = "fake-reranker-bm25";
+  async rerank(query: string, docs: RerankDoc[]): Promise<RerankScore[]> {
+    const bm25 = new BM25(docs.map((d) => ({ id: d.id, content: d.content })));
+    const scored = bm25.scoreAll(query);
+    const byId = new Map(scored.map((s) => [s.id, s.score]));
+    return docs.map((d) => ({ id: d.id, score: byId.get(d.id) ?? 0 }));
+  }
+}
+
+// Pick the re-ranker by environment: real Qwen LLM cross-encoder when a key is
+// present, the deterministic fake otherwise. Same contract either way.
+export function defaultReranker(): Reranker {
+  return hasQwenCreds() ? new LlmReranker() : new FakeReranker();
+}

@@ -70,6 +70,32 @@ test("MemoryAgent.ingestEvent writes event + insight + per-employee memories", a
   assert.equal(ids.length, 4);
 });
 
+test("MemoryAgent.auditConsistency surfaces a cross-session contradiction", async () => {
+  // The demo "aha": session A stores one value for a record; a later session
+  // stores a DIFFERENT value for the same record → the agent's self-audit
+  // surfaces the disagreement instead of silently returning one of them.
+  const agent = new MemoryAgent(new FakeEmbedder(), new InMemoryStore(), new FakeNarrator());
+  // Session A — invoice INV-2043 remembered at €18,400.
+  await agent.remember("document", "Invoice INV-2043 total €18,400.", {
+    company: "Northwind", sourceRef: "INV-2043", metadata: { record: "INV-2043", total: 18400 },
+  });
+  // Session B (a separate write) — same invoice remembered at €18,900.
+  await agent.remember("document", "Invoice INV-2043 total €18,900.", {
+    company: "Northwind", sourceRef: "INV-2043", metadata: { record: "INV-2043", total: 18900 },
+  });
+  // A consistent, unrelated record that must NOT be flagged.
+  await agent.remember("document", "Invoice INV-2051 total €9,250.", {
+    company: "Northwind", sourceRef: "INV-2051", metadata: { record: "INV-2051", total: 9250 },
+  });
+
+  const report = await agent.auditConsistency({ company: "Northwind" });
+  assert.equal(report.contradictions.length, 1, "exactly one contradiction");
+  assert.equal(report.contradictions[0]!.subject, "INV-2043");
+  assert.equal(report.contradictions[0]!.attribute, "total");
+  assert.deepEqual(report.contradictions[0]!.values.map((v) => v.value).sort(), [18400, 18900]);
+  assert.equal(report.ok, false);
+});
+
 test("MemoryAgent.recallAnswer grounds a cited answer in the recalled memories", async () => {
   const agent = new MemoryAgent(new FakeEmbedder(), new InMemoryStore(), new FakeNarrator());
   await agent.ingestEvent(EVENT);
