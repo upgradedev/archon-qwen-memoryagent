@@ -83,6 +83,18 @@ test("PgVectorStore hybrid recall fuses dense + full-text (lexical rescue)", { s
   });
   assert.ok(hits.length > 0, "hybrid recall returned nothing");
   assert.match(hits[0]!.content, /E-03/, "the exact-id memory must rank first under hybrid fusion");
+  // Reproducibility guard: the hybrid hit must report its REAL cosine similarity in
+  // `score` (a sane value, not the tiny 1/(60+rank) RRF value that used to leak in),
+  // with the RRF fusion value surfaced separately as `rrfScore`. RRF still ordered.
+  for (const h of hits) {
+    assert.ok(h.score >= 0 && h.score <= 1 + 1e-9, `score must be a real cosine similarity in [0,1], got ${h.score}`);
+    assert.ok(Math.abs(h.distance - (1 - h.score)) < 1e-9, "distance must be 1 - cosine");
+    assert.equal(typeof h.rrfScore, "number", "the RRF fusion score must be surfaced separately");
+    assert.ok(h.rrfScore! > 0 && h.rrfScore! < 0.1, `rrfScore is the small fusion value, got ${h.rrfScore}`);
+  }
+  // The relevant E-03 hit shows a SUBSTANTIAL, real cosine — not the tiny RRF value.
+  assert.ok(hits[0]!.score > 0.1, `the relevant top hit must expose a real cosine, got ${hits[0]!.score}`);
+  assert.ok(hits[0]!.score > hits[0]!.rrfScore!, "the real cosine must be larger than the tiny RRF fusion value");
 });
 
 // Regression — the LIVE `POST /consistency` 500 (`win.latest.createdAt.slice is
