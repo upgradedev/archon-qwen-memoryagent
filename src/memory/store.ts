@@ -52,7 +52,13 @@ export interface MemoryRecord {
 
 export interface RecallHit extends MemoryRecord {
   distance: number; // cosine distance (0 = identical direction, 2 = opposite)
-  score: number; // 1 - distance, convenience similarity
+  score: number; // cosine SIMILARITY (1 - distance) — the real semantic closeness
+  // On HYBRID recalls, ORDERING is driven by Reciprocal Rank Fusion, not cosine.
+  // `score`/`distance` above still report the hit's REAL cosine (so a curl of the
+  // default /recall shows sane 0.3–0.7 similarities, not the tiny RRF fusion score
+  // that used to leak into `score`). The RRF value that actually decided the order
+  // is surfaced here, separately, for transparency. Absent on pure-dense recalls.
+  rrfScore?: number;
 }
 
 export interface RecallOptions {
@@ -142,14 +148,17 @@ export class PgVectorStore implements MemoryStore {
   }
 
   // Hybrid: pull a pool of dense candidates and a pool of lexical candidates,
-  // fuse their RANKINGS with RRF (rank-based → no score normalization needed),
-  // then return the fused top-k as RecallHits (score = fused RRF score).
+  // fuse their RANKINGS with RRF (rank-based → no score normalization needed) to
+  // decide ORDER, but report each hit's REAL cosine similarity in `score` (RRF is
+  // exposed separately as `rrfScore`). This keeps the default /recall response
+  // honest — cosines read like cosines (~0.3–0.7), not the tiny 1/(60+rank) RRF
+  // value that used to leak into the field labelled as similarity.
   private async recallHybrid(
     queryVec: number[],
     opts: RecallOptions,
     limit: number
   ): Promise<RecallHit[]> {
-    // Dense pool.
+    // Dense pool. pgvector's `<=>` is cosine DISTANCE, so 1 - distance = cosine sim.
     const dParams: unknown[] = [toVectorLiteral(queryVec)];
     const dWhere = this.scopeSql(opts, dParams);
     dParams.push(POOL_K);
@@ -160,14 +169,16 @@ export class PgVectorStore implements MemoryStore {
        ORDER BY embedding <=> $1::vector LIMIT $${dParams.length}`,
       dParams
     );
-    // Lexical pool (full-text ts_rank over the same scope).
+    // Lexical pool (full-text ts_rank over the same scope). Pull the embedding too,
+    // so a lexical-ONLY hit (not in the dense pool) still gets a REAL cosine rather
+    // than a fake distance=0.
     const lParams: unknown[] = [opts.queryText!];
     const lWhere = this.scopeSql(opts, lParams);
     const lAnd = lWhere ? `${lWhere} AND` : "WHERE";
     lParams.push(POOL_K);
     const lexical = await query<PgRow>(
       `SELECT id, kind, company, period, source_ref, content, metadata, created_at,
-              0 AS distance
+              0 AS distance, embedding::text AS embedding
          FROM agent_memory
          ${lAnd} to_tsvector('simple', content) @@ plainto_tsquery('simple', $1)
        ORDER BY ts_rank(to_tsvector('simple', content), plainto_tsquery('simple', $1)) DESC
@@ -175,13 +186,21 @@ export class PgVectorStore implements MemoryStore {
       lParams
     );
 
+    // RRF decides ORDER; a separate map holds each hit's real cosine similarity.
     const fused = rrfFuse([dense.map((r) => r.id), lexical.map((r) => r.id)]);
-    const scoreById = new Map(fused.map((f) => [f.id, f.score]));
+    const rrfById = new Map(fused.map((f) => [f.id, f.score]));
+    const cosineById = new Map<string, number>();
+    for (const r of dense) cosineById.set(r.id, 1 - Number(r.distance));
+    for (const r of lexical) {
+      if (cosineById.has(r.id)) continue; // dense cosine is authoritative
+      cosineById.set(r.id, r.embedding ? cosineSimilarity(queryVec, parseVector(r.embedding)) : 0);
+    }
+
     const byId = new Map<string, PgRow>();
     for (const r of [...dense, ...lexical]) if (!byId.has(r.id)) byId.set(r.id, r);
     return topK(fused, limit).map((id) => {
       const r = byId.get(id)!;
-      return rowToHitWithScore(r, scoreById.get(id) ?? 0);
+      return rowToHitHybrid(r, cosineById.get(id) ?? 0, rrfById.get(id) ?? 0);
     });
   }
 
@@ -310,14 +329,17 @@ interface PgRow {
   created_at: string | Date;
   distance: string | number;
   importance?: string | number | null; // present only on the audit SELECT
+  embedding?: string; // present only on the hybrid lexical SELECT (embedding::text)
 }
 
 function rowToHitByDistance(r: PgRow): RecallHit {
   const distance = Number(r.distance);
   return baseHit(r, distance, 1 - distance);
 }
-function rowToHitWithScore(r: PgRow, score: number): RecallHit {
-  return baseHit(r, 1 - score, score);
+// Hybrid hit: `score` is the REAL cosine similarity; `rrfScore` is the fusion value
+// that actually decided this hit's rank (ordering is done upstream by RRF).
+function rowToHitHybrid(r: PgRow, cosine: number, rrfScore: number): RecallHit {
+  return { ...baseHit(r, 1 - cosine, cosine), rrfScore };
 }
 function baseHit(r: PgRow, distance: number, score: number): RecallHit {
   return {
@@ -388,19 +410,22 @@ export class InMemoryStore implements MemoryStore {
     const scoped = this.scope(opts);
 
     if (opts.hybrid && opts.queryText) {
+      // Real cosine similarity per candidate (reused for dense ranking AND the hit
+      // score), so the returned `score` is a true cosine — RRF only sets ORDER.
+      const cosineById = new Map(scoped.map((r) => [r.id, cosineSimilarity(queryVec, r.embedding)]));
       const dense = topK(
-        scoped.map((r) => ({ id: r.id, score: cosineSimilarity(queryVec, r.embedding) })),
+        scoped.map((r) => ({ id: r.id, score: cosineById.get(r.id)! })),
         POOL_K
       );
       const bm25 = new BM25(scoped.map((r) => ({ id: r.id, content: r.content })));
       const lexical = topK(bm25.scoreAll(opts.queryText), POOL_K);
       const fused = rrfFuse([dense, lexical]);
-      const scoreById = new Map(fused.map((f) => [f.id, f.score]));
+      const rrfById = new Map(fused.map((f) => [f.id, f.score]));
       const byId = new Map(scoped.map((r) => [r.id, r]));
       return topK(fused, limit).map((id) => {
         const r = byId.get(id)!;
-        const score = scoreById.get(id) ?? 0;
-        return toHit(r, 1 - score, score);
+        const cosine = cosineById.get(id) ?? 0;
+        return { ...toHit(r, 1 - cosine, cosine), rrfScore: rrfById.get(id) ?? 0 };
       });
     }
 

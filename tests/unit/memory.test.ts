@@ -9,6 +9,7 @@ import { FakeNarrator } from "../../src/agents/narrator.js";
 import { InMemoryStore } from "../../src/memory/store.js";
 import { remember, recall } from "../../src/memory/memory.js";
 import { MemoryAgent } from "../../src/agents/memory-agent.js";
+import { cosineSimilarity } from "../../src/memory/retrieval.js";
 import { toVectorLiteral } from "../../src/db/client.js";
 import type { PayrollEvent } from "../../src/types.js";
 
@@ -48,6 +49,42 @@ test("remember + recall round trip ranks the semantically closest memory first",
   assert.equal(hits.length, 2);
   assert.match(hits[0]!.content, /employer social security/i);
   assert.ok(hits[0]!.score >= hits[1]!.score, "hits must be sorted by descending similarity");
+});
+
+test("hybrid recall reports the REAL cosine in `score` while RRF drives ordering", async () => {
+  // Regression guard for the reproducibility exposure: the default (hybrid) recall
+  // must surface a real cosine similarity in `hit.score` — NOT the tiny 1/(60+rank)
+  // RRF fusion value, which used to leak into the field labelled as similarity and
+  // made a healthy retriever look broken (score: 0.016) to anyone curling /recall.
+  const embedder = new FakeEmbedder();
+  const store = new InMemoryStore();
+  await remember(embedder, store, { kind: "payroll_event", content: "Elena Novak (id E-01) net €17,200 employer cost €27,000." });
+  await remember(embedder, store, { kind: "document", content: "quarterly sales invoice for office furniture" });
+  await remember(embedder, store, { kind: "insight", content: "electricity utilities bill for the quarter" });
+
+  const queryText = "what did employee E-01 earn";
+  const qvec = await embedder.embed(queryText);
+  const hits = await store.recall(qvec, { hybrid: true, queryText, limit: 3 });
+  assert.ok(hits.length > 0, "hybrid recall returned nothing");
+
+  for (const h of hits) {
+    // `score` is the ACTUAL cosine of this hit's embedding vs the query — recompute
+    // it independently and require an exact match (proves it is cosine, not RRF).
+    const expected = cosineSimilarity(qvec, await embedder.embed(h.content));
+    assert.ok(Math.abs(h.score - expected) < 1e-9, `score must equal the real cosine (got ${h.score}, expected ${expected})`);
+    assert.ok(h.score >= 0 && h.score <= 1 + 1e-9, `cosine similarity must be in [0,1] (got ${h.score})`);
+    // distance mirrors it (1 - cosine), and the RRF fusion value is exposed separately.
+    assert.ok(Math.abs(h.distance - (1 - h.score)) < 1e-9, "distance must be 1 - cosine");
+    assert.equal(typeof h.rrfScore, "number", "the RRF fusion score must be surfaced separately");
+    assert.ok(h.rrfScore! > 0 && h.rrfScore! < 0.1, `rrfScore is the small 1/(60+rank) fusion value (got ${h.rrfScore})`);
+  }
+
+  // The relevant hit (E-01) ranks first and shows a SUBSTANTIAL cosine — the whole
+  // point: a curl of the default recall now shows sane similarity, not score==rrf.
+  const top = hits[0]!;
+  assert.match(top.content, /E-01/, "the E-01 memory must rank first under hybrid fusion");
+  assert.ok(top.score > 0.1, `the relevant top hit must show a real cosine, not a tiny RRF value (got ${top.score})`);
+  assert.ok(top.score - top.rrfScore! > 1e-3, "score (cosine) must not be the RRF value");
 });
 
 test("recall honours the company + kind pre-filters", async () => {
