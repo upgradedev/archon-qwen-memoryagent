@@ -8,8 +8,9 @@ name: Generate Demo Video
 #      POST /recall (x2) -> recalls them by meaning with real qwen-plus answers +
 #      real pgvector cosine scores. Structured jq HARD-CHECKS: a box that is down,
 #      or silently on the offline Fakes, or a blank recall, FAILS the job.
-#   2. ElevenLabs synthesizes the voiceover from docs/narration.txt (if the
-#      ELEVEN_LABS_KEY secret is set; else a SILENT pipeline-proof mp4 is produced).
+#   2. The voiceover is synthesized from docs/narration.txt: ElevenLabs when the
+#      ELEVEN_LABS_KEY secret is set, otherwise (or on any ElevenLabs error) the
+#      free edge-tts Neural voice — so the demo is ALWAYS narrated.
 #   3. scripts/make_screencast.py renders the captured real run as a terminal
 #      screencast (docs/screencast_transcript.txt is written by step 1).
 #   4. ffmpeg composes a title card + burned captions + screencast + outro, then
@@ -73,7 +74,7 @@ jobs:
           test -s docs/screencast_transcript.txt \
             || { echo "::error::transcript not produced — live capture failed"; exit 1; }
 
-      - name: Synthesize voiceover (ElevenLabs)
+      - name: Synthesize voiceover (ElevenLabs -> edge-tts fallback)
         id: vo
         env:
           XI_API_KEY: ${{ secrets.ELEVEN_LABS_KEY }}
@@ -81,25 +82,43 @@ jobs:
           MODEL_ID: ${{ github.event.inputs.model_id }}
         run: |
           set -euo pipefail
-          # No key -> SILENT pipeline-proof build (green): exercises the whole
-          # screencast/ffmpeg/caption/concat/upload chain; only narration is missing.
-          if [ -z "${XI_API_KEY:-}" ]; then
-            echo "::warning::ELEVEN_LABS_KEY not set — producing a SILENT pipeline-proof video. Add the secret and re-run."
-            echo "have_vo=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          # The video MUST have a voiceover. ElevenLabs is the preferred (higher
+          # quality) TTS; edge-tts (free, no key, Microsoft Neural voices) is a
+          # guaranteed fallback so a missing/expired key or an ElevenLabs quota/HTTP
+          # error can NEVER leave the demo silent. Both failing is a HARD failure.
+          have=false
+
+          # ---- Primary: ElevenLabs (only when the secret is set) ----
+          if [ -n "${XI_API_KEY:-}" ]; then
+            jq -Rs --arg m "$MODEL_ID" \
+              '{text: ., model_id: $m, voice_settings: {stability: 0.45, similarity_boost: 0.8, use_speaker_boost: true}}' \
+              docs/narration.txt > body.json
+            HTTP=$(curl -sS -w "%{http_code}" -X POST \
+              "https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_44100_128" \
+              -H "xi-api-key: ${XI_API_KEY}" -H "Content-Type: application/json" -H "Accept: audio/mpeg" \
+              --data @body.json -o voiceover.mp3 || echo "000")
+            if [ "$HTTP" = "200" ] && [ -f voiceover.mp3 ] && [ "$(wc -c < voiceover.mp3)" -gt 10000 ]; then
+              echo "ElevenLabs voiceover OK ($(wc -c < voiceover.mp3) bytes)"
+              have=true
+            else
+              echo "::warning::ElevenLabs synthesis failed (HTTP ${HTTP}) — falling back to edge-tts."
+              rm -f voiceover.mp3
+            fi
+          else
+            echo "::warning::ELEVEN_LABS_KEY not set — using the free edge-tts voice."
           fi
-          # Key present -> a synthesis error is a HARD failure (never ship a silent
-          # video believing it is narrated).
-          jq -Rs --arg m "$MODEL_ID" \
-            '{text: ., model_id: $m, voice_settings: {stability: 0.45, similarity_boost: 0.8, use_speaker_boost: true}}' \
-            docs/narration.txt > body.json
-          HTTP=$(curl -sS -w "%{http_code}" -X POST \
-            "https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_44100_128" \
-            -H "xi-api-key: ${XI_API_KEY}" -H "Content-Type: application/json" -H "Accept: audio/mpeg" \
-            --data @body.json -o voiceover.mp3)
-          [ "$HTTP" = "200" ] || { echo "::error::ElevenLabs HTTP $HTTP"; cat voiceover.mp3 || true; exit 1; }
-          [ "$(wc -c < voiceover.mp3)" -gt 10000 ] || { echo "::error::audio too small"; exit 1; }
-          echo "have_vo=true" >> "$GITHUB_OUTPUT"
+
+          # ---- Fallback: edge-tts (free, no key). Guarantees the demo is narrated. ----
+          if [ "$have" != "true" ]; then
+            python -m pip install --quiet "edge-tts>=7"
+            python -m edge_tts --voice en-US-GuyNeural --file docs/narration.txt --write-media voiceover.mp3
+            [ -f voiceover.mp3 ] && [ "$(wc -c < voiceover.mp3)" -gt 10000 ] \
+              || { echo "::error::edge-tts produced no usable audio — cannot ship a silent video."; exit 1; }
+            echo "edge-tts voiceover OK ($(wc -c < voiceover.mp3) bytes)"
+            have=true
+          fi
+
+          echo "have_vo=$have" >> "$GITHUB_OUTPUT"
 
       - name: Compute target duration
         id: dur
