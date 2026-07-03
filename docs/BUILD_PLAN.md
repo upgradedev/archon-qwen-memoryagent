@@ -15,8 +15,8 @@
 
 - **Qwen models:** `text-embedding-v4` (embeddings — default **1024** dims, range 64–2048; matches `vector(1024)`) + `qwen-plus` (chat/narration; `qwen-max`/`qwen-turbo` alternatives).
 - **Endpoint:** OpenAI-compatible, `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (international). Key env `DASHSCOPE_API_KEY`. Works with the standard `openai` SDK.
-- **Alibaba Cloud deployment:** the *compute* must run on Alibaba Cloud. Chosen = **Function Compute** custom-container HTTP function (serverless, HTTP trigger, listens on CAPort). ACR image in the same region. Deploy via Serverless Devs (`s deploy`).
-- **Memory store:** **pgvector on Alibaba PostgreSQL** (AnalyticDB / ApsaraDB RDS) — pg-wire, so identical code local/CI/prod. DashVector deferred (stronger pure-Alibaba story, but new API + deadline).
+- **Alibaba Cloud deployment:** the *compute* must run on Alibaba Cloud. **The live deployment landed on ECS + docker-compose** (backend container + a self-hosted pgvector container, one public URL; see `deploy/DEPLOY_STATE.md` and `deploy/redeploy.sh`) — fastest, most reliable single public URL for the hackathon bar. A **Function Compute** custom-container HTTP function (serverless, HTTP trigger on CAPort, ACR image, `s deploy`) is kept as a clearly-labelled alternative (`deploy/s.yaml`, `deploy/deploy-fc.sh`).
+- **Memory store:** **pgvector on PostgreSQL, running on Alibaba Cloud** — self-hosted `pgvector/pgvector` container on the ECS box for the live deploy; because it is pg-wire, the identical code also runs on a managed **AnalyticDB / ApsaraDB RDS** instance (the FC alternative), a `DATABASE_URL` swap. DashVector deferred (stronger pure-Alibaba story, but new API + deadline).
 
 ## Architecture
 

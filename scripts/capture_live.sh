@@ -63,11 +63,11 @@ cat <<JSON
 JSON
 }
 
-# Write event #1 — employer cost recorded as €15,800.
-curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$(audit_event 15800)" >/dev/null \
+# Write event #1 — employer cost recorded as €18,000.
+curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$(audit_event 18000)" >/dev/null \
   || fail "/ingest (audit write #1) failed"
-# Write event #2 — a LATER session records €16,800 for the SAME event.
-curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$(audit_event 16800)" >/dev/null \
+# Write event #2 — a LATER session records €19,000 for the SAME event.
+curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$(audit_event 19000)" >/dev/null \
   || fail "/ingest (audit write #2) failed"
 
 CONS=$(curl -fsS -m 60 -X POST "$BASE/consistency" -H 'Content-Type: application/json' \
@@ -78,9 +78,9 @@ echo "$CONS" | jq -e '
   .ok==false
   and (.contradictions|length)==1
   and .contradictions[0].attribute=="employer_cost_total"
-  and (.contradictions[0].values|map(.value)|sort)==[15800,16800]
+  and (.contradictions[0].values|map(.value)|sort)==[18000,19000]
   and .contradictions[0].resolution.rule=="recency"
-  and .contradictions[0].resolution.recommendedValue==16800' >/dev/null \
+  and .contradictions[0].resolution.recommendedValue==19000' >/dev/null \
   || fail "/consistency did not detect+resolve the seeded contradiction (got: $(echo "$CONS" | jq -c '{ok, contradictions:(.contradictions|length), first:.contradictions[0]}'))"
 CONS_SUBJECT=$(echo "$CONS" | jq -r '.contradictions[0].subject')
 CONS_VALS=$(echo "$CONS" | jq -r '.contradictions[0].values|map(.value)|join(" vs ")')
@@ -143,8 +143,8 @@ t "9.0   $HEALTH_C"
 t "10.0 → embedder=text-embedding-v4 · narrator=qwen-plus · 1024-dim  (REAL Qwen, not a stub)"
 t "14.0 \$ # ---- ⭐ INNOVATION · memory that AUDITS ITSELF (detect → resolve) ----"
 t "17.0 \$ # Two SEPARATE write events remember ONE record with a different employer cost."
-t "20.5 \$ curl -X POST $BASE/ingest -d @event.json   # write #1: employer cost €15,800"
-t "23.5 \$ curl -X POST $BASE/ingest -d @event.json   # write #2 (a LATER session): €16,800"
+t "20.5 \$ curl -X POST $BASE/ingest -d @event.json   # write #1: employer cost €18,000"
+t "23.5 \$ curl -X POST $BASE/ingest -d @event.json   # write #2 (a LATER session): €19,000"
 t "27.0 \$ # A plain recall would silently return one of them. Instead, ask the agent"
 t "30.0 \$ # to audit its OWN memory:"
 t "32.0 \$ curl -X POST $BASE/consistency -d '{\"company\":\"$AUDIT_COMPANY\"}'"
