@@ -2,7 +2,7 @@
 5|13|PROOF 1 · /health: real Qwen live on Alibaba (text-embedding-v4 + qwen-plus, 1024-dim)
 13|26|⭐ INNOVATION · two separate sessions write ONE record with a different employer cost
 26|42|/consistency DETECTS the cross-session contradiction and RECOMMENDS which value to trust
-42|50|Measured: 5/5 seeded contradictions caught · 0 false positives · resolver never mutates memory
+42|50|Measured: 5/5 seeded issues caught (4 contradictions + 1 dangling ref) · 0 false positives
 50|66|SESSION A · an agent writes fused financial facts to memory via /ingest
 66|71|Session A ends — nothing kept in process; the facts live only in pgvector
 71|84|SESSION B · a fresh, separate client that has only a question

@@ -28,6 +28,7 @@ Thumbs.db
 
 # demo-video pipeline artifacts (generated in CI from the live run)
 docs/screencast_transcript.txt
+demo/video/
 *.mp4
 *.mp3
 caps/

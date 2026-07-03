@@ -236,8 +236,8 @@ npm run bench:rerank     # re-score the cross-encoder re-rank (qwen-plus)
 Retrieval quality is only half of a trustworthy memory. The other half is: does
 the agent notice when its OWN memory disagrees with itself? A cross-session
 MemoryAgent accumulates facts from many separate write events; nothing stops two
-of them from **contradicting** — session A stores invoice `INV-2043` at €18,400,
-a later session B stores €18,900 for the same record. Plain recall would hand back
+of them from **contradicting** — session A records a payroll event's employer cost
+at €18,000, a later session B records €19,000 for the same event. Plain recall would hand back
 whichever ranked higher and stay silent.
 
 `auditConsistency` (`src/memory/consistency.ts`, exposed as `POST /consistency`)

@@ -25,8 +25,8 @@ capability most memory demos skip: the agent **audits its own memory**.
 
 - **⭐ Self-auditing memory (the headline).** A cross-session agent accumulates
   facts from many separate write events, and nothing stops two of them from
-  **contradicting**: session A stores invoice `INV-2043` at €18,400; a later
-  session B stores €18,900 for the same record. Plain recall just returns whichever
+  **contradicting**: session A records a payroll event's employer cost at €18,000;
+  a later session B records €19,000 for the same event. Plain recall just returns whichever
   ranked higher and stays silent. `POST /consistency` (`src/memory/consistency.ts`)
   scans the agent's own memories, groups them by the record they describe, and
   flags **cross-session contradictions** (same record + attribute, different value

@@ -9,8 +9,8 @@ memory starts to **disagree with itself**.
 
 A cross-session agent accumulates facts from many separate write events, over
 days, across processes. Nothing stops two of those writes from recording the same
-record two different ways: one session stores an invoice at €18,400, a later
-session stores €18,900 for the same invoice. A plain vector store does the worst
+record two different ways: one session records a payroll event's employer cost at
+€18,000, a later session records €19,000 for the same event. A plain vector store does the worst
 possible thing here — it silently returns whichever one happened to rank higher,
 and never tells you the two ever conflicted. Your agent is now confidently wrong,
 and you have no way to know.
