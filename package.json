@@ -2,7 +2,7 @@
   "name": "archon-qwen-memoryagent",
   "version": "0.1.0",
   "private": true,
-  "description": "Archon MemoryAgent — an agent with persistent, queryable, cross-session memory built on Qwen (Alibaba Cloud Model Studio / DashScope) with a pgvector memory layer, deployable on Alibaba Cloud Function Compute.",
+  "description": "Archon MemoryAgent — an agent with persistent, queryable, cross-session memory built on Qwen (Alibaba Cloud Model Studio / DashScope) with a pgvector memory layer, running live on Alibaba Cloud ECS (docker-compose: backend + pgvector container); Function Compute + managed RDS is a drop-in alternative.",
   "license": "MIT",
   "type": "module",
   "engines": {

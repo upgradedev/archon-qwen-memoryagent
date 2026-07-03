@@ -29,7 +29,7 @@ test("FakeEmbedder is deterministic", async () => {
 });
 
 test("FakeEmbedder output is L2-normalized (unit length)", async () => {
-  const v = await new FakeEmbedder().embed("Maria net pay gross employer cost");
+  const v = await new FakeEmbedder().embed("Elena net pay gross employer cost");
   const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
   assert.ok(Math.abs(norm - 1) < 1e-9, `norm was ${norm}`);
 });

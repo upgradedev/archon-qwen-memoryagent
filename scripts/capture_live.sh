@@ -1,30 +1,40 @@
 #!/usr/bin/env bash
-# Drive the LIVE Archon MemoryAgent on Alibaba Cloud and capture a REAL two-session
-# run into docs/screencast_transcript.txt (consumed by scripts/make_screencast.py).
+# Drive the LIVE Archon MemoryAgent on Alibaba Cloud and capture a REAL run into
+# docs/screencast_transcript.txt (consumed by scripts/make_screencast.py).
 #
-# It proves the MemoryAgent track's headline claim against the live box:
-#   PROOF 1  GET  /health         -> real Qwen on Alibaba (text-embedding-v4 + qwen-plus)
-#   SESSION A POST /ingest        -> writes fused payroll memories to pgvector on Alibaba
-#   SESSION B POST /recall (x2)   -> a FRESH session recalls them by MEANING; real
-#                                    qwen-plus answers + real pgvector cosine scores
+# It LEADS with the innovation headline — self-auditing memory (detect -> resolve) —
+# then proves the MemoryAgent track's core claim (cross-session persistence):
+#   PROOF 1     GET  /health          -> real Qwen on Alibaba (text-embedding-v4 + qwen-plus)
+#   INNOVATION  POST /ingest x2       -> two SEPARATE write events remember ONE record
+#               POST /consistency       differently; the agent DETECTS the contradiction
+#                                       and RECOMMENDS which value to trust (resolution)
+#   SESSION A   POST /ingest          -> writes fused financial memories to pgvector on Alibaba
+#   SESSION B   POST /recall (x2)     -> a FRESH session recalls them by MEANING; real
+#                                       qwen-plus answers + real pgvector cosine scores
 #
 # HARD-CHECKED end to end (structured jq gates, not string-matching), so a box that
 # is down, or that silently reverted to the offline Fakes (no DASHSCOPE key), or a
-# blank/stub recall, FAILS the job instead of shipping a fake-looking video.
+# blank/stub recall, or a self-audit that fails to flag the seeded contradiction,
+# FAILS the job instead of shipping a fake-looking video.
 #
-# Each run uses a UNIQUE company ("DemoRun <run-id>") so Session B's company-filtered
-# recall returns ONLY this run's memories — the "A wrote it, B recalled it" proof is
-# deterministic and immune to accumulated rows on the live box.
+# Each run uses UNIQUE companies ("DemoRun <run-id>" + "... audit") so the audit and
+# the cross-session recall are isolated from each other and immune to accumulated
+# rows on the live box — "A wrote it, B recalled it" and "the agent caught its own
+# contradiction" are both deterministic.
+#
+# NOTE: this drives the field-renamed API (employer_social_security_total, etc.).
+# Run it against a box redeployed from this branch (deploy/redeploy.sh --truncate).
 #
 # Env:
 #   DEMO_BASE_URL  live base URL (default http://43.106.13.19:9000)
-#   GITHUB_RUN_ID  used to make the company/event unique (falls back to a timestamp)
+#   GITHUB_RUN_ID  used to make the companies/events unique (falls back to a timestamp)
 #   TRANSCRIPT     output transcript path (default docs/screencast_transcript.txt)
 set -euo pipefail
 
 BASE="${DEMO_BASE_URL:-http://43.106.13.19:9000}"
 RUN="${GITHUB_RUN_ID:-local$(date +%s)}"
 COMPANY="DemoRun ${RUN}"
+AUDIT_COMPANY="DemoRun ${RUN} audit"
 OUT="${TRANSCRIPT:-docs/screencast_transcript.txt}"
 mkdir -p "$(dirname "$OUT")"
 
@@ -41,15 +51,49 @@ echo "$HEALTH" | jq -e '.embedder=="text-embedding-v4" and .narrator=="qwen-plus
   || fail "/health is not real Qwen (got: $HEALTH) — the box may have restarted WITHOUT DASHSCOPE_API_KEY (reverts to fake-hash-embedder)"
 HEALTH_C=$(echo "$HEALTH" | jq -c .)
 
-COUNT=$(curl -fsS -m 25 "$BASE/memory/count") || fail "/memory/count unreachable"
-COUNT_C=$(echo "$COUNT" | jq -c .)
-echo "count: $COUNT_C"
+# ============================================================ INNOVATION
+# Self-auditing memory: two SEPARATE write events remember the SAME record with a
+# DIFFERENT employer-cost figure (a later reconciliation "corrected" it). A plain
+# recall would silently return one of them; /consistency DETECTS the disagreement
+# and RECOMMENDS which side to trust (importance -> source-authority -> recency).
+# Universal financial terms only, no country-specific authority.
+audit_event() { # $1 = employer_cost_total
+cat <<JSON
+{"event":{"event_id":"evt-audit-${RUN}","company":"${AUDIT_COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":1200,"employer_cost_total":$1,"cost_gap_amount":2800,"cost_gap_pct":28.0,"hidden_total":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":800,"net":6600,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
+JSON
+}
 
-# ------------------------------------------------------- SESSION A · ingest
+# Write event #1 — employer cost recorded as €18,000.
+curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$(audit_event 18000)" >/dev/null \
+  || fail "/ingest (audit write #1) failed"
+# Write event #2 — a LATER session records €19,000 for the SAME event.
+curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$(audit_event 19000)" >/dev/null \
+  || fail "/ingest (audit write #2) failed"
+
+CONS=$(curl -fsS -m 60 -X POST "$BASE/consistency" -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg c "$AUDIT_COMPANY" '{company:$c}')") \
+  || fail "/consistency (self-audit) failed"
+echo "consistency: $CONS"
+echo "$CONS" | jq -e '
+  .ok==false
+  and (.contradictions|length)==1
+  and .contradictions[0].attribute=="employer_cost_total"
+  and (.contradictions[0].values|map(.value)|sort)==[18000,19000]
+  and .contradictions[0].resolution.rule=="recency"
+  and .contradictions[0].resolution.recommendedValue==19000' >/dev/null \
+  || fail "/consistency did not detect+resolve the seeded contradiction (got: $(echo "$CONS" | jq -c '{ok, contradictions:(.contradictions|length), first:.contradictions[0]}'))"
+CONS_SUBJECT=$(echo "$CONS" | jq -r '.contradictions[0].subject')
+CONS_VALS=$(echo "$CONS" | jq -r '.contradictions[0].values|map(.value)|join(" vs ")')
+CONS_RULE=$(echo "$CONS" | jq -r '.contradictions[0].resolution.rule')
+CONS_REC=$(echo "$CONS" | jq -r '.contradictions[0].resolution.recommendedValue')
+CONS_CONF=$(echo "$CONS" | jq -r '.contradictions[0].resolution.confidence')
+CONS_WHY=$(echo "$CONS" | jq -r '.contradictions[0].resolution.rationale')
+
+# ------------------------------------------------- SESSION A · ingest (cross-session)
 # Workforce-cost example: bank net €10,000 vs TRUE employer cost €15,800 (the €5,800
 # wedge the bank statement alone never shows). Universal terms only, no local authority.
 EVENT=$(cat <<JSON
-{"event":{"event_id":"evt-${RUN}","company":"${COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_ika_total":2800,"employee_ika_total":1000,"tax_withheld_total":1200,"employer_cost_total":15800,"cost_gap_amount":2800,"cost_gap_pct":28.0,"hidden_total":5800,"employees":[{"employee_id":"E-01","name":"Maria Papadopoulou","gross":8000,"employee_ika":600,"tax":800,"net":6600,"employer_ika":1800,"employer_cost":9800},{"employee_id":"E-02","name":"Nikos Georgiou","gross":5000,"employee_ika":400,"tax":400,"net":4200,"employer_ika":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
+{"event":{"event_id":"evt-${RUN}","company":"${COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":1200,"employer_cost_total":15800,"cost_gap_amount":2800,"cost_gap_pct":28.0,"hidden_total":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":800,"net":6600,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
 JSON
 )
 INGEST=$(curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$EVENT") \
@@ -73,7 +117,7 @@ A1=$(echo "$R1" | jq -r '.answer' | tr '\n' ' ' | tr -s ' ')
 [ -n "$A1" ] || fail "/recall Q1 returned an empty answer"
 SCORES1=$(echo "$R1" | jq -r '.citations[] | "  \(.marker) kind=\(.kind)  cosine=\(((.score*1000)|round)/1000)  ref=\(.sourceRef)"')
 
-Q2="What was the total cost of employing Maria last month?"
+Q2="What was the total cost of employing Elena last month?"
 R2=$(curl -fsS -m 90 -X POST "$BASE/recall" -H 'Content-Type: application/json' \
   -d "$(jq -n --arg q "$Q2" --arg c "$COMPANY" '{question:$q, company:$c, kind:"payroll_event", limit:3}')") \
   || fail "/recall (Session B, Q2) failed"
@@ -91,47 +135,56 @@ SCORES2=$(echo "$R2" | jq -r '.citations[] | "  \(.marker) kind=\(.kind)  cosine
 t() { printf '%s\n' "$1" >> "$OUT"; }        # timed line ("<sec> text")
 blk() { printf '%s\n' "$1" >> "$OUT"; }      # untimed block (inherits prev+0.4s)
 
-t "0.0 \$ # Archon MemoryAgent  ·  cross-session memory on Alibaba Cloud"
-t "2.5 \$ # Two SEPARATE client sessions. The ONLY shared state is pgvector on Alibaba."
+t "0.0 \$ # Archon MemoryAgent  ·  self-auditing, cross-session memory on Alibaba Cloud"
+t "2.5 \$ # The ONLY shared state across sessions is pgvector on Alibaba."
 t "5.5 \$ # ---- PROOF 1 · real Qwen, live on Alibaba Cloud ----"
 t "7.0 \$ curl -s $BASE/health"
 t "9.0   $HEALTH_C"
 t "10.0 → embedder=text-embedding-v4 · narrator=qwen-plus · 1024-dim  (REAL Qwen, not a stub)"
-t "13.5 \$ curl -s $BASE/memory/count"
-t "15.0   $COUNT_C"
-t "18.0 \$ # ---- SESSION A · write memory ----"
-t "20.5 \$ # An agent fused bank + payroll-register + payslips into ONE PayrollEvent."
-t "23.0 \$ # It commits the salient facts so a LATER, separate session can recall them."
-t "26.0 \$ curl -X POST $BASE/ingest -d @event.json"
-t "27.5   # event: company=\"$COMPANY\"  bank net €10,000 · TRUE employer cost €15,800 · hidden €5,800"
-t "30.0   $INGEST_C"
-t "31.0 → $WRITTEN memories embedded with text-embedding-v4 → written to pgvector on Alibaba"
-t "35.0 \$ # SESSION A IS OVER. The client disconnects; nothing stays in process memory."
-t "38.0 \$ # The facts now live ONLY in pgvector on Alibaba Cloud."
-t "42.0 \$ # ---- SESSION B · a fresh, later session ----"
-t "44.5 \$ # A DIFFERENT client. No shared variables, no cache — only a question."
-t "48.0 \$ curl -X POST $BASE/recall \\\\"
-t "49.0   -d '{\"question\":\"$Q1\", \"company\":\"$COMPANY\", \"kind\":\"payroll_event\"}'"
-t "52.0 \$ # Qwen embeds the question → cosine ANN over pgvector → qwen-plus grounds the answer"
-t "56.0 ANSWER (qwen-plus · grounded in memory written during Session A):"
-t "57.0   $A1"
-t "74.0 Recalled by MEANING — real cosine similarity over pgvector (higher = closer):"
+t "14.0 \$ # ---- ⭐ INNOVATION · memory that AUDITS ITSELF (detect → resolve) ----"
+t "17.0 \$ # Two SEPARATE write events remember ONE record with a different employer cost."
+t "20.5 \$ curl -X POST $BASE/ingest -d @event.json   # write #1: employer cost €18,000"
+t "23.5 \$ curl -X POST $BASE/ingest -d @event.json   # write #2 (a LATER session): €19,000"
+t "27.0 \$ # A plain recall would silently return one of them. Instead, ask the agent"
+t "30.0 \$ # to audit its OWN memory:"
+t "32.0 \$ curl -X POST $BASE/consistency -d '{\"company\":\"$AUDIT_COMPANY\"}'"
+t "35.0 → CONTRADICTION on '$CONS_SUBJECT' · attribute employer_cost_total · $CONS_VALS"
+t "39.0 → RESOLUTION (recommender, never mutates memory): trust $CONS_REC  [rule=$CONS_RULE · confidence=$CONS_CONF]"
+t "43.0   $CONS_WHY"
+t "48.0 >> The memory DETECTED its own cross-session disagreement and RECOMMENDED which to trust."
+t "53.0 \$ # ---- SESSION A · write memory (cross-session persistence) ----"
+t "56.0 \$ # An agent fused bank + payroll-register + payslips into ONE financial event."
+t "59.0 \$ # It commits the salient facts so a LATER, separate session can recall them."
+t "62.0 \$ curl -X POST $BASE/ingest -d @event.json"
+t "63.5   # event: company=\"$COMPANY\"  bank net €10,000 · TRUE employer cost €15,800 · hidden €5,800"
+t "66.0   $INGEST_C"
+t "67.0 → $WRITTEN memories embedded with text-embedding-v4 → written to pgvector on Alibaba"
+t "71.0 \$ # SESSION A IS OVER. The client disconnects; nothing stays in process memory."
+t "74.0 \$ # The facts now live ONLY in pgvector on Alibaba Cloud."
+t "78.0 \$ # ---- SESSION B · a fresh, later session ----"
+t "80.5 \$ # A DIFFERENT client. No shared variables, no cache — only a question."
+t "84.0 \$ curl -X POST $BASE/recall \\\\"
+t "85.0   -d '{\"question\":\"$Q1\", \"company\":\"$COMPANY\", \"kind\":\"payroll_event\"}'"
+t "88.0 \$ # Qwen embeds the question → cosine ANN over pgvector → qwen-plus grounds the answer"
+t "92.0 ANSWER (qwen-plus · grounded in memory written during Session A):"
+t "93.0   $A1"
+t "108.0 Recalled by MEANING — real cosine similarity over pgvector (higher = closer):"
 blk "$SCORES1"
-t "82.0 >> A memory WRITTEN in Session A was RETRIEVED in Session B — cross-session persistence."
-t "87.0 \$ # ---- SESSION B · a second, different question ----"
-t "89.5 \$ # Memory is genuinely QUERYABLE, not a canned reply. Ask something else:"
-t "93.0 \$ curl -X POST $BASE/recall -d '{\"question\":\"$Q2\", \"company\":\"…\", \"kind\":\"payroll_event\"}'"
-t "96.0 ANSWER (qwen-plus):"
-t "97.0   $A2"
-t "114.0 Recalled memory items (cosine over pgvector):"
+t "116.0 >> A memory WRITTEN in Session A was RETRIEVED in Session B — cross-session persistence."
+t "121.0 \$ # ---- SESSION B · a second, different question ----"
+t "123.5 \$ # Memory is genuinely QUERYABLE, not a canned reply. Ask something else:"
+t "127.0 \$ curl -X POST $BASE/recall -d '{\"question\":\"$Q2\", \"company\":\"…\", \"kind\":\"payroll_event\"}'"
+t "130.0 ANSWER (qwen-plus):"
+t "131.0   $A2"
+t "146.0 Recalled memory items (cosine over pgvector):"
 blk "$SCORES2"
-t "121.0 >> Same persistent memory · a new query · a new grounded answer."
-t "125.0 \$ # ---- PROOF 3 · running on Alibaba Cloud ----"
-t "127.0   Live URL :  $BASE      (public · reachable now)"
-t "128.5   Compute  :  Alibaba Cloud ECS · ecs.e-c1m2.large · ap-southeast-1 (Singapore)"
-t "130.0   Memory   :  pgvector on Alibaba Cloud PostgreSQL · HNSW cosine · vector(1024)"
-t "131.5   Models   :  Qwen text-embedding-v4  +  qwen-plus  (Model Studio / DashScope)"
-t "135.0 >> Persistent. Queryable. Across sessions. — the MemoryAgent track, proven live."
+t "153.0 >> Same persistent memory · a new query · a new grounded answer."
+t "157.0 \$ # ---- PROOF 3 · running on Alibaba Cloud ----"
+t "159.0   Live URL :  $BASE      (public · reachable now)"
+t "160.5   Compute  :  Alibaba Cloud ECS · ecs.e-c1m2.large · ap-southeast-1 (Singapore)"
+t "162.0   Memory   :  pgvector container on the ECS box · HNSW cosine · vector(1024)"
+t "163.5   Models   :  Qwen text-embedding-v4  +  qwen-plus  (Model Studio / DashScope)"
+t "167.0 >> Self-auditing. Persistent. Queryable. Across sessions. — proven live."
 
 echo "== transcript written to $OUT =="
 cat "$OUT"

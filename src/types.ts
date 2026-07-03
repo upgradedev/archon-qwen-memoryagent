@@ -12,11 +12,11 @@ export interface EmployeePayslip {
   employee_id: string;
   name: string;
   gross: number;
-  employee_ika: number; // employee social-security contribution
+  employee_social_security: number; // employee social-security contribution
   tax: number; // income tax withheld
   net: number; // what lands in the employee's bank account
-  employer_ika: number; // employer-side social-security contribution
-  employer_cost: number; // gross + employer_ika (true cost to the company)
+  employer_social_security: number; // employer-side social-security contribution
+  employer_cost: number; // gross + employer_social_security (true cost to the company)
 }
 
 export interface PayrollEvent {
@@ -26,8 +26,8 @@ export interface PayrollEvent {
   employee_count: number;
   bank_net_total: number; // from bank_confirmation
   gross_total: number; // from payroll_register
-  employer_ika_total: number;
-  employee_ika_total: number;
+  employer_social_security_total: number;
+  employee_social_security_total: number;
   tax_withheld_total: number;
   employer_cost_total: number; // THE accurate number (gross + employer social-security)
   // One insight the platform surfaces: employer social-security contributions are
