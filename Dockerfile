@@ -16,6 +16,10 @@ RUN npm ci --omit=dev || npm install --omit=dev
 
 COPY tsconfig.json ./
 COPY src ./src
+# scripts/apply-schema.ts is the entrypoint for `npm run db:schema`
+# (redeploy.sh runs it via `compose run --rm backend npm run db:schema`).
+# It reads ../src/db/schema.sql (already copied above).
+COPY scripts ./scripts
 
 ENV NODE_ENV=production
 ENV PORT=9000

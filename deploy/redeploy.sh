@@ -23,10 +23,16 @@
 #   It is safe to run repeatedly (schema is idempotent; smoke cleans up after
 #   itself).
 #
-# PREREQUISITE — code is already synced into the app dir. The box has NO git
-# checkout (code was uploaded as a tarball). Sync your latest code first, e.g.:
-#   rsync -a --exclude node_modules --exclude .git ./ root@<box-ip>:/root/memoryagent/
-# then run this script. (This script does NOT `git pull`.)
+# PREREQUISITE — the latest code is already in the app dir. Either path works:
+#   • git clone (recommended): the box runs from a clone, so just `git pull` in
+#       the app dir before running this script; or
+#   • rsync a tarball (the original box was seeded this way):
+#       rsync -a --exclude node_modules --exclude .git ./ root@<box-ip>:/root/memoryagent/
+# Then run this script. (This script does NOT itself `git pull` or rsync — it
+# builds from whatever code is already in the app dir.)
+#
+# For REAL Qwen, drop a .env with DASHSCOPE_API_KEY next to docker-compose.yml
+# (compose interpolates it). Without it, the app runs the offline Fakes.
 #
 # FLAGS:
 #   --truncate   TRUNCATE agent_memory before smoke (clears demo rows for a clean
@@ -49,7 +55,7 @@ SMOKE_COMPANY="${SMOKE_COMPANY:-__smoke__}"
 TRUNCATE=0
 DO_SMOKE=1
 
-usage() { sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'; }
 
 for arg in "$@"; do
   case "$arg" in
