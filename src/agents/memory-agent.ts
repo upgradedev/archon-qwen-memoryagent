@@ -78,14 +78,14 @@ export class MemoryAgent {
           `salary transfer of ${money(event.bank_net_total)} understates the true ` +
           `cost of employing the team by ${money(event.hidden_total)} ` +
           `(${event.cost_gap_pct.toFixed(1)}%), mostly employer social-security ` +
-          `contributions of ${money(event.employer_ika_total)}.`,
+          `contributions of ${money(event.employer_social_security_total)}.`,
         // The hidden-cost insight is the highest-salience memory the agent keeps,
         // so it survives forgetting and wins consolidation ties.
         importance: 0.9,
         metadata: {
           hidden_total: event.hidden_total,
           cost_gap_pct: event.cost_gap_pct,
-          employer_ika_total: event.employer_ika_total,
+          employer_social_security_total: event.employer_social_security_total,
         },
       })
     );

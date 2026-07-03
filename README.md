@@ -96,33 +96,38 @@ consistency(scope):                 ── the agent audits its OWN memory
 |---|---|
 | **Qwen models** | `text-embedding-v4` (embeddings, 1024-dim default) + `qwen-plus` (RAG narration). |
 | **Qwen Cloud / DashScope** | Called via the OpenAI-compatible endpoint `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` with the standard `openai` Node SDK. Key = `DASHSCOPE_API_KEY`. |
-| **Alibaba Cloud deployment** | The HTTP backend (`src/server.ts`) ships as a container (`Dockerfile`) deployed to **Function Compute** (custom container, HTTP trigger) — see [`deploy/`](./deploy). Memory store = **AnalyticDB / ApsaraDB RDS for PostgreSQL (pgvector)**. |
+| **Alibaba Cloud deployment** | The HTTP backend (`src/server.ts`) ships as a container (`Dockerfile`) and runs **live on Alibaba Cloud ECS** (`ecs.e-c1m2.large`, ap-southeast-1) via docker-compose — the backend plus a **self-hosted pgvector container** as the memory store. A **Function Compute + managed ApsaraDB RDS** path is also provided (`deploy/s.yaml`, `deploy/deploy-fc.sh`) as a serverless alternative. See [`deploy/`](./deploy). |
 
 ## Architecture
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│  Alibaba Cloud                                                              │
+│  Alibaba Cloud — ECS instance (ap-southeast-1) · docker-compose             │
 │                                                                             │
 │  ┌──────────────────────────────┐        ┌──────────────────────────────┐  │
-│  │ Function Compute             │        │ Model Studio / DashScope      │  │
-│  │ (custom container, HTTP)     │        │ (Qwen Cloud)                  │  │
-│  │  src/server.ts (Fastify)     │        │                               │  │
+│  │ backend container (Fastify)  │        │ Model Studio / DashScope      │  │
+│  │  src/server.ts               │        │ (Qwen Cloud)                  │  │
 │  │   GET  /health               │ embed  │  text-embedding-v4 (1024-d)   │  │
 │  │   POST /ingest ─┐            │───────▶│  qwen-plus (RAG narrator)     │  │
 │  │   POST /recall ─┤            │◀───────│                               │  │
-│  └─────────────────┼────────────┘  chat  └──────────────────────────────┘  │
+│  │   POST /consistency          │  chat  └──────────────────────────────┘  │
+│  └─────────────────┼────────────┘                                          │
 │                    │                                                        │
 │         MemoryAgent │ (embedder · store · narrator — all injectable)        │
 │   ingestEvent() → remember()      recallAnswer() → recall() → narrate()     │
 │                    │ SQL (pg-wire)                                          │
 │                    ▼                                                        │
 │  ┌──────────────────────────────────────────────────────────────────────┐ │
-│  │ AnalyticDB / ApsaraDB RDS for PostgreSQL  (pgvector) — THE MEMORY      │ │
+│  │ pgvector container (PostgreSQL) on the same ECS box — THE MEMORY       │ │
 │  │  agent_memory(embedding vector(1024)) + HNSW cosine index             │ │
 │  │  recall = ORDER BY embedding <=> $query  (semantic, cross-session)     │ │
+│  │  (pg-wire — same SQL runs on managed ApsaraDB RDS / AnalyticDB)        │ │
 │  └──────────────────────────────────────────────────────────────────────┘ │
 └───────────────────────────────────────────────────────────────────────────┘
+
+Live deployment = ECS + docker-compose (backend + pgvector container). Because the
+store is pg-wire, the identical code runs unchanged on a managed ApsaraDB RDS /
+AnalyticDB for PostgreSQL instance (the Function Compute alternative in deploy/).
 
 Offline / CI: no DASHSCOPE_API_KEY → FakeEmbedder + FakeNarrator (deterministic);
 pgvector runs as a docker service. Same code path, zero credentials.
@@ -136,9 +141,9 @@ A question is embedded and run as an ANN search over the HNSW cosine index (`ORD
 
 ## The memory store — decision & tradeoff
 
-**Chosen: pgvector on Alibaba Cloud PostgreSQL** (AnalyticDB for PostgreSQL, or ApsaraDB RDS for PostgreSQL with the `pgvector` extension).
+**Chosen: pgvector on PostgreSQL, running on Alibaba Cloud.** The live deployment self-hosts the `pgvector/pgvector` container on an ECS instance (alongside the backend, via docker-compose); because it is pg-wire, the identical `pg` driver + SQL also runs against a managed **ApsaraDB RDS / AnalyticDB for PostgreSQL** instance with the `pgvector` extension (the Function Compute alternative in [`deploy/`](./deploy)).
 
-- **Why:** it is a genuine Alibaba-native data service *and* pg-wire compatible, so the same `pg` driver + SQL runs unchanged across local docker, CI, and production. It let us reuse Archon's proven vector-memory design and stand up a real vector index in CI with **zero Alibaba credentials** (stock `pgvector/pgvector` docker). Best Alibaba-narrative × 8-day-deadline tradeoff.
+- **Why the ECS + pgvector-container topology for the live box:** it delivers a single, always-reachable public URL on Alibaba Cloud fastest and most reliably, with no FC↔RDS VPC wiring or ACR console steps in the critical path. Because the store is pg-wire, the same `pg` driver + SQL runs unchanged across local docker, CI, and production — and stands up a real vector index in CI with **zero Alibaba credentials** (stock `pgvector/pgvector` docker). Best Alibaba-narrative × short-deadline tradeoff; the managed-RDS + Function Compute path is a drop-in `DATABASE_URL` swap.
 - **Consciously deferred alternative:** Alibaba's fully-managed **DashVector** (or **Tair** vector) is an arguably *stronger pure-Alibaba* story, but it is a new non-pg API needing its own offline test double — the wrong trade at this deadline. The `MemoryStore` interface (`src/memory/store.ts`) is the seam a `DashVectorStore` would slot into next, with no change to the agent.
 
 ## Repository layout
@@ -164,7 +169,8 @@ repos/qwen-memoryagent/
 ├── bench/                        # frozen retrieval + consistency datasets, metrics, runners, committed fixtures (embeddings + re-rank scores)
 ├── scripts/{apply-schema.ts,demo-memory.ts}
 ├── tests/{unit,integration,e2e}/  # the testing pyramid
-├── deploy/{s.yaml,deploy-fc.sh}   # Alibaba Function Compute (custom container)
+├── deploy/{redeploy.sh,DEPLOY_STATE.md}  # LIVE path: ECS + docker-compose (backend + pgvector container)
+│   └── {s.yaml,deploy-fc.sh}       # alternative: Alibaba Function Compute + managed RDS
 ├── Dockerfile · docker-compose.yml
 ├── BENCHMARK.md                   # retrieval benchmark: method, numbers, honest caveats
 └── .github/workflows/{ci.yml,codeql.yml}  # secret-scan → dep-audit → build/test → benchmark → SAST
@@ -214,9 +220,34 @@ npm run test:e2e                # cross-session persistence (needs DATABASE_URL)
 
 Without a `DASHSCOPE_API_KEY` the demo + backend run with deterministic offline `FakeEmbedder` + `FakeNarrator`, so the full pgvector write + vector-recall path still executes. Set the key to switch to real Qwen — same interface, same 1024 dimensions.
 
-## Deploy to Alibaba Cloud (Function Compute)
+## Deploy to Alibaba Cloud
 
-The backend is a custom-container HTTP function. See [`deploy/deploy-fc.sh`](./deploy/deploy-fc.sh) and [`deploy/s.yaml`](./deploy/s.yaml).
+### Live path — ECS + docker-compose (backend + pgvector container)
+
+This is how the entry actually runs on Alibaba Cloud: a single ECS instance
+(`ecs.e-c1m2.large`, ap-southeast-1) runs docker-compose with the backend
+container plus a self-hosted `pgvector/pgvector` container as the memory store,
+behind one public URL. [`deploy/redeploy.sh`](./deploy/redeploy.sh) is an
+idempotent, schema-first redeploy (health + ingest/recall smoke, optional
+`--truncate`); [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) is the full runbook.
+
+```bash
+# On the ECS box (source synced via rsync — the box has no git checkout):
+cd /root/memoryagent
+bash deploy/redeploy.sh            # or: --truncate for a clean demo slate
+curl http://<public-ip>:9000/health
+```
+
+Set `DATABASE_URL`, `DASHSCOPE_API_KEY`, and `DASHSCOPE_BASE_URL` via the
+compose env — never commit them. Without a `DASHSCOPE_API_KEY` the box runs the
+deterministic Fakes (the pgvector round-trip still executes).
+
+### Alternative — Function Compute + managed RDS (serverless)
+
+For a fully-serverless topology the same container deploys to Alibaba Cloud
+Function Compute (custom-container HTTP function) with a managed **ApsaraDB RDS /
+AnalyticDB for PostgreSQL** memory store. See
+[`deploy/deploy-fc.sh`](./deploy/deploy-fc.sh) and [`deploy/s.yaml`](./deploy/s.yaml).
 
 ```bash
 # Prereqs: Alibaba Cloud account + ACR namespace (same region), Serverless Devs (`s`)
@@ -227,7 +258,8 @@ REGION=ap-southeast-1 ACR_NAMESPACE=<your-ns> \
 curl <trigger-url>/health
 ```
 
-Set `DATABASE_URL` (Alibaba PostgreSQL), `DASHSCOPE_API_KEY`, and `DASHSCOPE_BASE_URL` as function environment variables at deploy time — never commit them.
+Because the store is pg-wire, switching between the two is a `DATABASE_URL` swap —
+no application change.
 
 ## Testing & CI
 
