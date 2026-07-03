@@ -59,7 +59,7 @@ HEALTH_C=$(echo "$HEALTH" | jq -c .)
 # Universal financial terms only, no country-specific authority.
 audit_event() { # $1 = employer_cost_total
 cat <<JSON
-{"event":{"event_id":"evt-audit-${RUN}","company":"${AUDIT_COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":1200,"employer_cost_total":$1,"cost_gap_amount":2800,"cost_gap_pct":28.0,"hidden_total":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":800,"net":6600,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
+{"event":{"event_id":"evt-audit-${RUN}","company":"${AUDIT_COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":2000,"employer_cost_total":$1,"cost_gap_amount":5800,"cost_gap_pct":58.0,"hidden_total":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":1600,"net":5800,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
 JSON
 }
 
@@ -87,13 +87,18 @@ CONS_VALS=$(echo "$CONS" | jq -r '.contradictions[0].values|map(.value)|join(" v
 CONS_RULE=$(echo "$CONS" | jq -r '.contradictions[0].resolution.rule')
 CONS_REC=$(echo "$CONS" | jq -r '.contradictions[0].resolution.recommendedValue')
 CONS_CONF=$(echo "$CONS" | jq -r '.contradictions[0].resolution.confidence')
-CONS_WHY=$(echo "$CONS" | jq -r '.contradictions[0].resolution.rationale')
+# The non-recommended (earlier) value, for a date-free recency rationale. The live
+# rationale renders both write timestamps at day granularity; two writes seconds
+# apart print the SAME date twice ("supersedes the earlier value 18000 (2026-…)"),
+# which reads as a bug at the hero moment. Reword to "the more recent write" using
+# the two values only — no dates.
+CONS_OTHER=$(echo "$CONS" | jq -r '.contradictions[0] as $c | ($c.values|map(.value)|map(select(.!=$c.resolution.recommendedValue))|.[0])')
 
 # ------------------------------------------------- SESSION A · ingest (cross-session)
 # Workforce-cost example: bank net €10,000 vs TRUE employer cost €15,800 (the €5,800
 # wedge the bank statement alone never shows). Universal terms only, no local authority.
 EVENT=$(cat <<JSON
-{"event":{"event_id":"evt-${RUN}","company":"${COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":1200,"employer_cost_total":15800,"cost_gap_amount":2800,"cost_gap_pct":28.0,"hidden_total":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":800,"net":6600,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
+{"event":{"event_id":"evt-${RUN}","company":"${COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":2000,"employer_cost_total":15800,"cost_gap_amount":5800,"cost_gap_pct":58.0,"hidden_total":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":1600,"net":5800,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
 JSON
 )
 INGEST=$(curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$EVENT") \
@@ -163,7 +168,7 @@ t "29.0 \$ # to audit its OWN memory:"
 t "31.5 \$ curl -X POST $BASE/consistency -d '{\"company\":\"$AUDIT_COMPANY\"}'"
 t "34.5 → CONTRADICTION on '$CONS_SUBJECT' · attribute employer_cost_total · $CONS_VALS"
 t "38.5 → RESOLUTION (recommender, never mutates memory): trust $CONS_REC  [rule=$CONS_RULE · confidence=$CONS_CONF]"
-t "42.5   $CONS_WHY"
+t "42.5   Rationale: the more recent write ($CONS_REC) supersedes the earlier value ($CONS_OTHER)."
 t "46.5 >> The memory DETECTED its own cross-session disagreement and RECOMMENDED which to trust."
 t "50.5 \$ # ---- SESSION A · write memory (cross-session persistence) ----"
 t "53.0 \$ # An agent fused bank + payroll-register + payslips into ONE financial event."
