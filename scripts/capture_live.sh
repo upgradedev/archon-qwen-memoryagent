@@ -106,9 +106,21 @@ INGEST_C=$(echo "$INGEST" | jq -c '{written, ids: (.ids[0:2] + ["..."])}')
 # ------------------------------------------------- SESSION B · recall (x2)
 # Recall is filtered to kind="payroll_event" (event summary + per-employee lines):
 # universal financial facts, no country-specific authority names in the grounding.
+#
+# hybrid:false  →  PURE DENSE (cosine ANN) recall, on purpose. The demo VISUALISES
+# and HARD-CHECKS a real cosine similarity (the transcript labels the numbers
+# "cosine similarity over pgvector" and the narration says "cosine ANN over
+# pgvector"), and dense recall is the path whose `hit.score` IS that cosine
+# similarity (score = 1 - cosine_distance; ~0.44 for the aligned demo query). The
+# product-default recall path is HYBRID — dense + lexical fused with Reciprocal
+# Rank Fusion — and RRF scores are RANK-based (top hit = 1/(60+1) ≈ 0.016), NOT
+# cosine. Surfacing an RRF score as "cosine" is exactly what made a perfectly
+# grounded recall (correct memory ranked #1, cited, accurate answer) read as
+# broken at 0.016. Hybrid stays the SOTA product default (see BENCHMARK.md); the
+# DEMO just reports the honest, human-meaningful metric its own narration promises.
 Q1="What was the true cost of employing our team last month compared with what actually left the bank account?"
 R1=$(curl -fsS -m 90 -X POST "$BASE/recall" -H 'Content-Type: application/json' \
-  -d "$(jq -n --arg q "$Q1" --arg c "$COMPANY" '{question:$q, company:$c, kind:"payroll_event", limit:3}')") \
+  -d "$(jq -n --arg q "$Q1" --arg c "$COMPANY" '{question:$q, company:$c, kind:"payroll_event", limit:3, hybrid:false}')") \
   || fail "/recall (Session B, Q1) failed"
 echo "recall1: $R1"
 echo "$R1" | jq -e '.modelId=="qwen-plus" and (.hits|length)>0 and (.hits[0].score>0.35)' >/dev/null \
@@ -119,10 +131,11 @@ SCORES1=$(echo "$R1" | jq -r '.citations[] | "  \(.marker) kind=\(.kind)  cosine
 
 Q2="What was the total cost of employing Elena last month?"
 R2=$(curl -fsS -m 90 -X POST "$BASE/recall" -H 'Content-Type: application/json' \
-  -d "$(jq -n --arg q "$Q2" --arg c "$COMPANY" '{question:$q, company:$c, kind:"payroll_event", limit:3}')") \
+  -d "$(jq -n --arg q "$Q2" --arg c "$COMPANY" '{question:$q, company:$c, kind:"payroll_event", limit:3, hybrid:false}')") \
   || fail "/recall (Session B, Q2) failed"
 echo "recall2: $R2"
-echo "$R2" | jq -e '.modelId=="qwen-plus" and (.hits|length)>0' >/dev/null || fail "/recall Q2 invalid"
+echo "$R2" | jq -e '.modelId=="qwen-plus" and (.hits|length)>0 and (.hits[0].score>0.35)' >/dev/null \
+  || fail "/recall Q2 is not a real grounded qwen-plus answer over real memory (got: $(echo "$R2" | jq -c '{modelId, hits:(.hits|length), top:(.hits[0].score)}'))"
 A2=$(echo "$R2" | jq -r '.answer' | tr '\n' ' ' | tr -s ' ')
 [ -n "$A2" ] || fail "/recall Q2 returned an empty answer"
 SCORES2=$(echo "$R2" | jq -r '.citations[] | "  \(.marker) kind=\(.kind)  cosine=\(((.score*1000)|round)/1000)"')
