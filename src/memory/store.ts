@@ -201,12 +201,12 @@ export class PgVectorStore implements MemoryStore {
 
   async listForConsolidation(company?: string): Promise<ConsolidatableMemory[]> {
     const rows = company
-      ? await query<{ id: string; kind: string; content: string; embedding: string; importance: string; created_at: string }>(
+      ? await query<{ id: string; kind: string; content: string; embedding: string; importance: string; created_at: string | Date }>(
           `SELECT id, kind, content, embedding::text AS embedding, importance, created_at
              FROM agent_memory WHERE superseded_at IS NULL AND company = $1`,
           [company]
         )
-      : await query<{ id: string; kind: string; content: string; embedding: string; importance: string; created_at: string }>(
+      : await query<{ id: string; kind: string; content: string; embedding: string; importance: string; created_at: string | Date }>(
           `SELECT id, kind, content, embedding::text AS embedding, importance, created_at
              FROM agent_memory WHERE superseded_at IS NULL`
         );
@@ -216,7 +216,7 @@ export class PgVectorStore implements MemoryStore {
       content: r.content,
       embedding: parseVector(r.embedding),
       importance: Number(r.importance),
-      createdAt: r.created_at,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     }));
   }
 
@@ -234,17 +234,17 @@ export class PgVectorStore implements MemoryStore {
 
   async listForForget(company?: string): Promise<ForgetCandidate[]> {
     const rows = company
-      ? await query<{ id: string; importance: string; created_at: string; superseded_at: string | null }>(
+      ? await query<{ id: string; importance: string; created_at: string | Date; superseded_at: string | null }>(
           `SELECT id, importance, created_at, superseded_at FROM agent_memory WHERE company = $1`,
           [company]
         )
-      : await query<{ id: string; importance: string; created_at: string; superseded_at: string | null }>(
+      : await query<{ id: string; importance: string; created_at: string | Date; superseded_at: string | null }>(
           `SELECT id, importance, created_at, superseded_at FROM agent_memory`
         );
     return rows.map((r) => ({
       id: r.id,
       importance: Number(r.importance),
-      createdAt: r.created_at,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
       supersededAt: r.superseded_at,
     }));
   }
@@ -292,7 +292,7 @@ export class PgVectorStore implements MemoryStore {
       sourceRef: r.source_ref,
       content: r.content,
       metadata: r.metadata,
-      createdAt: r.created_at,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
       importance: r.importance == null ? null : Number(r.importance),
     }));
   }
@@ -307,7 +307,7 @@ interface PgRow {
   source_ref: string | null;
   content: string;
   metadata: Record<string, unknown> | null;
-  created_at: string;
+  created_at: string | Date;
   distance: string | number;
   importance?: string | number | null; // present only on the audit SELECT
 }
@@ -328,7 +328,10 @@ function baseHit(r: PgRow, distance: number, score: number): RecallHit {
     sourceRef: r.source_ref,
     content: r.content,
     metadata: r.metadata,
-    createdAt: r.created_at,
+    // Coerce the pg `timestamptz` (a Date from the real driver) to the ISO string
+    // RecallHit.createdAt is typed as. The recall path also feeds the consistency
+    // resolver (memory-agent /ask), which calls .slice()/Date.parse() on createdAt.
+    createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     distance,
     score,
   };
