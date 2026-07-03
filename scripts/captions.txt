@@ -1,16 +1,16 @@
 0|5|Archon MemoryAgent — self-auditing, cross-session memory live on Alibaba Cloud
-5|14|PROOF 1 · /health: real Qwen live on Alibaba (text-embedding-v4 + qwen-plus, 1024-dim)
-14|27|⭐ INNOVATION · two separate sessions write ONE record with a different employer cost
-27|43|/consistency DETECTS the cross-session contradiction and RECOMMENDS which value to trust
-43|53|Memory you can trust: it tells you when it disagrees with itself (resolver never mutates)
-53|71|SESSION A · an agent writes fused financial facts to memory via /ingest
-71|78|Session A ends — nothing kept in process; the facts live only in pgvector
-78|92|SESSION B · a fresh, separate client that has only a question
-92|108|qwen-plus answers — grounded in memory written back in Session A
-108|116|Recalled by MEANING — real cosine similarity over pgvector
-116|121|A memory written in Session A, retrieved in Session B — cross-session persistence
-121|130|Memory is genuinely QUERYABLE — a second, different question
-130|146|A new grounded qwen-plus answer from the same persistent memory
-146|157|Same cross-session memory · new query · new answer
-157|168|PROOF 3 · running live on Alibaba Cloud — ECS + pgvector container
-168|175|Self-auditing · persistent · queryable · across sessions — proven live
+5|13|PROOF 1 · /health: real Qwen live on Alibaba (text-embedding-v4 + qwen-plus, 1024-dim)
+13|26|⭐ INNOVATION · two separate sessions write ONE record with a different employer cost
+26|42|/consistency DETECTS the cross-session contradiction and RECOMMENDS which value to trust
+42|50|Memory you can trust: it flags when it disagrees with itself (resolver never mutates)
+50|66|SESSION A · an agent writes fused financial facts to memory via /ingest
+66|71|Session A ends — nothing kept in process; the facts live only in pgvector
+71|84|SESSION B · a fresh, separate client that has only a question
+84|98|qwen-plus answers — grounded in memory written back in Session A
+98|105|Recalled by MEANING — real cosine similarity over pgvector
+105|109|A memory written in Session A, retrieved in Session B — cross-session persistence
+109|117|Memory is genuinely QUERYABLE — a second, different question
+117|131|A new grounded qwen-plus answer from the same persistent memory
+131|141|Same cross-session memory · new query · new answer
+141|150|PROOF 3 · running live on Alibaba Cloud — ECS + pgvector container
+150|157|Self-auditing · persistent · queryable · across sessions — proven live
