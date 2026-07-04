@@ -311,7 +311,10 @@ Findings, measured:
   claim **parity, not a retrieval win**. (A strict Recall@k against our gold ids
   would be ill-defined anyway: Mem0 *rewrites* the corpus into LLM-extracted
   "facts", so there are no stable ids to score — which is exactly why we grade the
-  objective *figure-present* signal instead.)
+  objective *figure-present* signal instead.) Parity is two-sided and measured on
+  both: on the very same five figures (€18,400 / €12,900 / €38,400 / €6,300 /
+  €27,600), **our** hybrid recall surfaces the gold figure in its top-5 on **5 / 5**
+  too — see the accuracy benchmark's 11/11 recall, of which these are five.
 - **No contradiction/resolution surface.** Mem0's public API exposes **no**
   `consist*`/`contradict*`/`conflict*`/`resolve*`/`audit*` method (empirically the
   matched-method list is `[]`). Fed two cross-session writes that disagree
