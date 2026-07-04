@@ -159,38 +159,42 @@ consistency(scope):                 ── the agent audits its OWN memory
 
 ## Architecture
 
-```
-┌───────────────────────────────────────────────────────────────────────────┐
-│  Alibaba Cloud — ECS instance (ap-southeast-1) · docker-compose             │
-│                                                                             │
-│  ┌──────────────────────────────┐        ┌──────────────────────────────┐  │
-│  │ backend container (Fastify)  │        │ Model Studio / DashScope      │  │
-│  │  src/server.ts               │        │ (Qwen Cloud)                  │  │
-│  │   GET  /health               │ embed  │  text-embedding-v4 (1024-d)   │  │
-│  │   POST /ingest ─┐            │───────▶│  qwen-plus (RAG narrator)     │  │
-│  │   POST /recall ─┤            │◀───────│                               │  │
-│  │   POST /consistency          │  chat  └──────────────────────────────┘  │
-│  └─────────────────┼────────────┘                                          │
-│                    │                                                        │
-│         MemoryAgent │ (embedder · store · narrator — all injectable)        │
-│   ingestEvent() → remember()      recallAnswer() → recall() → narrate()     │
-│                    │ SQL (pg-wire)                                          │
-│                    ▼                                                        │
-│  ┌──────────────────────────────────────────────────────────────────────┐ │
-│  │ pgvector container (PostgreSQL) on the same ECS box — THE MEMORY       │ │
-│  │  agent_memory(embedding vector(1024)) + HNSW cosine index             │ │
-│  │  recall = ORDER BY embedding <=> $query  (semantic, cross-session)     │ │
-│  │  (pg-wire — same SQL runs on managed ApsaraDB RDS / AnalyticDB)        │ │
-│  └──────────────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Agent["AI agent / caller"]
 
-Live deployment = ECS + docker-compose (backend + pgvector container). Because the
-store is pg-wire, the identical code runs unchanged on a managed ApsaraDB RDS /
-AnalyticDB for PostgreSQL instance (the Function Compute alternative in deploy/).
+    subgraph ECS["Alibaba Cloud · ECS ap-southeast-1 · docker-compose"]
+        direction TB
+        subgraph API["backend container — Fastify · src/server.ts"]
+            direction LR
+            H["GET /health · /docs"]
+            I["POST /ingest"]
+            R["POST /recall"]
+            C["POST /consistency"]
+        end
+        MA["MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()"]
+        DB["pgvector container · PostgreSQL — THE MEMORY<br/>agent_memory(embedding vector(1024)) + HNSW cosine index<br/>recall = ORDER BY embedding &lt;=&gt; $query"]
+    end
 
-Offline / CI: no DASHSCOPE_API_KEY → FakeEmbedder + FakeNarrator (deterministic);
-pgvector runs as a docker service. Same code path, zero credentials.
+    subgraph QWEN["Model Studio / DashScope — Qwen Cloud"]
+        direction TB
+        EMB["text-embedding-v4 (1024-d)"]
+        LLM["qwen-plus (RAG narrator)"]
+    end
+
+    RDS["Managed ApsaraDB RDS / AnalyticDB for PostgreSQL<br/>same pg-wire code · DATABASE_URL swap"]
+
+    Agent -->|HTTP / JSON| API
+    API --> MA
+    MA -->|embed| EMB
+    MA -->|chat| LLM
+    MA -->|SQL · pg-wire| DB
+    DB -. drop-in swap .-> RDS
 ```
+
+**Live deployment** = ECS + docker-compose (backend + pgvector container). Because the store is pg-wire, the identical code runs unchanged on a managed ApsaraDB RDS / AnalyticDB for PostgreSQL instance (the Function Compute alternative in `deploy/`).
+
+**Offline / CI:** no `DASHSCOPE_API_KEY` → `FakeEmbedder` + `FakeNarrator` (deterministic); pgvector runs as a docker service. Same code path, zero credentials.
 
 ### Write path (`remember`)
 
