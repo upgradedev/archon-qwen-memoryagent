@@ -18,7 +18,7 @@ let app: FastifyInstance;
 before(async () => {
   // Guarantee the offline Fakes (never a real Qwen call) regardless of env.
   delete process.env.DASHSCOPE_API_KEY;
-  app = buildServer();
+  app = await buildServer();
   await app.ready();
 });
 
@@ -56,4 +56,28 @@ test("POST /recall without a body.question → 400", async () => {
   const res = await app.inject({ method: "POST", url: "/recall", payload: {} });
   assert.equal(res.statusCode, 400);
   assert.match(res.json().error, /question/);
+});
+
+test("GET /openapi.json returns 200 and documents the core routes", async () => {
+  const res = await app.inject({ method: "GET", url: "/openapi.json" });
+  assert.equal(res.statusCode, 200);
+  const spec = res.json();
+  assert.equal(spec.openapi?.startsWith("3."), true);
+  assert.equal(spec.info?.title, "Archon MemoryAgent API");
+  // The onRoute capture must have picked up every registered handler.
+  for (const path of ["/health", "/recall", "/ingest", "/memory/count", "/consistency", "/consolidate", "/forget"]) {
+    assert.ok(spec.paths?.[path], `spec should document ${path}`);
+  }
+  // The raw-spec meta-route is hidden from the rendered spec.
+  assert.equal(spec.paths?.["/openapi.json"], undefined);
+});
+
+test("GET /docs serves the interactive Swagger UI", async () => {
+  const res = await app.inject({ method: "GET", url: "/docs" });
+  // swagger-ui redirects /docs → /docs/ (trailing slash) before serving the page.
+  assert.ok([200, 301, 302].includes(res.statusCode));
+  if (res.statusCode >= 300) {
+    const follow = await app.inject({ method: "GET", url: res.headers.location as string });
+    assert.equal(follow.statusCode, 200);
+  }
 });
