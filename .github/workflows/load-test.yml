@@ -1,0 +1,74 @@
+name: Load Test (k6)
+
+# k6 load / performance test — the LOAD tier of the testing pyramid.
+#
+# MANUAL ONLY (workflow_dispatch). It is deliberately NOT wired to push / PR:
+# it drives the LIVE Alibaba Cloud box (http://43.106.13.19:9000), and every
+# /recall is a real embedding + qwen-plus completion against a real pgvector DB
+# — i.e. real spend and real load. Running it on every commit would burn money
+# and pollute the live database, so it is opt-in only.
+#
+# Default profile is READ-ONLY (/health + /recall, health-weighted). Writes
+# (/ingest) are gated behind the write_load input and default OFF; when enabled
+# they are stamped with an isolable test identity (company "k6-load-test",
+# greppable event_id) so they can be found and purged.
+#
+# Run: Actions -> "Load Test (k6)" -> Run workflow  (or gh workflow run load-test.yml).
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Live base URL to load-test against."
+        required: false
+        default: "http://43.106.13.19:9000"
+      write_load:
+        description: "Include /ingest WRITE load (real spend + writes to the live DB). Default false."
+        required: false
+        default: "false"
+        type: boolean
+      run_ramp:
+        description: "Run the 0->20->50->0 ramp scenario after the smoke. Default true."
+        required: false
+        default: "true"
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install the k6 binary from the official Grafana apt repository.
+      - name: Install k6
+        run: |
+          set -euo pipefail
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+          k6 version
+
+      - name: Run k6 load test (live box)
+        env:
+          TARGET_URL: ${{ github.event.inputs.target_url }}
+          WRITE_LOAD: ${{ github.event.inputs.write_load }}
+          RUN_RAMP: ${{ github.event.inputs.run_ramp }}
+        run: |
+          set -euo pipefail
+          echo "Target: ${TARGET_URL}  |  WRITE_LOAD=${WRITE_LOAD}  |  RUN_RAMP=${RUN_RAMP}"
+          k6 run load/recall-load.js
+
+      - name: Upload k6 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-load-summary
+          path: load-summary.json
+          if-no-files-found: warn
+          retention-days: 14
