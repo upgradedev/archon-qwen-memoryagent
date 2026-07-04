@@ -4,9 +4,25 @@
 
 > **Track: MemoryAgent** — an agent with *persistent, queryable memory that retains and recalls information across sessions*.
 
-An agent that gives a small business's financial-intelligence pipeline a **memory**. Every fused financial event, validation finding, and narrated insight is embedded with **Qwen `text-embedding-v4`** (Alibaba Cloud Model Studio / DashScope) and stored in a **pgvector** memory layer. On any later run — a different session, a different process, a fresh container — the agent **recalls the relevant prior facts by meaning** and grounds a **Qwen `qwen-plus`** answer in them. It reasons with continuity instead of starting cold on every request.
+## What it is
 
-Archon itself is a **unified financial-intelligence platform** — it ingests *all* of a business's financial documents and data (sales and purchase invoices, orders, receipts, payments, bank transfers and statements, expenses, and workforce costs) into one environment and produces a consolidated, period-over-period view: **P&L, EBITDA, cash, sales targets, and per-period metrics**, while **cross-checking the whole picture for missing or inconsistent information** — for example, *a bank payment that appears with no matching invoice: did the vendor never send it, did the accountant never register it, or is the payment wrong?* This MemoryAgent gives that pipeline a **memory**: it remembers each consolidated figure and each cross-check finding across sessions and can answer questions about them on any later run. The financial picture it remembers is broad — one memory might be a sales invoice, the next a cash position, the next a completeness anomaly, and among them the **true cost of employing a team** (a bank salary transfer understates it, because it never shows employer social-security contributions) as *one* business aspect among many.
+Archon MemoryAgent gives a small business's financial-intelligence pipeline a **memory**.
+
+Every fused financial event, validation finding, and narrated insight is embedded with **Qwen `text-embedding-v4`** (Alibaba Cloud Model Studio / DashScope) and stored in a **pgvector** memory layer.
+
+On any later run — a different session, a different process, a fresh container — the agent **recalls the relevant prior facts by meaning** and grounds a **Qwen `qwen-plus`** answer in them. It reasons with continuity instead of starting cold on every request.
+
+## What Archon is
+
+Archon is a **unified financial-intelligence platform**.
+
+It ingests *all* of a business's financial documents and data into one environment — sales and purchase invoices, orders, receipts, payments, bank transfers and statements, expenses, and workforce costs. From that it produces a consolidated, period-over-period view: **P&L, EBITDA, cash, sales targets, and per-period metrics**.
+
+It also **cross-checks the whole picture for missing or inconsistent information**. For example: *a bank payment appears with no matching invoice — did the vendor never send it, did the accountant never register it, or is the payment wrong?*
+
+This MemoryAgent gives that pipeline a memory. It remembers each consolidated figure and each cross-check finding across sessions, and can answer questions about them on any later run.
+
+The financial picture it remembers is broad: one memory might be a sales invoice, the next a cash position, the next a completeness anomaly. Among them is the **true cost of employing a team** — a bank salary transfer understates it, because it never shows employer social-security contributions — but that is just *one* business aspect among many.
 
 ## Why this is a MemoryAgent
 
@@ -14,94 +30,109 @@ Archon itself is a **unified financial-intelligence platform** — it ingests *a
 |---|---|
 | **Persistent memory** | Memories are embedded and written to pgvector on Alibaba Cloud PostgreSQL — durable, not in-process. |
 | **Queryable memory** | Recall is semantic ANN search (`ORDER BY embedding <=> $q`) over an HNSW cosine index, with `kind`/`company` pre-filters. |
-| **Across sessions** | The headline e2e test (`tests/e2e/cross-session.test.ts`) proves it: **session A writes and tears down completely; a fresh session B — no shared in-process state — recalls those memories and answers from them.** The only thing shared is the database. |
-| **Increasingly accurate over time** | Each ingested event adds recallable facts; later questions retrieve the accumulated memory, not just the current request's context. |
+| **Across sessions** | The headline e2e test (`tests/e2e/cross-session.test.ts`) proves it. Session A writes and tears down completely; a fresh session B — no shared in-process state — recalls those memories and answers from them. The only thing shared is the database. |
+| **Increasingly accurate over time** | Each ingested event adds recallable facts. Later questions retrieve the accumulated memory, not just the current request's context. |
 
 ## What makes the memory strong (not just present)
 
-A MemoryAgent lives or dies on **recall quality** and **memory hygiene**. This
-entry treats both as first-class, engineered, and *measured* — and adds a
-capability most memory demos skip: the agent **audits its own memory**.
+A MemoryAgent lives or dies on **recall quality** and **memory hygiene**. This entry treats both as first-class, engineered, and *measured*.
 
-- **⭐ Self-auditing memory (the headline).** A cross-session agent accumulates
-  facts from many separate write events, and nothing stops two of them from
-  **contradicting**: session A records a payroll event's employer cost at €18,000;
-  a later session B records €19,000 for the same event. Plain recall just returns whichever
-  ranked higher and stays silent. `POST /consistency` (`src/memory/consistency.ts`)
-  scans the agent's own memories, groups them by the record they describe, and
-  flags **cross-session contradictions** (same record + attribute, different value
-  across write events) and **dangling references** (a memory points at a record no
-  memory stores). It's a **pure, domain-neutral** engine — not a finance rulebook —
-  and it's *measured*: on a labelled dataset it detects **5/5 injected problems
-  with 0 false positives** on a consistent control set (100% precision). This is
-  memory you can *trust*, because it tells you when it disagrees with itself.
-  And it doesn't just detect — for every contradiction it **recommends which side
-  to trust** (`resolution: { recommendedMemoryId, recommendedValue, rule,
-  confidence, rationale }`) via a fixed, domain-neutral priority ladder —
-  **importance → source-authority → recency (later write wins)** — over signals
-  already on the memories. It's a *recommender, not ground truth*: it **never
-  mutates memory**, and it is measured too (**4/4 correct** on a labelled
-  resolution set; `npm run bench:resolution`).
-  **What's genuinely new here** (positioned against the literature, honestly):
-  classic RAG and the pgvector default just rank and return; **Mem0** resolves
-  conflicts by letting an LLM *silently mutate* memory at write time (ADD/UPDATE/
-  DELETE); **Zep/Graphiti** resolves by *mutating* its temporal graph (invalidating
-  the stale edge by time). Ours is the one that **never mutates**: a **read-only,
-  deterministic, domain-neutral pure function** that surfaces the contradiction and
-  hands back a *recommendation* — `rule + confidence + rationale` over a fixed
-  importance→source-authority→recency ladder — for the agent or a human to accept or
-  override. Not "we detect and they can't" (Zep does); rather **"we recommend
-  without mutating, explainably and portably"** — a memory layer that stays honest
-  about what it holds. Full method + honesty caveats:
-  **[BENCHMARK.md](./BENCHMARK.md)**.
-- **Hybrid retrieval (dense + lexical, RRF) + a cross-encoder re-ranker.** Agent
-  memories are full of exact tokens dense embeddings blur — document numbers
-  (`INV-2043`, `PINV-771`), euro figures, company names, period codes. Recall fuses
-  `text-embedding-v4` cosine search with BM25/full-text lexical search using
-  **Reciprocal Rank Fusion**, then a **cross-encoder re-rank stage** (`qwen-plus`
-  scoring each query/memory pair jointly) refines the top of the list.
-- **Measured against baselines — honestly, and against the field default.** A
-  frozen, labelled benchmark (`bench/`) scores retrieval with Recall@k / MRR / nDCG
-  on **real `text-embedding-v4`**. The `naive-vector` baseline is **not a strawman**:
-  a single-vector cosine ANN search is the default retrieval mode of LangChain's
-  `VectorStoreRetriever` and virtually every pgvector RAG demo, so beating it is
-  beating **what the field ships by default**. Hybrid
-  is the **robust** retriever (never recalls worse than dense: Recall@3 90.0% →
-  93.3%; far beats lexical-only). Hybrid *alone* doesn't beat a strong dense embedder
-  on top-rank — so we added the cross-encoder re-ranker, which **does**:
-  `reranked-hybrid` lifts **MRR 0.883 → 0.911**,
-  **nDCG@5 0.903 → 0.938**, **Recall@3 90.0% → 96.7%** over dense. Reproducible
-  offline from committed fixtures (no key, no spend), **gated in CI**, and shipped
-  with a **sensitivity control** (a meaning-shuffled retriever that must score near
-  chance — proof the benchmark discriminates). Full method + honest caveats:
-  **[BENCHMARK.md](./BENCHMARK.md)**.
-- **A real head-to-head vs Mem0 (run), with Zep cited — honestly scoped.** We
-  installed **Mem0 (`mem0ai==2.0.11`)** and drove it with the **same Qwen models
-  and the same cross-session conflict pairs** our own audit is measured on
-  (`bench/external/`, evidence committed as `mem0-evidence.json`). Two honest
-  findings: **retrieval is at parity** (Mem0 put the gold figure in its top-5 on
-  5/5 — we claim *parity, not a retrieval win*), and Mem0 **exposes no
-  contradiction/resolution API** (empirically an empty method list) — fed two
-  disagreeing writes it stores both and returns both ranked by similarity with **no
-  conflict flag and no resolution recommendation**. **Zep/Graphiti _does_ handle
-  contradictions** (its temporal graph invalidates the stale edge by time) — we say
-  so plainly; the difference is that Zep *mutates* graph state and resolves by time,
-  whereas ours is a **read-only, deterministic, portable audit that recommends
-  without ever mutating**. Full capability matrix + caveats:
-  **[BENCHMARK.md](./BENCHMARK.md#head-to-head-vs-mem0-and-zep)**.
-- **A measured accuracy number on our own pipeline (H0-style).** On 11 labelled
-  number-bearing questions, replaying one committed `qwen-plus` pass over the
-  shipped hybrid recall and grading **by number presence, not prose**
-  (`npm run bench:accuracy`, gated in CI): **gold-memory recall@5 100%**, **answer
-  correctness 100%**, and **answer grounding/faithfulness 90.9%** — every euro
-  figure in the answer traces to a recalled memory. The one grounding miss is a
-  *derived* figure (€2,800 = €41,200 − €38,400) the metric correctly flags; we
-  report 90.9%, not a suspicious 100%.
-- **Consolidation + forgetting.** The agent doesn't just append. `consolidate()`
-  collapses near-duplicate memories (re-ingested facts) into one canonical memory;
-  `forget()` drops superseded and stale low-importance memories while protecting
-  high-importance insights. So recall stays sharp as the memory grows across
-  sessions.
+It also adds a capability most memory demos skip: the agent **audits its own memory**.
+
+### ⭐ Self-auditing memory (the headline)
+
+A cross-session agent accumulates facts from many separate write events. Nothing stops two of them from **contradicting**.
+
+Say session A records a payroll event's employer cost at **€18,000**, and a later session B records **€19,000** for the same event. Plain recall just returns whichever ranked higher and stays silent.
+
+`POST /consistency` (`src/memory/consistency.ts`) does not. It scans the agent's own memories, groups them by the record they describe, and flags two things:
+
+- **Cross-session contradictions** — same record and attribute, different value across write events.
+- **Dangling references** — a memory points at a record that no memory stores.
+
+It is a **pure, domain-neutral** engine, not a finance rulebook. And it is *measured*: on a labelled dataset it detects **5/5 injected problems with 0 false positives** on a consistent control set (100% precision).
+
+This is memory you can *trust*, because it tells you when it disagrees with itself.
+
+**It doesn't just detect — it recommends.** For every contradiction it recommends which side to trust:
+
+```
+resolution: { recommendedMemoryId, recommendedValue, rule, confidence, rationale }
+```
+
+The recommendation follows a fixed, domain-neutral priority ladder — **importance → source-authority → recency (later write wins)** — over signals already on the memories.
+
+It is a *recommender, not ground truth*. It **never mutates memory**, and it is measured too: **4/4 correct** on a labelled resolution set (`npm run bench:resolution`).
+
+**What's genuinely new here** (positioned against the literature, honestly):
+
+- Classic RAG and the pgvector default just **rank and return**.
+- **Mem0** resolves conflicts by letting an LLM *silently mutate* memory at write time (ADD / UPDATE / DELETE).
+- **Zep / Graphiti** resolves by *mutating* its temporal graph (invalidating the stale edge by time).
+- **Ours never mutates.** It is a read-only, deterministic, domain-neutral pure function that surfaces the contradiction and hands back a *recommendation* — `rule + confidence + rationale` over a fixed importance → source-authority → recency ladder — for the agent or a human to accept or override.
+
+The claim is not "we detect and they can't" (Zep does). It is **"we recommend without mutating, explainably and portably"** — a memory layer that stays honest about what it holds.
+
+Full method + honesty caveats: **[BENCHMARK.md](./BENCHMARK.md)**.
+
+### Hybrid retrieval (dense + lexical, RRF) + a cross-encoder re-ranker
+
+Agent memories are full of exact tokens that dense embeddings blur: document numbers (`INV-2043`, `PINV-771`), euro figures, company names, period codes.
+
+Recall handles both meaning and exact tokens:
+
+1. Fuse `text-embedding-v4` cosine search with BM25 / full-text lexical search using **Reciprocal Rank Fusion (RRF)**.
+2. Refine the top of the list with a **cross-encoder re-rank stage** (`qwen-plus` scoring each query/memory pair jointly).
+
+### Measured against baselines — honestly, and against the field default
+
+A frozen, labelled benchmark (`bench/`) scores retrieval with Recall@k / MRR / nDCG on **real `text-embedding-v4`**.
+
+The `naive-vector` baseline is **not a strawman**. A single-vector cosine ANN search is the default retrieval mode of LangChain's `VectorStoreRetriever` and virtually every pgvector RAG demo. Beating it is beating **what the field ships by default**.
+
+Findings, stated honestly:
+
+- **Hybrid is the *robust* retriever.** It never recalls worse than dense (Recall@3 90.0% → 93.3%) and far beats lexical-only.
+- **Hybrid alone doesn't beat a strong dense embedder on top-rank** — so we added the cross-encoder re-ranker, which does.
+- **`reranked-hybrid` wins on top-rank** over dense: MRR **0.883 → 0.911**, nDCG@5 **0.903 → 0.938**, Recall@3 **90.0% → 96.7%**.
+
+Reproducible offline from committed fixtures (no key, no spend), **gated in CI**, and shipped with a **sensitivity control** — a meaning-shuffled retriever that must score near chance, proving the benchmark actually discriminates.
+
+Full method + honest caveats: **[BENCHMARK.md](./BENCHMARK.md)**.
+
+### A real head-to-head vs Mem0 (run), with Zep cited
+
+We installed **Mem0 (`mem0ai==2.0.11`)** and drove it with the **same Qwen models and the same cross-session conflict pairs** our own audit is measured on (`bench/external/`, evidence committed as `mem0-evidence.json`).
+
+Two honest findings:
+
+- **Retrieval is at parity.** Mem0 put the gold figure in its top-5 on 5/5. We claim *parity, not a retrieval win*.
+- **Mem0 exposes no contradiction/resolution API** (empirically, an empty method list). Fed two disagreeing writes, it stores both and returns both ranked by similarity — no conflict flag, no resolution recommendation.
+
+**Zep / Graphiti _does_ handle contradictions** — its temporal graph invalidates the stale edge by time. We say so plainly. The difference: Zep *mutates* graph state and resolves by time, whereas ours is a **read-only, deterministic, portable audit that recommends without ever mutating**.
+
+Full capability matrix + caveats: **[BENCHMARK.md](./BENCHMARK.md#head-to-head-vs-mem0-and-zep)**.
+
+### A measured accuracy number on our own pipeline
+
+On 11 labelled number-bearing questions, we replay one committed `qwen-plus` pass over the shipped hybrid recall and grade **by number presence, not prose** (`npm run bench:accuracy`, gated in CI):
+
+- **Gold-memory recall@5: 100%**
+- **Answer correctness: 100%**
+- **Answer grounding / faithfulness: 90.9%** — every euro figure in the answer traces to a recalled memory.
+
+The one grounding miss is a *derived* figure (€2,800 = €41,200 − €38,400) that the metric correctly flags. We report 90.9%, not a suspicious 100%.
+
+### Consolidation + forgetting
+
+The agent doesn't just append.
+
+- `consolidate()` collapses near-duplicate memories (re-ingested facts) into one canonical memory.
+- `forget()` drops superseded and stale low-importance memories while protecting high-importance insights.
+
+So recall stays sharp as the memory grows across sessions.
+
+### Recall + self-audit, in pseudocode
 
 ```
 recall(question):
@@ -124,7 +155,7 @@ consistency(scope):                 ── the agent audits its OWN memory
 |---|---|
 | **Qwen models** | `text-embedding-v4` (embeddings, 1024-dim default) + `qwen-plus` (RAG narration). |
 | **Qwen Cloud / DashScope** | Called via the OpenAI-compatible endpoint `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` with the standard `openai` Node SDK. Key = `DASHSCOPE_API_KEY`. |
-| **Alibaba Cloud deployment** | The HTTP backend (`src/server.ts`) ships as a container (`Dockerfile`) and runs **live on Alibaba Cloud ECS** (`ecs.e-c1m2.large`, ap-southeast-1) via docker-compose — the backend plus a **self-hosted pgvector container** as the memory store. A **Function Compute + managed ApsaraDB RDS** path is also provided (`deploy/s.yaml`, `deploy/deploy-fc.sh`) as a serverless alternative. See [`deploy/`](./deploy). |
+| **Alibaba Cloud deployment** | The HTTP backend (`src/server.ts`) ships as a container (`Dockerfile`) and runs **live on Alibaba Cloud ECS** (`ecs.e-c1m2.large`, ap-southeast-1) via docker-compose — the backend plus a self-hosted **pgvector container** as the memory store. A **Function Compute + managed ApsaraDB RDS** path is also provided (`deploy/s.yaml`, `deploy/deploy-fc.sh`) as a serverless alternative. See [`deploy/`](./deploy). |
 
 ## Architecture
 
@@ -162,17 +193,35 @@ pgvector runs as a docker service. Same code path, zero credentials.
 ```
 
 ### Write path (`remember`)
-An agent states a fact in natural language (`"Completeness check for Helios Retail 2026-02: a €3,200 bank payment to Pallas Freight has no matching purchase invoice (high severity)…"`, or `"P&L for ByteCraft Software 2026-05: revenue €210,000, operating profit €41,200"`) → Qwen `text-embedding-v4` embeds it → the text, structured metadata, and the 1024-dim vector are stored in `agent_memory`.
+
+An agent states a fact in natural language. For example:
+
+> *"Completeness check for Helios Retail 2026-02: a €3,200 bank payment to Pallas Freight has no matching purchase invoice (high severity)…"*
+>
+> *"P&L for ByteCraft Software 2026-05: revenue €210,000, operating profit €41,200"*
+
+Qwen `text-embedding-v4` embeds it. The text, structured metadata, and the 1024-dim vector are then stored in `agent_memory`.
 
 ### Read path (`recall` → `narrate`)
-A question is embedded and run as an ANN search over the HNSW cosine index (`ORDER BY embedding <=> $query`). The top-k memories are handed to the **narrator** (`qwen-plus`), which writes a grounded answer that **cites the exact memories** it used — RAG over the agent's own persistent memory.
+
+A question is embedded and run as an ANN search over the HNSW cosine index (`ORDER BY embedding <=> $query`).
+
+The top-k memories are handed to the **narrator** (`qwen-plus`), which writes a grounded answer that **cites the exact memories** it used. It is RAG over the agent's own persistent memory.
 
 ## The memory store — decision & tradeoff
 
-**Chosen: pgvector on PostgreSQL, running on Alibaba Cloud.** The live deployment self-hosts the `pgvector/pgvector` container on an ECS instance (alongside the backend, via docker-compose); because it is pg-wire, the identical `pg` driver + SQL also runs against a managed **ApsaraDB RDS / AnalyticDB for PostgreSQL** instance with the `pgvector` extension (the Function Compute alternative in [`deploy/`](./deploy)).
+**Chosen: pgvector on PostgreSQL, running on Alibaba Cloud.**
 
-- **Why the ECS + pgvector-container topology for the live box:** it delivers a single, always-reachable public URL on Alibaba Cloud fastest and most reliably, with no FC↔RDS VPC wiring or ACR console steps in the critical path. Because the store is pg-wire, the same `pg` driver + SQL runs unchanged across local docker, CI, and production — and stands up a real vector index in CI with **zero Alibaba credentials** (stock `pgvector/pgvector` docker). Best Alibaba-narrative × short-deadline tradeoff; the managed-RDS + Function Compute path is a drop-in `DATABASE_URL` swap.
-- **Consciously deferred alternative:** Alibaba's fully-managed **DashVector** (or **Tair** vector) is an arguably *stronger pure-Alibaba* story, but it is a new non-pg API needing its own offline test double — the wrong trade at this deadline. The `MemoryStore` interface (`src/memory/store.ts`) is the seam a `DashVectorStore` would slot into next, with no change to the agent.
+The live deployment self-hosts the `pgvector/pgvector` container on an ECS instance, alongside the backend, via docker-compose. Because it is pg-wire, the identical `pg` driver + SQL also runs against a managed **ApsaraDB RDS / AnalyticDB for PostgreSQL** instance with the `pgvector` extension (the Function Compute alternative in [`deploy/`](./deploy)).
+
+**Why the ECS + pgvector-container topology for the live box:**
+
+- It delivers a single, always-reachable public URL on Alibaba Cloud fastest and most reliably — no FC↔RDS VPC wiring or ACR console steps in the critical path.
+- Because the store is pg-wire, the same `pg` driver + SQL runs unchanged across local docker, CI, and production.
+- It stands up a real vector index in CI with **zero Alibaba credentials** (stock `pgvector/pgvector` docker).
+- It is the best Alibaba-narrative × short-deadline tradeoff. The managed-RDS + Function Compute path is a drop-in `DATABASE_URL` swap.
+
+**Consciously deferred alternative:** Alibaba's fully-managed **DashVector** (or **Tair** vector) is an arguably *stronger pure-Alibaba* story. But it is a new non-pg API needing its own offline test double — the wrong trade at this deadline. The `MemoryStore` interface (`src/memory/store.ts`) is the seam a `DashVectorStore` would slot into next, with no change to the agent.
 
 ## Repository layout
 
@@ -196,6 +245,7 @@ repos/qwen-memoryagent/
 │   └── server.ts                # Fastify HTTP backend (the Alibaba Cloud deploy target)
 ├── bench/                        # frozen retrieval + accuracy + consistency datasets, metrics, runners, committed fixtures (embeddings + re-rank + answers)
 │   └── external/                 # real head-to-head vs Mem0 (mem0ai) — export + harness + committed evidence
+├── load/                         # k6 load/performance test (manual workflow; reads-only by default)
 ├── scripts/{apply-schema.ts,demo-memory.ts}
 ├── tests/{unit,integration,e2e}/  # the testing pyramid
 ├── deploy/{redeploy.sh,DEPLOY_STATE.md}  # LIVE path: ECS + docker-compose (backend + pgvector container)
@@ -235,10 +285,14 @@ npm run test:integration        # real pgvector (needs DATABASE_URL)
 npm run test:e2e                # cross-session persistence (needs DATABASE_URL)
 ```
 
+Once the backend is running, open **`http://localhost:9000/docs`** for the interactive API explorer (Swagger UI), or fetch the raw spec at `/openapi.json`.
+
 ### HTTP API
 
 | Method + path | Purpose |
 |---|---|
+| `GET /docs` | Interactive API explorer (Swagger UI). |
+| `GET /openapi.json` | Machine-readable OpenAPI 3 spec. |
 | `GET /health` | Liveness; reports the live embedder/narrator model ids + dim. |
 | `GET /memory/count` | How many memories the agent holds. |
 | `POST /ingest` | `{ event }` → write memories for a fused financial event. |
@@ -247,18 +301,15 @@ npm run test:e2e                # cross-session persistence (needs DATABASE_URL)
 | `POST /consolidate` | `{ company?, threshold? }` → collapse near-duplicate memories. |
 | `POST /forget` | `{ company?, deleteSuperseded?, olderThanDays?, maxImportance? }` → prune memories. |
 
-Without a `DASHSCOPE_API_KEY` the demo + backend run with deterministic offline `FakeEmbedder` + `FakeNarrator`, so the full pgvector write + vector-recall path still executes. Set the key to switch to real Qwen — same interface, same 1024 dimensions.
+Without a `DASHSCOPE_API_KEY`, the demo and backend run with deterministic offline `FakeEmbedder` + `FakeNarrator`. The full pgvector write + vector-recall path still executes. Set the key to switch to real Qwen — same interface, same 1024 dimensions.
 
 ## Deploy to Alibaba Cloud
 
 ### Live path — ECS + docker-compose (backend + pgvector container)
 
-This is how the entry actually runs on Alibaba Cloud: a single ECS instance
-(`ecs.e-c1m2.large`, ap-southeast-1) runs docker-compose with the backend
-container plus a self-hosted `pgvector/pgvector` container as the memory store,
-behind one public URL. [`deploy/redeploy.sh`](./deploy/redeploy.sh) is an
-idempotent, schema-first redeploy (health + ingest/recall smoke, optional
-`--truncate`); [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) is the full runbook.
+This is how the entry actually runs on Alibaba Cloud. A single ECS instance (`ecs.e-c1m2.large`, ap-southeast-1) runs docker-compose with the backend container plus a self-hosted `pgvector/pgvector` container as the memory store, behind one public URL.
+
+[`deploy/redeploy.sh`](./deploy/redeploy.sh) is an idempotent, schema-first redeploy (health + ingest/recall smoke, optional `--truncate`). [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) is the full runbook.
 
 ```bash
 # On the ECS box (source synced via rsync — the box has no git checkout):
@@ -267,16 +318,11 @@ bash deploy/redeploy.sh            # or: --truncate for a clean demo slate
 curl http://<public-ip>:9000/health
 ```
 
-Set `DATABASE_URL`, `DASHSCOPE_API_KEY`, and `DASHSCOPE_BASE_URL` via the
-compose env — never commit them. Without a `DASHSCOPE_API_KEY` the box runs the
-deterministic Fakes (the pgvector round-trip still executes).
+Set `DATABASE_URL`, `DASHSCOPE_API_KEY`, and `DASHSCOPE_BASE_URL` via the compose env — never commit them. Without a `DASHSCOPE_API_KEY` the box runs the deterministic Fakes (the pgvector round-trip still executes).
 
 ### Alternative — Function Compute + managed RDS (serverless)
 
-For a fully-serverless topology the same container deploys to Alibaba Cloud
-Function Compute (custom-container HTTP function) with a managed **ApsaraDB RDS /
-AnalyticDB for PostgreSQL** memory store. See
-[`deploy/deploy-fc.sh`](./deploy/deploy-fc.sh) and [`deploy/s.yaml`](./deploy/s.yaml).
+For a fully-serverless topology, the same container deploys to Alibaba Cloud Function Compute (custom-container HTTP function) with a managed **ApsaraDB RDS / AnalyticDB for PostgreSQL** memory store. See [`deploy/deploy-fc.sh`](./deploy/deploy-fc.sh) and [`deploy/s.yaml`](./deploy/s.yaml).
 
 ```bash
 # Prereqs: Alibaba Cloud account + ACR namespace (same region), Serverless Devs (`s`)
@@ -287,41 +333,42 @@ REGION=ap-southeast-1 ACR_NAMESPACE=<your-ns> \
 curl <trigger-url>/health
 ```
 
-Because the store is pg-wire, switching between the two is a `DATABASE_URL` swap —
-no application change.
+Because the store is pg-wire, switching between the two is a `DATABASE_URL` swap — no application change.
 
 ## Testing & CI
 
-Full testing pyramid, all green in GitHub Actions (`.github/workflows/ci.yml`), fully offline (no Qwen/Alibaba credentials — the Fakes auto-engage):
+Full testing pyramid, all green in GitHub Actions (`.github/workflows/ci.yml`), fully offline. No Qwen/Alibaba credentials are needed — the Fakes auto-engage.
 
 | Tier | File(s) | What it proves |
 |---|---|---|
 | **Unit** | `tests/unit/*` | Embedder + narrator (Qwen canned + Fake), memory logic, **retrieval primitives** (BM25, RRF, MMR, hybrid, **re-rank**), **IR metrics**, **consolidation + forgetting**, **self-audit consistency** (contradiction + absence detection, precision on a control set) — all over `InMemoryStore`, no infra. |
 | **Integration** | `tests/integration/pgvector-store.test.ts` | Real pgvector SQL: `::vector` insert, `<=>` cosine recall, filters, count, **hybrid dense+FTS fusion**, **consolidate → supersede → forget**. |
 | **E2E** | `tests/e2e/cross-session.test.ts` | **Cross-session persistence** — session A writes + tears down, session B recalls. |
-| **Benchmark gates** | `bench/*` | **Retrieval regression gate** (hybrid ≥ dense) + **discrimination gate** (shuffled control near chance) + **grounded-answer accuracy gate** (`bench:accuracy`: correctness 100%, grounding ≥ 90%) + **self-audit gate** (`bench:consistency`: 100% detection, 0 false positives) + **resolution gate** (`bench:resolution`: structural invariants + winner-accuracy on the labelled policy). Re-rank delta vs dense + Mem0 head-to-head reported (not gated). All replay committed fixtures — no key, no spend. |
+| **Benchmark gates** | `bench/*` | **Retrieval regression gate** (hybrid ≥ dense) + **discrimination gate** (shuffled control near chance) + **grounded-answer accuracy gate** (`bench:accuracy`: correctness 100%, grounding ≥ 90%) + **self-audit gate** (`bench:consistency`: 100% detection, 0 false positives) + **resolution gate** (`bench:resolution`: structural invariants + winner-accuracy on the labelled policy). Re-rank delta vs dense and the Mem0 head-to-head are reported (not gated). All replay committed fixtures — no key, no spend. |
+| **Load / performance** | `load/recall-load.js` (k6) | Ramps concurrent `/recall` + `/health` against a target box and asserts p95 latency + error-rate SLOs. Runs on demand via the `load-test` workflow (manual only — it hits the live box), reads-only by default. |
 
 CI stages:
+
 1. **secret-scan** — gitleaks (pinned v8.18.4, redacted). Fails fast on any committed secret.
 2. **dep-audit** — `npm audit` (fails on high/critical).
 3. **build-test** — typecheck → schema apply (stands up real pgvector) → unit → integration → e2e → offline demo smoke.
-4. **benchmark** — `npm run bench -- --gate` (retrieval regression + discrimination), `npm run bench:accuracy -- --gate` (grounded-answer correctness + faithfulness), `npm run bench:consistency -- --gate` (self-audit detection/precision) and `npm run bench:resolution -- --gate` (contradiction-resolution invariants + policy-conformance), all over committed fixtures (no key, no spend).
+4. **benchmark** — `npm run bench -- --gate` (retrieval regression + discrimination), `npm run bench:accuracy -- --gate` (grounded-answer correctness + faithfulness), `npm run bench:consistency -- --gate` (self-audit detection/precision), and `npm run bench:resolution -- --gate` (contradiction-resolution invariants + policy-conformance). All over committed fixtures — no key, no spend.
 5. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.
 
-Every stage runs **fully offline** — no DashScope / Alibaba credentials — because the Qwen embedder/narrator auto-fall back to deterministic Fakes and the benchmark replays cached vectors.
+Every stage runs **fully offline**. There are no DashScope / Alibaba credentials in CI, because the Qwen embedder/narrator auto-fall back to deterministic Fakes and the benchmark replays cached vectors.
 
 ## How this maps to the judging rubric
 
 | Criterion (weight) | Where to look |
 |---|---|
-| **Technical Depth & Engineering (30%)** | Hybrid dense+lexical retrieval with RRF + cross-encoder re-rank, consolidation/forgetting lifecycle, injectable Qwen/Fake seams, full test pyramid + **four benchmark gates** (retrieval regression + discrimination, **grounded-answer accuracy**, self-audit detection, resolution policy) + CodeQL, real pgvector on Alibaba. A *measured* memory system, not a wrapper — **including a real head-to-head vs Mem0** (`bench/external/`) and a **measured 100% correctness / 90.9% grounding** number on its own answers. |
-| **Innovation & AI Creativity (30%)** | **Self-auditing memory that detects _and_ resolves without ever mutating**: the agent flags when two of its own cross-session writes *contradict* (100% detection / 0 false positives, measured) **and recommends which side to trust** (importance → source-authority → recency; a recommender that never mutates memory; 4/4 correct on a labelled set). Positioned honestly against the field: **Mem0 resolves by silent LLM mutation, Zep by mutating its temporal graph — ours is the read-only, deterministic, portable recommender** (measured head-to-head: Mem0 exposes no such API, retrieval at parity). Plus memory that fuses meaning + exact tokens, is refined by a cross-encoder re-ranker (a *measured* top-rank win over the field-default dense baseline: MRR 0.883 → 0.911), prunes its own duplicates, and proves quality with reproducible, sensitivity-controlled benchmarks. |
-| **Problem Value & Impact (25%)** | A real, recurring SMB pain: consolidated financial facts and cross-check findings that must be remembered across sessions — from an unbilled sales order to a payment with no matching invoice to the true cost of employing a team. |
-| **Presentation & Documentation (15%)** | This README + architecture diagram + [BENCHMARK.md](./BENCHMARK.md) (method + honest caveats) + the ~3-min demo + live Alibaba URL. |
+| **Technical Depth & Engineering (30%)** | Hybrid dense+lexical retrieval with RRF + cross-encoder re-rank; consolidation/forgetting lifecycle; injectable Qwen/Fake seams; full test pyramid + **four benchmark gates** (retrieval regression + discrimination, grounded-answer accuracy, self-audit detection, resolution policy) + CodeQL; real pgvector on Alibaba. A *measured* memory system, not a wrapper — including a real **head-to-head vs Mem0** (`bench/external/`) and a **measured 100% correctness / 90.9% grounding** number on its own answers. |
+| **Innovation & AI Creativity (30%)** | **Self-auditing memory that detects _and_ resolves without ever mutating.** The agent flags when two of its own cross-session writes contradict (100% detection / 0 false positives, measured) and recommends which side to trust (importance → source-authority → recency; a recommender that never mutates memory; 4/4 correct on a labelled set). Positioned honestly against the field: Mem0 resolves by silent LLM mutation, Zep by mutating its temporal graph — ours is the read-only, deterministic, portable recommender (measured head-to-head: Mem0 exposes no such API, retrieval at parity). Plus memory that fuses meaning + exact tokens, is refined by a cross-encoder re-ranker (a measured top-rank win over the field-default dense baseline: MRR 0.883 → 0.911), prunes its own duplicates, and proves quality with reproducible, sensitivity-controlled benchmarks. |
+| **Problem Value & Impact (25%)** | A real, recurring SMB pain: consolidated financial facts and cross-check findings that must be remembered across sessions — from an unbilled sales order, to a payment with no matching invoice, to the true cost of employing a team. |
+| **Presentation & Documentation (15%)** | This README + architecture diagram + [BENCHMARK.md](./BENCHMARK.md) (method + honest caveats) + the interactive `/docs` API explorer + the ~3-min demo + the live Alibaba URL. |
 
 ## Provenance / reuse
 
-Archon is our own product; this entry reuses our public Archon builds freely and ports the memory layer to Qwen + Alibaba Cloud. The `memory/` layer, `MemoryStore` abstraction, `QwenEmbedder`/`QwenNarrator`, and the cross-session e2e are built for this hackathon.
+Archon is our own product. This entry reuses our public Archon builds freely and ports the memory layer to Qwen + Alibaba Cloud. The `memory/` layer, the `MemoryStore` abstraction, `QwenEmbedder` / `QwenNarrator`, and the cross-session e2e are built for this hackathon.
 
 ## License
 
