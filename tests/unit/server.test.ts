@@ -36,6 +36,24 @@ test("GET /health returns ok with embedder/narrator identity (no DB, no key)", a
   assert.ok(Number.isInteger(body.embedDim) && body.embedDim > 0);
 });
 
+test("CORS: a cross-origin GET reflects the request origin (browser dashboards can call the API)", async () => {
+  const origin = "https://archon-memoryagent-web.oss-website-ap-southeast-1.aliyuncs.com";
+  const res = await app.inject({ method: "GET", url: "/health", headers: { origin } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers["access-control-allow-origin"], origin);
+});
+
+test("CORS: preflight OPTIONS on /recall is allowed for a browser POST", async () => {
+  const origin = "https://example.com";
+  const res = await app.inject({
+    method: "OPTIONS",
+    url: "/recall",
+    headers: { origin, "access-control-request-method": "POST" },
+  });
+  assert.ok(res.statusCode === 204 || res.statusCode === 200);
+  assert.equal(res.headers["access-control-allow-origin"], origin);
+});
+
 test("POST /ingest without a body.event → 400", async () => {
   const res = await app.inject({ method: "POST", url: "/ingest", payload: {} });
   assert.equal(res.statusCode, 400);

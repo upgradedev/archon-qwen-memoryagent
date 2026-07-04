@@ -19,6 +19,7 @@
 import Fastify from "fastify";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
+import cors from "@fastify/cors";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { defaultEmbedder } from "./memory/embeddings.js";
@@ -48,6 +49,15 @@ const errorResponse = {
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
+
+  // CORS — lets a browser dashboard (e.g. the OSS static site) call this API
+  // cross-origin. Default reflects any origin (a demo memory service with no
+  // per-user secrets); pin via CORS_ORIGIN="https://host" (comma-separated).
+  await app.register(cors, {
+    origin: process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
+      : true,
+  });
 
   await app.register(swagger, {
     openapi: {
