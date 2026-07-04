@@ -41,7 +41,18 @@ capability most memory demos skip: the agent **audits its own memory**.
   **importance → source-authority → recency (later write wins)** — over signals
   already on the memories. It's a *recommender, not ground truth*: it **never
   mutates memory**, and it is measured too (**4/4 correct** on a labelled
-  resolution set; `npm run bench:resolution`). Full method + honesty caveats:
+  resolution set; `npm run bench:resolution`).
+  **What's genuinely new here** (positioned against the literature, honestly):
+  classic RAG and the pgvector default just rank and return; **Mem0** resolves
+  conflicts by letting an LLM *silently mutate* memory at write time (ADD/UPDATE/
+  DELETE); **Zep/Graphiti** resolves by *mutating* its temporal graph (invalidating
+  the stale edge by time). Ours is the one that **never mutates**: a **read-only,
+  deterministic, domain-neutral pure function** that surfaces the contradiction and
+  hands back a *recommendation* — `rule + confidence + rationale` over a fixed
+  importance→source-authority→recency ladder — for the agent or a human to accept or
+  override. Not "we detect and they can't" (Zep does); rather **"we recommend
+  without mutating, explainably and portably"** — a memory layer that stays honest
+  about what it holds. Full method + honesty caveats:
   **[BENCHMARK.md](./BENCHMARK.md)**.
 - **Hybrid retrieval (dense + lexical, RRF) + a cross-encoder re-ranker.** Agent
   memories are full of exact tokens dense embeddings blur — document numbers
@@ -54,12 +65,7 @@ capability most memory demos skip: the agent **audits its own memory**.
   on **real `text-embedding-v4`**. The `naive-vector` baseline is **not a strawman**:
   a single-vector cosine ANN search is the default retrieval mode of LangChain's
   `VectorStoreRetriever` and virtually every pgvector RAG demo, so beating it is
-  beating **what the field ships by default** — and it points the same way the
-  strongest stacks are already moving: **Mem0 (multi-signal) and Zep (hybrid/graph)
-  have both moved _beyond_ pure dense** toward dense + lexical **fusion** (we did
-  *not* run any product head-to-head; the dense-baseline attribution is to
-  LangChain's default retriever + stock pgvector demos, and Mem0/Zep are cited only
-  as evidence of where the field is heading). Hybrid
+  beating **what the field ships by default**. Hybrid
   is the **robust** retriever (never recalls worse than dense: Recall@3 90.0% →
   93.3%; far beats lexical-only). Hybrid *alone* doesn't beat a strong dense embedder
   on top-rank — so we added the cross-encoder re-ranker, which **does**:
@@ -69,6 +75,28 @@ capability most memory demos skip: the agent **audits its own memory**.
   with a **sensitivity control** (a meaning-shuffled retriever that must score near
   chance — proof the benchmark discriminates). Full method + honest caveats:
   **[BENCHMARK.md](./BENCHMARK.md)**.
+- **A real head-to-head vs Mem0 (run), with Zep cited — honestly scoped.** We
+  installed **Mem0 (`mem0ai==2.0.11`)** and drove it with the **same Qwen models
+  and the same cross-session conflict pairs** our own audit is measured on
+  (`bench/external/`, evidence committed as `mem0-evidence.json`). Two honest
+  findings: **retrieval is at parity** (Mem0 put the gold figure in its top-5 on
+  5/5 — we claim *parity, not a retrieval win*), and Mem0 **exposes no
+  contradiction/resolution API** (empirically an empty method list) — fed two
+  disagreeing writes it stores both and returns both ranked by similarity with **no
+  conflict flag and no resolution recommendation**. **Zep/Graphiti _does_ handle
+  contradictions** (its temporal graph invalidates the stale edge by time) — we say
+  so plainly; the difference is that Zep *mutates* graph state and resolves by time,
+  whereas ours is a **read-only, deterministic, portable audit that recommends
+  without ever mutating**. Full capability matrix + caveats:
+  **[BENCHMARK.md](./BENCHMARK.md#head-to-head-vs-mem0-and-zep)**.
+- **A measured accuracy number on our own pipeline (H0-style).** On 11 labelled
+  number-bearing questions, replaying one committed `qwen-plus` pass over the
+  shipped hybrid recall and grading **by number presence, not prose**
+  (`npm run bench:accuracy`, gated in CI): **gold-memory recall@5 100%**, **answer
+  correctness 100%**, and **answer grounding/faithfulness 90.9%** — every euro
+  figure in the answer traces to a recalled memory. The one grounding miss is a
+  *derived* figure (€2,800 = €41,200 − €38,400) the metric correctly flags; we
+  report 90.9%, not a suspicious 100%.
 - **Consolidation + forgetting.** The agent doesn't just append. `consolidate()`
   collapses near-duplicate memories (re-ingested facts) into one canonical memory;
   `forget()` drops superseded and stale low-importance memories while protecting
@@ -166,7 +194,8 @@ repos/qwen-memoryagent/
 │   ├── db/{client.ts,schema.sql}  # pg pool + pgvector schema (vector(1024) + HNSW + FTS + lifecycle)
 │   ├── types.ts                 # PayrollEvent domain types
 │   └── server.ts                # Fastify HTTP backend (the Alibaba Cloud deploy target)
-├── bench/                        # frozen retrieval + consistency datasets, metrics, runners, committed fixtures (embeddings + re-rank scores)
+├── bench/                        # frozen retrieval + accuracy + consistency datasets, metrics, runners, committed fixtures (embeddings + re-rank + answers)
+│   └── external/                 # real head-to-head vs Mem0 (mem0ai) — export + harness + committed evidence
 ├── scripts/{apply-schema.ts,demo-memory.ts}
 ├── tests/{unit,integration,e2e}/  # the testing pyramid
 ├── deploy/{redeploy.sh,DEPLOY_STATE.md}  # LIVE path: ECS + docker-compose (backend + pgvector container)
@@ -270,13 +299,13 @@ Full testing pyramid, all green in GitHub Actions (`.github/workflows/ci.yml`), 
 | **Unit** | `tests/unit/*` | Embedder + narrator (Qwen canned + Fake), memory logic, **retrieval primitives** (BM25, RRF, MMR, hybrid, **re-rank**), **IR metrics**, **consolidation + forgetting**, **self-audit consistency** (contradiction + absence detection, precision on a control set) — all over `InMemoryStore`, no infra. |
 | **Integration** | `tests/integration/pgvector-store.test.ts` | Real pgvector SQL: `::vector` insert, `<=>` cosine recall, filters, count, **hybrid dense+FTS fusion**, **consolidate → supersede → forget**. |
 | **E2E** | `tests/e2e/cross-session.test.ts` | **Cross-session persistence** — session A writes + tears down, session B recalls. |
-| **Benchmark gates** | `bench/*` | **Retrieval regression gate** (hybrid ≥ dense) + **discrimination gate** (shuffled control near chance) + **self-audit gate** (`bench:consistency`: 100% detection, 0 false positives) + **resolution gate** (`bench:resolution`: structural invariants + winner-accuracy on the labelled policy). Re-rank delta vs dense reported (not gated). All replay committed fixtures — no key, no spend. |
+| **Benchmark gates** | `bench/*` | **Retrieval regression gate** (hybrid ≥ dense) + **discrimination gate** (shuffled control near chance) + **grounded-answer accuracy gate** (`bench:accuracy`: correctness 100%, grounding ≥ 90%) + **self-audit gate** (`bench:consistency`: 100% detection, 0 false positives) + **resolution gate** (`bench:resolution`: structural invariants + winner-accuracy on the labelled policy). Re-rank delta vs dense + Mem0 head-to-head reported (not gated). All replay committed fixtures — no key, no spend. |
 
 CI stages:
 1. **secret-scan** — gitleaks (pinned v8.18.4, redacted). Fails fast on any committed secret.
 2. **dep-audit** — `npm audit` (fails on high/critical).
 3. **build-test** — typecheck → schema apply (stands up real pgvector) → unit → integration → e2e → offline demo smoke.
-4. **benchmark** — `npm run bench -- --gate` (retrieval regression + discrimination), `npm run bench:consistency -- --gate` (self-audit detection/precision) and `npm run bench:resolution -- --gate` (contradiction-resolution invariants + policy-conformance), all over committed fixtures (no key, no spend).
+4. **benchmark** — `npm run bench -- --gate` (retrieval regression + discrimination), `npm run bench:accuracy -- --gate` (grounded-answer correctness + faithfulness), `npm run bench:consistency -- --gate` (self-audit detection/precision) and `npm run bench:resolution -- --gate` (contradiction-resolution invariants + policy-conformance), all over committed fixtures (no key, no spend).
 5. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.
 
 Every stage runs **fully offline** — no DashScope / Alibaba credentials — because the Qwen embedder/narrator auto-fall back to deterministic Fakes and the benchmark replays cached vectors.
@@ -285,8 +314,8 @@ Every stage runs **fully offline** — no DashScope / Alibaba credentials — be
 
 | Criterion (weight) | Where to look |
 |---|---|
-| **Technical Depth & Engineering (30%)** | Hybrid dense+lexical retrieval with RRF, consolidation/forgetting lifecycle, injectable Qwen/Fake seams, full test pyramid + benchmark gate + CodeQL, real pgvector on Alibaba. A *measured* memory system, not a wrapper. |
-| **Innovation & AI Creativity (30%)** | **Self-auditing memory that detects _and_ resolves**: the agent flags when two of its own cross-session writes *contradict* (100% detection / 0 false positives, measured) **and recommends which side to trust** (importance → source-authority → recency; a recommender that never mutates memory; 4/4 correct on a labelled set) — memory you can trust, not just retrieve. Plus memory that fuses meaning + exact tokens, is refined by a cross-encoder re-ranker (a *measured* top-rank win over the field-default dense baseline: MRR 0.883 → 0.911), prunes its own duplicates, and proves quality with a reproducible, sensitivity-controlled benchmark. |
+| **Technical Depth & Engineering (30%)** | Hybrid dense+lexical retrieval with RRF + cross-encoder re-rank, consolidation/forgetting lifecycle, injectable Qwen/Fake seams, full test pyramid + **four benchmark gates** (retrieval regression + discrimination, **grounded-answer accuracy**, self-audit detection, resolution policy) + CodeQL, real pgvector on Alibaba. A *measured* memory system, not a wrapper — **including a real head-to-head vs Mem0** (`bench/external/`) and a **measured 100% correctness / 90.9% grounding** number on its own answers. |
+| **Innovation & AI Creativity (30%)** | **Self-auditing memory that detects _and_ resolves without ever mutating**: the agent flags when two of its own cross-session writes *contradict* (100% detection / 0 false positives, measured) **and recommends which side to trust** (importance → source-authority → recency; a recommender that never mutates memory; 4/4 correct on a labelled set). Positioned honestly against the field: **Mem0 resolves by silent LLM mutation, Zep by mutating its temporal graph — ours is the read-only, deterministic, portable recommender** (measured head-to-head: Mem0 exposes no such API, retrieval at parity). Plus memory that fuses meaning + exact tokens, is refined by a cross-encoder re-ranker (a *measured* top-rank win over the field-default dense baseline: MRR 0.883 → 0.911), prunes its own duplicates, and proves quality with reproducible, sensitivity-controlled benchmarks. |
 | **Problem Value & Impact (25%)** | A real, recurring SMB pain: consolidated financial facts and cross-check findings that must be remembered across sessions — from an unbilled sales order to a payment with no matching invoice to the true cost of employing a team. |
 | **Presentation & Documentation (15%)** | This README + architecture diagram + [BENCHMARK.md](./BENCHMARK.md) (method + honest caveats) + the ~3-min demo + live Alibaba URL. |
 

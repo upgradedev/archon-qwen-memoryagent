@@ -1,0 +1,160 @@
+{
+  "generated_at": "2026-07-04T00:39:18.382874+00:00",
+  "mem0_version": "2.0.11",
+  "models": {
+    "llm": "qwen-plus",
+    "embedder": "text-embedding-v4",
+    "vector_store": "qdrant (local, in-process)"
+  },
+  "mem0_public_api": [
+    "add",
+    "api_version",
+    "chat",
+    "close",
+    "collection_name",
+    "config",
+    "custom_instructions",
+    "db",
+    "delete",
+    "delete_all",
+    "embedding_model",
+    "entity_store",
+    "from_config",
+    "get",
+    "get_all",
+    "history",
+    "llm",
+    "project",
+    "reranker",
+    "reset",
+    "search",
+    "update",
+    "vector_store"
+  ],
+  "mem0_contradiction_or_resolution_methods": [],
+  "contradiction_headtohead": [
+    {
+      "record": "INV-2043",
+      "attribute": "total",
+      "valueA": 18400,
+      "valueB": 18900,
+      "mem0_returned_memories": [
+        "User has an invoice numbered INV-2043 with a total amount of 18,400 euros, dated around July 4, 2026",
+        "User has an invoice numbered INV-2043 with a total amount of 18,900 euros, dated July 4, 2026"
+      ],
+      "mem0_both_values_returned_no_flag": true,
+      "mem0_exposes_contradiction_report": false,
+      "mem0_exposes_resolution_recommendation": false
+    },
+    {
+      "record": "CUST-77",
+      "attribute": "credit_limit",
+      "valueA": 5000,
+      "valueB": 8000,
+      "mem0_returned_memories": [
+        "Customer CUST-77 has a credit limit of 5000 euros",
+        "Customer CUST-77's credit limit was increased from 5000 euros to 8000 euros around July 4, 2026"
+      ],
+      "mem0_both_values_returned_no_flag": true,
+      "mem0_exposes_contradiction_report": false,
+      "mem0_exposes_resolution_recommendation": false
+    },
+    {
+      "record": "PO-5590",
+      "attribute": "quantity",
+      "valueA": 12,
+      "valueB": 15,
+      "mem0_returned_memories": [
+        "Purchase order PO-5590 is for a quantity of 12 tonnes",
+        "Purchase order PO-5590 was updated to a quantity of 15 tonnes, revising the previously stated quantity of 12 tonnes"
+      ],
+      "mem0_both_values_returned_no_flag": true,
+      "mem0_exposes_contradiction_report": false,
+      "mem0_exposes_resolution_recommendation": false
+    },
+    {
+      "record": "VENDOR-BoxLine",
+      "attribute": "status",
+      "valueA": "active",
+      "valueB": "suspended",
+      "mem0_returned_memories": [
+        "User has an active Vendor BoxLine account",
+        "User's Vendor BoxLine account status changed from active to suspended around July 4, 2026"
+      ],
+      "mem0_both_values_returned_no_flag": true,
+      "mem0_exposes_contradiction_report": false,
+      "mem0_exposes_resolution_recommendation": false
+    }
+  ],
+  "retrieval_parity_probe": {
+    "probes": [
+      {
+        "id": "q06",
+        "question": "What is the amount on invoice INV-2043?",
+        "goldFigure": 18400,
+        "figure_in_top5": true,
+        "top_memories": [
+          "Acme Foods issued sales invoice INV-2043 to Northwind Traders on March 1, 2026, for \u20ac18,400 covering a wholesale grocery order, with payment due within 30 days (by March 31, 2026)",
+          "Acme Foods received a customer payment of \u20ac18,400 from Northwind Traders on April 1, 2026, via bank transfer, fully settling sales invoice INV-2043 issued on March 1, 2026",
+          "GrainCo's supplier statement for March 2026 showed an outstanding balance of \u20ac12,900, matching the amount on purchase invoice PINV-802 issued to Acme Foods on March 1, 2026, and serving as a summary reminder rather than a new charge",
+          "GrainCo issued purchase invoice PINV-802 to Acme Foods on March 1, 2026, for \u20ac12,900 covering raw materials",
+          "Acme Foods' March 2026 three-way reconciliation for purchase order PO-5590, purchase invoice PINV-802, and the corresponding supplier payment was successful at \u20ac12,900"
+        ]
+      },
+      {
+        "id": "q07",
+        "question": "What is the total value of purchase order PO-5590?",
+        "goldFigure": 12900,
+        "figure_in_top5": true,
+        "top_memories": [
+          "Acme Foods issued purchase order PO-5590 to GrainCo on March 1, 2026, for 12 tonnes of flour at \u20ac1,075 per tonne, totaling \u20ac12,900",
+          "Acme Foods' March 2026 three-way reconciliation for purchase order PO-5590, purchase invoice PINV-802, and the corresponding supplier payment was successful at \u20ac12,900",
+          "A purchase order is only a commitment to buy and does not represent a recorded cost until the matching purchase invoice is received and approved",
+          "Meridian Caf\u00e9s placed sales order SO-330 with Acme Foods in April 2026 for a recurring monthly pastry supply valued at \u20ac9,250",
+          "GrainCo issued purchase invoice PINV-802 to Acme Foods on March 1, 2026, for \u20ac12,900 covering raw materials"
+        ]
+      },
+      {
+        "id": "q08",
+        "question": "What was ByteCraft's EBITDA in 2026-05?",
+        "goldFigure": 38400,
+        "figure_in_top5": true,
+        "top_memories": [
+          "ByteCraft Software's EBITDA for May 2026 was \u20ac38,400 on revenue of \u20ac210,000, representing an 18.3% EBITDA margin",
+          "ByteCraft Software's profit and loss statement for May 2026 shows revenue of \u20ac210,000 and operating profit of \u20ac41,200",
+          "A consistency check for ByteCraft Software's May 2026 financials identified an error: VAT on three sales invoices was incorrectly recorded at 13% instead of the correct standard rate of 24%, requiring correction.",
+          "ByteCraft Software purchased laptops for \u20ac21,900 in May 2026 as a capital expense, not an operating cost",
+          "ByteCraft Software made a bank transfer payment of \u20ac4,800 to CloudHost in May 2026 for annual server hosting services"
+        ]
+      },
+      {
+        "id": "q10",
+        "question": "What is the amount on purchase invoice PINV-771?",
+        "goldFigure": 6300,
+        "figure_in_top5": true,
+        "top_memories": [
+          "BoxLine issued purchase invoice PINV-771 to Helios Retail on February 1, 2026, for \u20ac6,300 covering shipping cartons, with payment terms of net 45 days (due by March 17, 2026)",
+          "Helios Retail made a supplier payment of \u20ac6,300 to BoxLine in March 2026, clearing purchase invoice PINV-771 issued on February 1, 2026, for shipping cartons.",
+          "GrainCo issued purchase invoice PINV-802 to Acme Foods on March 1, 2026, for \u20ac12,900 covering raw materials",
+          "Acme Foods' March 2026 three-way reconciliation for purchase order PO-5590, purchase invoice PINV-802, and the corresponding supplier payment was successful at \u20ac12,900",
+          "GrainCo's supplier statement for March 2026 showed an outstanding balance of \u20ac12,900, matching the amount on purchase invoice PINV-802 issued to Acme Foods on March 1, 2026, and serving as a summary reminder rather than a new charge"
+        ]
+      },
+      {
+        "id": "q14",
+        "question": "How much cash did Acme Foods hold at end of 2026-04?",
+        "goldFigure": 27600,
+        "figure_in_top5": true,
+        "top_memories": [
+          "Acme Foods' cash position at the end of April 2026 was \u20ac27,600 across two bank accounts, representing a decrease of \u20ac3,400 from the end of March 2026",
+          "Acme Foods' sales target for Q2 2026 (April\u2013June 2026) is \u20ac95,000 in revenue, and as of the end of April 2026, actual revenue stood at \u20ac61,300 \u2014 approximately 65% of the quarterly target",
+          "Acme Foods paid \u20ac4,100 for office rent in March 2026 via bank transfer to their landlord",
+          "Acme Foods' workforce cost in March 2026 involved 3 employees, with gross wages totaling \u20ac52,000, true employer cost (including taxes and benefits) totaling \u20ac63,800, and net amount paid to employees via bank transfer totaling \u20ac41,000",
+          "Acme Foods incurred an electricity expense of \u20ac1,250 in April 2026, recorded under utilities"
+        ]
+      }
+    ],
+    "figure_recall_at5": "5/5"
+  },
+  "interpretation": "Mem0 exposes NO contradiction/resolution API (matching methods found: []). On the same cross-session conflict pairs our audit detects+resolves, Mem0 stores/merges the conflict via a non-deterministic LLM at write time and, on recall, returns the conflicting values ranked by similarity with no conflict flag and no resolution recommendation. Retrieval is comparable (figure-recall@5 5/5); we claim parity, not a retrieval win."
+}

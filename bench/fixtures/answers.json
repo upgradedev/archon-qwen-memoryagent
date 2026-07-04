@@ -1,0 +1,128 @@
+{
+  "model": "qwen-plus",
+  "generatedAt": "2026-07-04T00:43:25.145Z",
+  "recallK": 5,
+  "answers": {
+    "q01": {
+      "question": "Where might revenue be slipping through unbilled?",
+      "recalledIds": [
+        "m23",
+        "m16",
+        "m02",
+        "m08",
+        "m15"
+      ],
+      "answer": "Revenue may be slipping through unbilled for Acme Foods in April 2026, as sales order SO-330 for €9,250 has no matching sales invoice yet [1]. However, a sales invoice INV-2051 for exactly €9,250 was issued to Meridian Cafés in the same month and paid on receipt [3], suggesting SO-330 may have been fulfilled and invoiced under a different number — or that the completeness check mistakenly flagged it. This inconsistency between [1] and [3] needs review to confirm whether revenue is truly unrecorded or misattributed."
+    },
+    "q03": {
+      "question": "Are we on track to hit our revenue goal this quarter?",
+      "recalledIds": [
+        "m14",
+        "m16",
+        "m23",
+        "m17",
+        "m02"
+      ],
+      "answer": "For Acme Foods in 2026-Q2, the sales target is €95,000, and actual revenue through April 2026 stands at €61,300, which is about 65% of target [1]. However, sales order SO-330 for €9,250 has no matching sales invoice yet, suggesting that revenue may be under-recorded [3]. Since invoice INV-2051 for €9,250 was issued to Meridian Cafés in April and paid on receipt [5], it likely corresponds to SO-330 — meaning that €9,250 should already be included in the €61,300, but its absence from the invoice register implies a recording gap. Therefore, the reported €61,300 may be incomplete, and the true April revenue could be higher — requiring reconciliation of SO-330 and INV-2051 to confirm progress toward the €95,000 target."
+    },
+    "q04": {
+      "question": "How profitable was the software company last month?",
+      "recalledIds": [
+        "m17",
+        "m16",
+        "m18",
+        "m10",
+        "m24"
+      ],
+      "answer": "ByteCraft Software’s profitability last month (2026-05) was €38,400 in EBITDA on €210,000 revenue, yielding an 18.3% EBITDA margin [1]. Its operating profit was slightly higher at €41,200 [2], suggesting EBITDA excludes some depreciation or amortisation. The VAT discrepancy on sales invoices—recorded at 13% instead of the correct 24%—means reported revenue and profit may be misstated and require correction [5]."
+    },
+    "q06": {
+      "question": "INV-2043 amount and terms",
+      "recalledIds": [
+        "m01",
+        "m07",
+        "m02",
+        "m04",
+        "m25"
+      ],
+      "answer": "The amount of sales invoice INV-2043 is €18,400, and its payment terms are “payable within 30 days” [1]. This invoice was issued to Northwind Traders on 2026-03 and was fully settled by bank transfer on 2026-04 [2]."
+    },
+    "q07": {
+      "question": "PO-5590 flour order",
+      "recalledIds": [
+        "m05",
+        "m25",
+        "m06",
+        "m04",
+        "m01"
+      ],
+      "answer": "PO-5590 is a purchase order from Acme Foods to GrainCo dated 2026-03 for 12 tonnes of flour at €1,075 per tonne, totaling €12,900 [1]. This order was matched with purchase invoice PINV-802 and the corresponding supplier payment, confirming a full three-way match at €12,900 [2]. The purchase invoice PINV-802 also reflects the same €12,900 amount for raw materials from GrainCo [4]."
+    },
+    "q08": {
+      "question": "ByteCraft EBITDA 2026-05",
+      "recalledIds": [
+        "m17",
+        "m16",
+        "m10",
+        "m13",
+        "m24"
+      ],
+      "answer": "ByteCraft Software’s EBITDA for 2026-05 was €38,400 [1]. This figure is consistent with the reported revenue of €210,000 and an 18.3% EBITDA margin [1]. Note that the P&L shows operating profit at €41,200 [2], which is €2,800 higher than EBITDA — suggesting €2,800 in depreciation/amortisation or other non-cash adjustments were excluded from EBITDA, as expected. No inconsistency is flagged between [1] and [2] on this point."
+    },
+    "q10": {
+      "question": "PINV-771 supplier and terms",
+      "recalledIds": [
+        "m03",
+        "m08",
+        "m04",
+        "m25",
+        "m31"
+      ],
+      "answer": "PINV-771 is a purchase invoice from supplier BoxLine to Helios Retail, dated 2026-02, for €6,300 for shipping cartons, with payment terms of net 45 days [1]. The invoice was fully paid by Helios Retail to BoxLine in March 2026 for the same amount [2]."
+    },
+    "q11": {
+      "question": "Was there a bank payment with no matching invoice at Helios Retail, and how serious is it?",
+      "recalledIds": [
+        "m22",
+        "m28",
+        "m08",
+        "m09",
+        "m32"
+      ],
+      "answer": "Yes, there was a €3,200 bank payment to Pallas Freight in February 2026 with no matching purchase invoice, which is flagged as high severity [1]. This matches the user’s preference to treat such mismatches as high severity and surface them first [2]. The issue requires immediate review to determine whether the supplier failed to send the invoice, the accountant omitted recording it, or the payment itself is erroneous [1]."
+    },
+    "q12": {
+      "question": "What is the hidden employer-cost gap at Acme Foods for 2026-03?",
+      "recalledIds": [
+        "m19",
+        "m20",
+        "m30",
+        "m14",
+        "m11"
+      ],
+      "answer": "The hidden employer-cost gap at Acme Foods for 2026-03 is €22,800 — the difference between the true employer cost of €63,800 and the net salary paid from bank of €41,000 [2]. This gap consists mostly of €11,800 in employer social-security contributions that do not appear on the bank statement [2]. The term “employer cost” includes both gross salary and the employer’s social-security contribution [3]."
+    },
+    "q13": {
+      "question": "Did the flour purchase from GrainCo fully reconcile?",
+      "recalledIds": [
+        "m05",
+        "m04",
+        "m31",
+        "m25",
+        "m18"
+      ],
+      "answer": "Yes, the flour purchase from GrainCo fully reconciled: purchase order PO-5590, purchase invoice PINV-802, and the supplier payment all match at €12,900 — confirming a three-way match passed [4]. The supplier statement also shows €12,900 outstanding, consistent with PINV-802 and not a duplicate charge [3]. No discrepancies or missing items were found in the reconciliation for this transaction."
+    },
+    "q14": {
+      "question": "How much cash did Acme Foods hold at the end of April 2026?",
+      "recalledIds": [
+        "m18",
+        "m14",
+        "m20",
+        "m05",
+        "m11"
+      ],
+      "answer": "Acme Foods held €27,600 in cash at the end of April 2026, across two bank accounts [1]."
+    }
+  }
+}
