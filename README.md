@@ -345,6 +345,8 @@ Once the backend is running, open **`http://localhost:9000/docs`** for the inter
 
 Without a `DASHSCOPE_API_KEY`, the demo and backend run with deterministic offline `FakeEmbedder` + `FakeNarrator`. The full pgvector write + vector-recall path still executes. Set the key to switch to real Qwen — same interface, same 1024 dimensions.
 
+**Open demo + rate limit.** The live deployment is intentionally **open (no login)** so judges can test it end to end. Because `POST /ingest/documents` is the only path that spends Qwen vision-model calls, **document upload is rate-limited to 10 uploads/day** (per process, resets at 00:00 UTC; configurable via `INGEST_DAILY_LIMIT`) to protect the shared Qwen API budget. Recall, self-audit, and the P&L view stay open and unmetered.
+
 ## Deploy to Alibaba Cloud
 
 ### Live path — ECS + docker-compose (backend + pgvector container)

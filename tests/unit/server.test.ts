@@ -11,7 +11,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { FastifyInstance } from "fastify";
-import { buildServer } from "../../src/server.js";
+import { buildServer, makeDailyLimiter } from "../../src/server.js";
 
 let app: FastifyInstance;
 
@@ -86,6 +86,18 @@ test("POST /ingest/documents with an empty array → 400", async () => {
   const res = await app.inject({ method: "POST", url: "/ingest/documents", payload: { documents: [] } });
   assert.equal(res.statusCode, 400);
   assert.match(res.json().error, /documents/);
+});
+
+test("makeDailyLimiter: allows N takes then blocks, resets on a new UTC day", () => {
+  let day = "2026-07-06T10:00:00Z";
+  const take = makeDailyLimiter(2, () => new Date(day));
+  assert.equal(take().ok, true);
+  const second = take();
+  assert.equal(second.ok, true);
+  assert.equal(second.remaining, 0);
+  assert.equal(take().ok, false); // third → blocked
+  day = "2026-07-07T00:01:00Z"; // next UTC day
+  assert.equal(take().ok, true); // counter reset
 });
 
 test("GET / serves the memory explorer as HTML (200, text/html)", async () => {

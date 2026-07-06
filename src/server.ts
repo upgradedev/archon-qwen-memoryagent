@@ -51,6 +51,26 @@ const errorResponse = {
   properties: { error: { type: "string" } },
 } as const;
 
+// Per-UTC-day rate limit for the document-ingestion route. The live demo is
+// intentionally OPEN (no login) so judges can test it end to end; the only path
+// that spends Qwen vision-model calls is /ingest/documents, so it is capped at
+// INGEST_DAILY_LIMIT uploads/day (default 10) to protect the API budget. The
+// counter is per-process and resets at 00:00 UTC. Exported + pure for unit tests.
+export const INGEST_DAILY_LIMIT = Number(process.env.INGEST_DAILY_LIMIT ?? 10);
+export function makeDailyLimiter(limit: number, now: () => Date = () => new Date()) {
+  const state = { day: "", count: 0 };
+  return function take(): { ok: boolean; remaining: number; limit: number } {
+    const today = now().toISOString().slice(0, 10); // UTC calendar day
+    if (state.day !== today) {
+      state.day = today;
+      state.count = 0;
+    }
+    if (state.count >= limit) return { ok: false, remaining: 0, limit };
+    state.count += 1;
+    return { ok: true, remaining: limit - state.count, limit };
+  };
+}
+
 export async function buildServer() {
   const app = Fastify({ logger: true });
 
@@ -106,6 +126,7 @@ export async function buildServer() {
   const narrator = defaultNarrator();
   const store = new PgVectorStore();
   const agent = new MemoryAgent(embedder, store, narrator);
+  const ingestBudget = makeDailyLimiter(INGEST_DAILY_LIMIT);
 
   app.get(
     "/health",
@@ -248,6 +269,7 @@ export async function buildServer() {
             },
           },
           400: errorResponse,
+          429: errorResponse,
         },
       },
     },
@@ -255,6 +277,13 @@ export async function buildServer() {
       const documents = req.body?.documents;
       if (!Array.isArray(documents) || documents.length === 0) {
         return reply.code(400).send({ error: "body.documents (a non-empty array) is required" });
+      }
+      // Budget guard — protects the shared Qwen API key on the open demo.
+      const budget = ingestBudget();
+      if (!budget.ok) {
+        return reply
+          .code(429)
+          .send({ error: `Daily ingest limit of ${budget.limit} reached. Resets at 00:00 UTC. Recall + self-audit remain open.` });
       }
       const out = await ingestPipeline(agent, documents);
       return {
