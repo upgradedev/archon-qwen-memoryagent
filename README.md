@@ -161,7 +161,8 @@ consistency(scope):                 ── the agent audits its OWN memory
 
 ```mermaid
 flowchart TB
-    Agent["AI agent / caller"]
+    Agent["AI agent / HTTP caller"]
+    MCPClient["MCP client — Claude Desktop / IDE / agent"]
 
     subgraph ECS["Alibaba Cloud · ECS ap-southeast-1 · docker-compose"]
         direction TB
@@ -172,6 +173,11 @@ flowchart TB
             R["POST /recall"]
             C["POST /consistency"]
         end
+        subgraph MCPSURF["MCP surface — src/mcp/* + src/skills/*"]
+            direction LR
+            MT["4 MCP tools<br/>recall · ingest · audit · count"]
+            SK["SkillDispatcher (shared)<br/>+ qwen-plus function-calling skills"]
+        end
         MA["MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()"]
         DB["pgvector container · PostgreSQL — THE MEMORY<br/>agent_memory(embedding vector(1024)) + HNSW cosine index<br/>recall = ORDER BY embedding &lt;=&gt; $query"]
     end
@@ -179,18 +185,23 @@ flowchart TB
     subgraph QWEN["Model Studio / DashScope — Qwen Cloud"]
         direction TB
         EMB["text-embedding-v4 (1024-d)"]
-        LLM["qwen-plus (RAG narrator)"]
+        LLM["qwen-plus (RAG narrator · function-calling)"]
     end
 
     RDS["Managed ApsaraDB RDS / AnalyticDB for PostgreSQL<br/>same pg-wire code · DATABASE_URL swap"]
 
     Agent -->|HTTP / JSON| API
+    MCPClient -->|MCP · stdio / Streamable HTTP| MT
+    MT --> SK
     API --> MA
+    SK --> MA
     MA -->|embed| EMB
     MA -->|chat| LLM
     MA -->|SQL · pg-wire| DB
     DB -. drop-in swap .-> RDS
 ```
+
+Both surfaces — the HTTP routes and the MCP tools / custom skills — go through the **same injectable `MemoryAgent`** via the shared `SkillDispatcher`. There is one implementation of recall / ingest / audit / count, exposed three ways (REST, MCP, and Qwen function-calling), so the protocol layer never duplicates the memory logic.
 
 **Live deployment** = ECS + docker-compose (backend + pgvector container). Because the store is pg-wire, the identical code runs unchanged on a managed ApsaraDB RDS / AnalyticDB for PostgreSQL instance (the Function Compute alternative in `deploy/`).
 
@@ -307,6 +318,62 @@ Once the backend is running, open **`http://localhost:9000/docs`** for the inter
 
 Without a `DASHSCOPE_API_KEY`, the demo and backend run with deterministic offline `FakeEmbedder` + `FakeNarrator`. The full pgvector write + vector-recall path still executes. Set the key to switch to real Qwen — same interface, same 1024 dimensions.
 
+## MCP integration & custom skills
+
+Beyond the REST API, the same memory is exposed two more ways for *sophisticated QwenCloud API use* (Technical Depth & Engineering): a **Model Context Protocol (MCP) server** and a **Qwen function-calling custom-skills layer**. Both wrap the identical injectable `MemoryAgent` through one shared `SkillDispatcher` ([`src/skills/dispatcher.ts`](./src/skills/dispatcher.ts)) — the exact code the HTTP routes run — so there is no duplicated memory logic. The schemas ([`src/skills/schemas.ts`](./src/skills/schemas.ts)) are the single source of truth reused verbatim as both MCP `inputSchema` and OpenAI function `parameters`.
+
+### The four skills / MCP tools
+
+| Skill / MCP tool | Args | What it does |
+|---|---|---|
+| `recall_memory` | `{ question, company?, kind?, limit? }` | Hybrid semantic recall → Qwen-narrated **grounded, cited answer** + a best-effort self-audit (same path as `POST /recall`). |
+| `ingest_memory` | `{ content, kind, company?, period?, sourceRef?, metadata? }` | Embeds (`text-embedding-v4`) and writes a single fact into persistent memory. |
+| `audit_memory` | `{ company?, period?, kind? }` | Read-only cross-session **self-audit**: contradictions (with a resolution recommendation) + dangling references. |
+| `memory_count` | `{ company? }` | How many memories the agent holds. |
+
+`kind` is a validated JSON-Schema `enum` (`document \| payroll_event \| validation \| insight`), so both an MCP client and qwen-plus get a sharp typed choice, not free text.
+
+### 1. MCP server ([`src/mcp/server.ts`](./src/mcp/server.ts))
+
+A real MCP server built on the official `@modelcontextprotocol/sdk`. **stdio** transport is the primary (the standard MCP client transport used by Claude Desktop); an optional **Streamable HTTP** transport is available for remote clients (`MCP_TRANSPORT=http`, default port `9100`, endpoint `/mcp`).
+
+```bash
+# Launch the MCP server on stdio (offline Fakes with no key; real Qwen + pgvector when configured)
+npm run mcp
+# or, from an MCP client config, launch it directly:
+npx tsx src/mcp/server.ts
+```
+
+Connect an MCP client (e.g. Claude Desktop `claude_desktop_config.json`) over stdio:
+
+```json
+{
+  "mcpServers": {
+    "archon-memoryagent": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/server.ts"],
+      "cwd": "/path/to/archon-qwen-memoryagent",
+      "env": {
+        "DASHSCOPE_API_KEY": "sk-…",
+        "DATABASE_URL": "postgresql://user:pass@host:5432/db"
+      }
+    }
+  }
+}
+```
+
+For a **remote** MCP client against the live Alibaba Cloud box, the operator redeploys the container with `MCP_TRANSPORT=http` (the live `43.106.13.19:9000` currently serves the Fastify HTTP API; the MCP HTTP transport comes up on the configured port after that redeploy) and the client points at the Streamable HTTP endpoint:
+
+```json
+{ "mcpServers": { "archon-memoryagent": { "url": "http://43.106.13.19:9100/mcp" } } }
+```
+
+### 2. Custom-skills layer for qwen-plus ([`src/skills/loop.ts`](./src/skills/loop.ts))
+
+The same skills are handed to **`qwen-plus` as OpenAI-compatible function tools**, so the model itself decides which memory operation to call. `runSkillLoop()` runs the standard tool-calling cycle — model proposes a skill call → the `SkillDispatcher` executes it against memory → the result is fed back → the model continues until it produces a final grounded answer. This is the agentic counterpart to the REST API: instead of a caller choosing an endpoint, qwen-plus chooses a skill.
+
+Both surfaces are covered by offline unit tests ([`tests/unit/mcp.test.ts`](./tests/unit/mcp.test.ts) exercises the server over the real MCP protocol via the SDK's in-memory transport + a `Client`; [`tests/unit/skills.test.ts`](./tests/unit/skills.test.ts) exercises the dispatcher and the function-calling loop with a canned client) — no network, no key, no DB.
+
 ## Deploy to Alibaba Cloud
 
 ### Live path — ECS + docker-compose (backend + pgvector container)
@@ -345,7 +412,7 @@ Full testing pyramid, all green in GitHub Actions (`.github/workflows/ci.yml`), 
 
 | Tier | File(s) | What it proves |
 |---|---|---|
-| **Unit** | `tests/unit/*` | Embedder + narrator (Qwen canned + Fake), memory logic, **retrieval primitives** (BM25, RRF, MMR, hybrid, **re-rank**), **IR metrics**, **consolidation + forgetting**, **self-audit consistency** (contradiction + absence detection, precision on a control set) — all over `InMemoryStore`, no infra. |
+| **Unit** | `tests/unit/*` | Embedder + narrator (Qwen canned + Fake), memory logic, **retrieval primitives** (BM25, RRF, MMR, hybrid, **re-rank**), **IR metrics**, **consolidation + forgetting**, **self-audit consistency** (contradiction + absence detection, precision on a control set), and the **MCP server + custom-skills layer** (`mcp.test.ts` drives the server over the real MCP protocol via the SDK in-memory transport; `skills.test.ts` covers the dispatcher + qwen-plus function-calling loop) — all over `InMemoryStore`, no infra. |
 | **Integration** | `tests/integration/pgvector-store.test.ts` | Real pgvector SQL: `::vector` insert, `<=>` cosine recall, filters, count, **hybrid dense+FTS fusion**, **consolidate → supersede → forget**. |
 | **E2E** | `tests/e2e/cross-session.test.ts` | **Cross-session persistence** — session A writes + tears down, session B recalls. |
 | **Benchmark gates** | `bench/*` | **Retrieval regression gate** (hybrid ≥ dense) + **discrimination gate** (shuffled control near chance) + **grounded-answer accuracy gate** (`bench:accuracy`: correctness 100%, grounding ≥ 90%) + **self-audit gate** (`bench:consistency`: 100% detection, 0 false positives) + **resolution gate** (`bench:resolution`: structural invariants + winner-accuracy on the labelled policy). Re-rank delta vs dense and the Mem0 head-to-head are reported (not gated). All replay committed fixtures — no key, no spend. |
@@ -365,7 +432,7 @@ Every stage runs **fully offline**. There are no DashScope / Alibaba credentials
 
 | Criterion (weight) | Where to look |
 |---|---|
-| **Technical Depth & Engineering (30%)** | Hybrid dense+lexical retrieval with RRF + cross-encoder re-rank; consolidation/forgetting lifecycle; injectable Qwen/Fake seams; full test pyramid + **four benchmark gates** (retrieval regression + discrimination, grounded-answer accuracy, self-audit detection, resolution policy) + CodeQL; real pgvector on Alibaba. A *measured* memory system, not a wrapper — including a real **head-to-head vs Mem0** (`bench/external/`) and a **measured 100% correctness / 90.9% grounding** number on its own answers. |
+| **Technical Depth & Engineering (30%)** | Sophisticated QwenCloud API use on **three surfaces over one shared core**: an **MCP server** (`@modelcontextprotocol/sdk`, stdio + Streamable HTTP, four tools) and a **qwen-plus custom-skills function-calling layer** (`src/skills/*`), both wrapping the same injectable `MemoryAgent` as the REST API — no duplicated logic. Plus hybrid dense+lexical retrieval with RRF + cross-encoder re-rank; consolidation/forgetting lifecycle; injectable Qwen/Fake seams; full test pyramid + **four benchmark gates** (retrieval regression + discrimination, grounded-answer accuracy, self-audit detection, resolution policy) + CodeQL; real pgvector on Alibaba. A *measured* memory system, not a wrapper — including a real **head-to-head vs Mem0** (`bench/external/`) and a **measured 100% correctness / 90.9% grounding** number on its own answers. |
 | **Innovation & AI Creativity (30%)** | **Self-auditing memory that detects _and_ resolves without ever mutating.** The agent flags when two of its own cross-session writes contradict (100% detection / 0 false positives, measured) and recommends which side to trust (importance → source-authority → recency; a recommender that never mutates memory; 4/4 correct on a labelled set). Positioned honestly against the field: Mem0 resolves by silent LLM mutation, Zep by mutating its temporal graph — ours is the read-only, deterministic, portable recommender (measured head-to-head: Mem0 exposes no such API, retrieval at parity). Plus memory that fuses meaning + exact tokens, is refined by a cross-encoder re-ranker (a measured top-rank win over the field-default dense baseline: MRR 0.883 → 0.911), prunes its own duplicates, and proves quality with reproducible, sensitivity-controlled benchmarks. |
 | **Problem Value & Impact (25%)** | A real, recurring SMB pain: consolidated financial facts and cross-check findings that must be remembered across sessions — from an unbilled sales order, to a payment with no matching invoice, to the true cost of employing a team. |
 | **Presentation & Documentation (15%)** | This README + architecture diagram + [BENCHMARK.md](./BENCHMARK.md) (method + honest caveats) + the interactive `/docs` API explorer + the ~3-min demo + the live Alibaba URL. |
