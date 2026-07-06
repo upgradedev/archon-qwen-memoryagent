@@ -84,6 +84,13 @@ test("POST /demo/seed feeds the demo memories + a contradiction the self-audit f
   assert.equal(audit.statusCode, 200);
   const report = audit.json();
   assert.ok(Array.isArray(report.contradictions) && report.contradictions.length >= 1);
+
+  // Idempotent: a second seed must NOT double the P&L or re-write.
+  const pnlBefore = (await app.inject({ method: "GET", url: "/pnl?company=Northwind Trading" })).json();
+  const again = await app.inject({ method: "POST", url: "/demo/seed" });
+  assert.equal(again.json().alreadySeeded, true);
+  const pnlAfter = (await app.inject({ method: "GET", url: "/pnl?company=Northwind Trading" })).json();
+  assert.equal(pnlAfter.employer_cost_total, pnlBefore.employer_cost_total);
 });
 
 test("GET /memory/list returns a recent slice for the browse view", { skip: !HAS_DB }, async () => {

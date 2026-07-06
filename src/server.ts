@@ -386,6 +386,13 @@ export async function buildServer() {
       },
     },
     async () => {
+      // Idempotent: if the demo company is already seeded, do NOT re-write (a
+      // judge clicking "Run demo" twice must not double the P&L or pile up
+      // duplicate contradictions). Return the already-seeded signal instead.
+      const existing = await store.listForAudit({ company: DEMO_COMPANY, kind: "payroll_event" });
+      if (existing.length > 0) {
+        return { seeded: 0, alreadySeeded: true, company: DEMO_COMPANY, events: 0 };
+      }
       const fakeExtractor = new Extractor(new FakeExtractionClient());
       const out = await ingestPipeline(agent, DEMO_DOCUMENTS, { extractor: fakeExtractor });
       // Seed the cross-session contradiction (two writes, same record, different amount).
