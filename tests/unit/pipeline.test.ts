@@ -6,6 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { Extractor, safeFloat } from "../../src/pipeline/extractor.js";
 import { FakeExtractionClient, QwenExtractionClient, qwenExtractionClientFrom } from "../../src/pipeline/vision.js";
 import { ClassifierAgent, classifyDocType } from "../../src/pipeline/classifier.js";
@@ -39,6 +40,21 @@ function triplet(company = "ByteCraft", period = "2026-05"): RawDocument[] {
     },
   ];
 }
+
+// ── Positioning guard ─────────────────────────────────────────────────────────
+// The new pipeline + demo sources must use universal financial terms only — no
+// jurisdiction-specific tax bodies, no "hidden cost" / "payroll gap" headline
+// framing. (The core PayrollEvent type's `hidden_total` field name is not a
+// "hidden cost" phrase and is intentionally not matched.)
+test("positioning guard: new pipeline + demo sources use universal terms only", () => {
+  const forbidden = /\b(ika|efka|mydata|greek|greece|aade)\b|αφμ|payroll[- ]?gap|hidden[ _-]cost/i;
+  const files = ["src/demo-data.ts", "src/server.ts", ...readdirSync("src/pipeline").map((f) => `src/pipeline/${f}`)];
+  for (const f of files) {
+    const txt = readFileSync(f, "utf8");
+    const m = forbidden.exec(txt);
+    assert.equal(m, null, `forbidden positioning term "${m?.[0]}" in ${f}`);
+  }
+});
 
 // ── safeFloat (ADR-003 null-safety) ───────────────────────────────────────────
 test("safeFloat: null / undefined / NaN fall back to the default", () => {

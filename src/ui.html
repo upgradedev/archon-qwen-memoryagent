@@ -14,6 +14,8 @@
       --muted: #8b949e;
       --accent: #58a6ff;
       --green-hi: #3fb950;
+      --amber: #d29922;
+      --red: #f85149;
       --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     }
     * { box-sizing: border-box; }
@@ -23,8 +25,8 @@
       font-size: 14px; line-height: 1.55;
     }
     header {
-      padding: 20px 28px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+      padding: 18px 28px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
     }
     header h1 { font-size: 18px; margin: 0; font-weight: 600; letter-spacing: .2px; }
     header .sub { color: var(--muted); font-size: 13px; }
@@ -35,80 +37,168 @@
       border-radius: 999px; padding: 3px 12px;
     }
     .pill .n { color: var(--accent); }
-    main { max-width: 860px; margin: 0 auto; padding: 28px 20px 80px; }
-    form { display: grid; gap: 12px; margin-bottom: 24px; }
+    main { max-width: 960px; margin: 0 auto; padding: 24px 20px 90px; }
+
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .panel.headline { border-color: rgba(88,166,255,.35); box-shadow: 0 0 0 1px rgba(88,166,255,.12); }
+    .panel h2 { font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .8px; }
+    .panel .tag { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+    .panel h2 .star { color: var(--accent); }
+    .support-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 720px) { .support-grid { grid-template-columns: 1fr; } }
+
+    form { display: grid; gap: 12px; }
     label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
     input, textarea {
       width: 100%; font-family: inherit; font-size: 14px; color: var(--text);
-      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-      padding: 11px 13px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 11px 13px;
     }
     input:focus, textarea:focus { outline: none; border-color: var(--accent); }
-    textarea { min-height: 74px; resize: vertical; line-height: 1.5; }
+    textarea { min-height: 64px; resize: vertical; line-height: 1.5; }
     .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
-    .row .grow { flex: 1; min-width: 220px; }
+    .row .grow { flex: 1; min-width: 200px; }
     button {
       font-family: inherit; font-size: 14px; border-radius: 8px;
       border: 1px solid rgba(88,166,255,.4); background: rgba(88,166,255,.10);
-      color: var(--accent); padding: 11px 22px; cursor: pointer;
+      color: var(--accent); padding: 10px 20px; cursor: pointer;
       transition: background .12s ease, border-color .12s ease;
     }
     button:hover { background: rgba(88,166,255,.18); border-color: var(--accent); }
     button:disabled { opacity: .5; cursor: default; }
-    .answer {
-      background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-      padding: 18px 20px; margin-bottom: 18px; white-space: pre-wrap;
+    button.secondary { border-color: var(--border); background: var(--panel-2); color: var(--text); }
+    button.secondary:hover { border-color: var(--muted); }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip {
+      font-size: 12.5px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
     }
-    .answer .model { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 10px; }
-    .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 18px 0 8px; }
-    .cite {
-      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-      padding: 11px 14px; margin-bottom: 8px; font-size: 13px;
-    }
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+    .answer { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin: 16px 0 6px; white-space: pre-wrap; }
+    .answer .model { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 16px 0 8px; }
+    .cite { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 13px; margin-bottom: 8px; font-size: 13px; }
     .cite .head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 3px; }
     .cite .marker { font-family: var(--mono); color: var(--accent); }
     .cite .kind { font-family: var(--mono); font-size: 11px; color: var(--muted); }
     .cite .score { font-family: var(--mono); font-size: 11px; color: var(--green-hi); margin-left: auto; }
-    .cite .content { color: var(--text); }
-    .empty { text-align: center; color: var(--muted); padding: 40px 20px; border: 1px dashed var(--border); border-radius: 10px; }
-    #status { color: var(--muted); font-size: 13px; min-height: 20px; }
-    #status.err { color: #f85149; }
+
+    .audit-ok { color: var(--green-hi); font-size: 13px; }
+    .audit-flag { background: rgba(210,153,34,.08); border: 1px solid rgba(210,153,34,.4); border-radius: 8px; padding: 10px 13px; margin-bottom: 8px; font-size: 13px; }
+    .audit-flag .subj { font-family: var(--mono); color: var(--amber); }
+    .audit-flag .rec { color: var(--muted); margin-top: 4px; }
+
+    .kpis { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .kpi { flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+    .kpi .k { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+    .kpi .v { font-size: 18px; font-weight: 600; margin-top: 4px; }
+    .kpi .v.accent { color: var(--accent); }
+    .kpi .v.amber { color: var(--amber); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+    td.num { text-align: right; font-family: var(--mono); }
+    .rec-row { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .rec-row .badge { font-family: var(--mono); font-size: 10.5px; padding: 2px 7px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+    .rec-row .txt { flex: 1; color: var(--text); }
+    .rec-row .when { color: var(--muted); font-size: 11px; white-space: nowrap; }
+
+    .empty { text-align: center; color: var(--muted); padding: 26px 20px; border: 1px dashed var(--border); border-radius: 10px; }
+    .empty b { color: var(--text); }
+    #status { color: var(--muted); font-size: 13px; min-height: 18px; }
+    #status.err { color: var(--red); }
     a { color: var(--accent); }
+
+    /* ── Inline guided tour (no external dependency) ───────────────────────── */
+    #tour-overlay { position: fixed; inset: 0; z-index: 900; display: none; }
+    #tour-spot { position: absolute; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(1,4,9,.78); transition: all .2s ease; pointer-events: none; }
+    #tour-tip {
+      position: absolute; z-index: 901; max-width: 320px; background: var(--panel);
+      border: 1px solid var(--accent); border-radius: 10px; padding: 16px 18px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    }
+    #tour-tip h3 { margin: 0 0 6px; font-size: 14px; }
+    #tour-tip p { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+    #tour-tip .nav { display: flex; gap: 8px; align-items: center; }
+    #tour-tip .nav .step { color: var(--muted); font-size: 12px; margin-right: auto; font-family: var(--mono); }
   </style>
 </head>
 <body>
   <header>
     <h1>Archon MemoryAgent</h1>
-    <span class="sub">Persistent, queryable, cross-session memory — grounded recall</span>
+    <span class="sub">Persistent, queryable, cross-session memory</span>
     <span class="spacer"></span>
     <span class="pill" id="count">memories <span class="n" id="countN">…</span></span>
     <span class="pill" id="model">…</span>
+    <button class="secondary" id="tourBtn" type="button">Take the tour</button>
   </header>
 
   <main>
-    <form id="ask">
-      <div class="row">
-        <div class="grow">
-          <label for="company">Company (optional filter)</label>
-          <input id="company" placeholder="e.g. ByteCraft" autocomplete="off" />
+    <!-- HEADLINE: the MemoryAgent's grounded recall + self-audit -->
+    <section class="panel headline" id="recallPanel">
+      <h2><span class="star">★</span> MemoryAgent — recall &amp; self-audit</h2>
+      <div class="tag">Ask a question; the agent recalls the relevant memories by meaning, grounds a cited answer in them, and self-audits for cross-session contradictions.</div>
+
+      <div id="emptyState" style="display:none">
+        <div class="empty">
+          <b>No memories yet.</b><br/>
+          Click <b>Run demo</b> to see the MemoryAgent recall + self-audit in action.
         </div>
       </div>
-      <div>
-        <label for="question">Question</label>
-        <textarea id="question" placeholder="What did it cost to employ the team last period?"></textarea>
-      </div>
-      <div class="row">
-        <button id="askBtn" type="submit">Recall</button>
-        <span id="status"></span>
-      </div>
-    </form>
 
-    <div id="result"></div>
+      <form id="ask">
+        <div class="row">
+          <div class="grow">
+            <label for="company">Company (optional filter)</label>
+            <input id="company" placeholder="e.g. Northwind Trading" autocomplete="off" />
+          </div>
+        </div>
+        <div>
+          <label for="question">Question</label>
+          <textarea id="question" placeholder="What did it cost to employ the team last period?"></textarea>
+        </div>
+        <div id="chips" class="chips" data-tour="chips"></div>
+        <div class="row">
+          <button id="askBtn" type="submit" data-tour="recall">Recall</button>
+          <button id="auditBtn" class="secondary" type="button" data-tour="audit">Run self-audit</button>
+          <button id="demoBtn" class="secondary" type="button" data-tour="demo">Run demo</button>
+          <span id="status"></span>
+        </div>
+      </form>
+
+      <div id="result"></div>
+    </section>
+
+    <!-- SUPPORTING: the pipeline context that produced those memories -->
+    <div class="support-grid">
+      <section class="panel" id="pnlPanel" data-tour="pnl">
+        <h2>P&amp;L — supporting context</h2>
+        <div class="tag">Aggregated over the memories the ingestion pipeline fed (docs → Qwen-VL → fuse → P&amp;L → memory).</div>
+        <div id="pnl"><div class="empty">Run the demo to compute a P&amp;L.</div></div>
+      </section>
+
+      <section class="panel" id="recordsPanel" data-tour="records">
+        <h2>Memory records</h2>
+        <div class="tag">A recent slice of what the agent holds — the raw material recall draws on.</div>
+        <div id="records"><div class="empty">No records yet.</div></div>
+      </section>
+    </div>
   </main>
 
+  <!-- Tour DOM (inert until started) -->
+  <div id="tour-overlay"><div id="tour-spot"></div></div>
+  <div id="tour-tip" style="display:none">
+    <h3 id="tour-title"></h3>
+    <p id="tour-body"></p>
+    <div class="nav">
+      <span class="step" id="tour-step"></span>
+      <button class="secondary" id="tour-skip" type="button">Skip</button>
+      <button class="secondary" id="tour-back" type="button">Back</button>
+      <button id="tour-next" type="button">Next</button>
+    </div>
+  </div>
+
   <script>
-    // Vanilla JS memory explorer. Same-origin: served by the same Fastify backend,
-    // so all fetches are relative. No framework, no build step.
     const $ = (id) => document.getElementById(id);
     const el = (tag, props, kids) => {
       const n = document.createElement(tag);
@@ -120,6 +210,7 @@
       (kids || []).forEach((c) => n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
       return n;
     };
+    const money = (n) => (typeof n === 'number' ? '€' + n.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—');
 
     async function api(method, path, body) {
       const res = await fetch(path, {
@@ -128,16 +219,29 @@
         body: body ? JSON.stringify(body) : undefined,
       });
       const text = await res.text();
-      let data = {};
-      try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw: text }; }
+      let data = {}; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw: text }; }
       if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
       return data;
     }
 
-    function renderResult(r) {
-      const wrap = $('result');
-      wrap.innerHTML = '';
+    // Verified template questions — tied to the Run-demo seed data (Northwind Trading).
+    const TEMPLATES = [
+      { q: 'What did it really cost to employ the team?', c: 'Northwind Trading' },
+      { q: 'How much cash actually left the bank for salaries?', c: 'Northwind Trading' },
+      { q: 'Which employee costs the company the most?', c: 'Northwind Trading' },
+      { q: 'Is any invoice recorded with conflicting amounts?', c: 'Northwind Trading' },
+    ];
+    function renderChips() {
+      const wrap = $('chips'); wrap.innerHTML = '';
+      TEMPLATES.forEach((t) => {
+        const b = el('button', { class: 'chip', type: 'button', text: t.q });
+        b.addEventListener('click', () => { $('question').value = t.q; if (t.c) $('company').value = t.c; $('ask').requestSubmit(); });
+        wrap.appendChild(b);
+      });
+    }
 
+    function renderRecall(r) {
+      const wrap = $('result'); wrap.innerHTML = '';
       const ans = el('div', { class: 'answer' });
       ans.appendChild(el('div', { class: 'model', text: 'answer · ' + (r.modelId || 'model') }));
       ans.appendChild(el('div', { text: r.answer || '(no answer)' }));
@@ -154,46 +258,164 @@
           ]);
           wrap.appendChild(el('div', { class: 'cite' }, [head, el('div', { class: 'content', text: c.content || '' })]));
         });
-      } else {
-        wrap.appendChild(el('div', { class: 'empty', text: 'No memories were recalled for this question.' }));
       }
+      renderAudit(wrap, r.consistency, 'from this recall');
     }
 
-    async function loadStatus() {
-      try {
-        const h = await api('GET', '/health');
-        $('model').textContent = (h.embedder || '?') + ' · ' + (h.narrator || '?');
-      } catch (_) { $('model').textContent = 'offline'; }
-      try {
-        const c = await api('GET', '/memory/count');
-        $('countN').textContent = (c && typeof c.count === 'number') ? c.count : '?';
-      } catch (_) { $('countN').textContent = '?'; }
+    function renderAudit(wrap, report, context) {
+      wrap.appendChild(el('div', { class: 'section-label', text: 'Self-audit — ' + context }));
+      const contradictions = (report && report.contradictions) || [];
+      if (!contradictions.length) {
+        wrap.appendChild(el('div', { class: 'audit-ok', text: '✓ No contradictions detected across the memories in scope.' }));
+        return;
+      }
+      contradictions.forEach((c) => {
+        const vals = (c.values || []).map((v) => (v && v.value !== undefined) ? v.value : v).join('  vs  ');
+        const box = el('div', { class: 'audit-flag' });
+        box.appendChild(el('div', {}, [
+          el('span', { class: 'subj', text: (c.subject || 'record') + ' · ' + (c.attribute || '') }),
+          document.createTextNode('  ' + vals),
+        ]));
+        if (c.resolution) {
+          box.appendChild(el('div', { class: 'rec', text: 'Recommended: trust ' + c.resolution.recommendedValue + '  (' + (c.resolution.rule || '') + ')' }));
+        }
+        wrap.appendChild(box);
+      });
     }
 
+    async function loadPnl() {
+      try {
+        const p = await api('GET', '/pnl');
+        const box = $('pnl'); box.innerHTML = '';
+        if (!p.events) { box.appendChild(el('div', { class: 'empty', text: 'Run the demo to compute a P&L.' })); return; }
+        const kpis = el('div', { class: 'kpis' }, [
+          el('div', { class: 'kpi' }, [el('div', { class: 'k', text: 'Employer cost' }), el('div', { class: 'v accent', text: money(p.employer_cost_total) })]),
+          el('div', { class: 'kpi' }, [el('div', { class: 'k', text: 'Cash out (bank)' }), el('div', { class: 'v', text: money(p.cash_out_total) })]),
+          el('div', { class: 'kpi' }, [el('div', { class: 'k', text: 'Cost off the bank line' }), el('div', { class: 'v amber', text: money(p.off_bank_cost) })]),
+        ]);
+        box.appendChild(kpis);
+        if ((p.by_company || []).length) {
+          const t = el('table');
+          t.appendChild(el('tr', {}, [el('th', { text: 'Company' }), el('th', { text: 'Employer cost' }), el('th', { text: 'Cash out' }), el('th', { text: 'Off-bank' })]));
+          p.by_company.forEach((c) => t.appendChild(el('tr', {}, [
+            el('td', { text: c.company }),
+            el('td', { class: 'num', text: money(c.employer_cost_total) }),
+            el('td', { class: 'num', text: money(c.cash_out_total) }),
+            el('td', { class: 'num', text: money(c.off_bank_cost) }),
+          ])));
+          box.appendChild(t);
+        }
+      } catch (_) { /* leave empty */ }
+    }
+
+    async function loadRecords() {
+      try {
+        const r = await api('GET', '/memory/list?limit=8');
+        const box = $('records'); box.innerHTML = '';
+        if (!r.items || !r.items.length) { box.appendChild(el('div', { class: 'empty', text: 'No records yet.' })); return; }
+        r.items.forEach((m) => box.appendChild(el('div', { class: 'rec-row' }, [
+          el('span', { class: 'badge', text: m.kind }),
+          el('span', { class: 'txt', text: m.snippet || '' }),
+          el('span', { class: 'when', text: (m.createdAt || '').slice(0, 10) }),
+        ])));
+      } catch (_) { /* leave empty */ }
+    }
+
+    async function refreshStatus() {
+      let count = 0;
+      try { const h = await api('GET', '/health'); $('model').textContent = (h.embedder || '?') + ' · ' + (h.narrator || '?'); }
+      catch (_) { $('model').textContent = 'offline'; }
+      try { const c = await api('GET', '/memory/count'); count = (c && typeof c.count === 'number') ? c.count : 0; $('countN').textContent = count; }
+      catch (_) { $('countN').textContent = '?'; }
+      $('emptyState').style.display = count > 0 ? 'none' : 'block';
+      return count;
+    }
+
+    async function refreshAll() { const n = await refreshStatus(); await loadPnl(); await loadRecords(); return n; }
+
+    // ── Recall ────────────────────────────────────────────────────────────────
     $('ask').addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const question = $('question').value.trim();
       const company = $('company').value.trim();
       if (!question) { $('status').textContent = 'Enter a question first.'; return; }
-      const btn = $('askBtn');
-      btn.disabled = true;
-      $('status').className = '';
-      $('status').textContent = 'Recalling…';
-      try {
-        const body = company ? { question, company } : { question };
-        const r = await api('POST', '/recall', body);
-        renderResult(r);
-        $('status').textContent = '';
-      } catch (e) {
-        $('status').className = 'err';
-        $('status').textContent = 'Recall failed: ' + e.message;
-      } finally {
-        btn.disabled = false;
-        loadStatus();
-      }
+      const btn = $('askBtn'); btn.disabled = true; $('status').className = ''; $('status').textContent = 'Recalling…';
+      try { const r = await api('POST', '/recall', company ? { question, company } : { question }); renderRecall(r); $('status').textContent = ''; }
+      catch (e) { $('status').className = 'err'; $('status').textContent = 'Recall failed: ' + e.message; }
+      finally { btn.disabled = false; refreshStatus(); }
     });
 
-    loadStatus();
+    // ── Full self-audit (POST /consistency) ────────────────────────────────────
+    $('auditBtn').addEventListener('click', async () => {
+      const company = $('company').value.trim();
+      $('status').className = ''; $('status').textContent = 'Auditing memory…';
+      try {
+        const report = await api('POST', '/consistency', company ? { company } : {});
+        const wrap = $('result'); wrap.innerHTML = '';
+        renderAudit(wrap, report, 'full scan' + (company ? ' · ' + company : ''));
+        $('status').textContent = '';
+      } catch (e) { $('status').className = 'err'; $('status').textContent = 'Audit failed: ' + e.message; }
+    });
+
+    // ── Run demo (POST /demo/seed → auto recall) ───────────────────────────────
+    $('demoBtn').addEventListener('click', async () => {
+      const btn = $('demoBtn'); btn.disabled = true; $('status').className = ''; $('status').textContent = 'Seeding demo…';
+      try {
+        const s = await api('POST', '/demo/seed');
+        await refreshAll();
+        $('company').value = s.company || 'Northwind Trading';
+        $('question').value = TEMPLATES[0].q;
+        $('ask').requestSubmit();
+      } catch (e) { $('status').className = 'err'; $('status').textContent = 'Demo failed: ' + e.message; }
+      finally { btn.disabled = false; }
+    });
+
+    // ── Inline guided tour ──────────────────────────────────────────────────────
+    const TOUR = [
+      { sel: '#recallPanel', title: 'The MemoryAgent (the headline)', body: 'This agent has persistent, cross-session memory. Ask it a question and it recalls the relevant memories by meaning, then grounds a cited answer in them.' },
+      { sel: '[data-tour="chips"]', title: 'Try a question', body: 'Tap a template question (tied to the demo data), or type your own in the box above.' },
+      { sel: '[data-tour="recall"]', title: 'Grounded, cited recall', body: 'Recall returns an answer plus the exact memories it used as citations — never an ungrounded guess.' },
+      { sel: '[data-tour="audit"]', title: 'Self-auditing memory', body: 'The agent audits its OWN memory for cross-session contradictions and recommends which value to trust — read-only, it never silently rewrites memory. This is the headline capability.' },
+      { sel: '[data-tour="demo"]', title: 'Run demo', body: 'One click seeds a realistic sample through the ingestion pipeline (plus one deliberate contradiction) so you can see recall + self-audit immediately.' },
+      { sel: '[data-tour="pnl"]', title: 'P&L — supporting context', body: 'The pipeline (documents → Qwen vision → fuse → P&L → memory) produces the memories. This P&L is aggregated back over them — supporting cast to the memory headline.' },
+      { sel: '[data-tour="records"]', title: 'Memory records', body: 'A live slice of what the agent holds — the raw material recall draws on.' },
+    ];
+    let tourIdx = 0;
+    function positionTour() {
+      const step = TOUR[tourIdx]; const target = document.querySelector(step.sel);
+      const overlay = $('tour-overlay'), spot = $('tour-spot'), tip = $('tour-tip');
+      if (!target) { return endTour(); }
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const r = target.getBoundingClientRect(); const pad = 8;
+      spot.style.left = (r.left - pad) + 'px'; spot.style.top = (r.top - pad) + 'px';
+      spot.style.width = (r.width + pad * 2) + 'px'; spot.style.height = (r.height + pad * 2) + 'px';
+      $('tour-title').textContent = step.title; $('tour-body').textContent = step.body;
+      $('tour-step').textContent = (tourIdx + 1) + ' / ' + TOUR.length;
+      $('tour-back').style.visibility = tourIdx === 0 ? 'hidden' : 'visible';
+      $('tour-next').textContent = tourIdx === TOUR.length - 1 ? 'Done' : 'Next';
+      overlay.style.display = 'block'; tip.style.display = 'block';
+      const belowTop = r.bottom + 14; const tipH = tip.offsetHeight || 150;
+      const top = (belowTop + tipH < window.innerHeight) ? belowTop : Math.max(14, r.top - tipH - 14);
+      const left = Math.min(Math.max(14, r.left), window.innerWidth - (tip.offsetWidth || 320) - 14);
+      tip.style.top = top + 'px'; tip.style.left = left + 'px';
+    }
+    function startTour() { tourIdx = 0; positionTour(); }
+    function endTour() {
+      $('tour-overlay').style.display = 'none'; $('tour-tip').style.display = 'none';
+      try { localStorage.setItem('archon_tour_done', '1'); } catch (_) {}
+    }
+    $('tour-next').addEventListener('click', () => { if (tourIdx >= TOUR.length - 1) return endTour(); tourIdx++; positionTour(); });
+    $('tour-back').addEventListener('click', () => { if (tourIdx > 0) { tourIdx--; positionTour(); } });
+    $('tour-skip').addEventListener('click', endTour);
+    $('tourBtn').addEventListener('click', startTour);
+    window.addEventListener('resize', () => { if ($('tour-overlay').style.display === 'block') positionTour(); });
+
+    // ── Boot ────────────────────────────────────────────────────────────────────
+    renderChips();
+    refreshAll().then(() => {
+      let seen = false; try { seen = localStorage.getItem('archon_tour_done') === '1'; } catch (_) {}
+      if (!seen) setTimeout(startTour, 600); // auto-run on first visit
+    });
   </script>
 </body>
 </html>

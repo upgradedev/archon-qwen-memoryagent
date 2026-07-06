@@ -31,6 +31,9 @@ import type { PayrollEvent } from "./types.js";
 import { ingestPipeline } from "./pipeline/pipeline.js";
 import { aggregatePnl } from "./pipeline/pnl.js";
 import type { RawDocument } from "./pipeline/models.js";
+import { Extractor } from "./pipeline/extractor.js";
+import { FakeExtractionClient } from "./pipeline/vision.js";
+import { DEMO_DOCUMENTS, DEMO_CONTRADICTION, DEMO_COMPANY, DEMO_INVOICE_RECORD } from "./demo-data.js";
 
 const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
 
@@ -323,6 +326,82 @@ export async function buildServer() {
       const { company, period } = req.query ?? {};
       const memories = await store.listForAudit({ company, period, kind: "payroll_event" });
       return aggregatePnl(memories);
+    },
+  );
+
+  // Browse the agent's memories — a small, recent slice for the dashboard's
+  // records view (kind · company · snippet · timestamp). Read-only; reuses the
+  // existing audit read (no core change).
+  app.get<{ Querystring: { company?: string; kind?: MemoryKind; limit?: number } }>(
+    "/memory/list",
+    {
+      schema: {
+        summary: "List recent memories",
+        description: "Returns a recent slice of the agent's memories (id, kind, company, period, snippet, createdAt) for a browse view.",
+        tags: ["memory"],
+        querystring: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            company: { type: "string", description: "Optional company filter." },
+            kind: { type: "string", description: KIND_HINT },
+            limit: { type: "integer", description: "Max rows (default 20, capped at 100)." },
+          },
+        },
+        response: { 200: looseObject },
+      },
+    },
+    async (req) => {
+      const { company, kind, limit } = req.query ?? {};
+      const cap = Math.min(Math.max(Number(limit ?? 20) || 20, 1), 100);
+      const rows = await store.listForAudit({ company, kind });
+      const items = [...rows]
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+        .slice(0, cap)
+        .map((m) => ({
+          id: m.id,
+          kind: m.kind,
+          company: m.company,
+          period: m.period,
+          snippet: m.content.length > 160 ? m.content.slice(0, 157) + "…" : m.content,
+          createdAt: m.createdAt,
+        }));
+      return { count: items.length, items };
+    },
+  );
+
+  // One-click demo seed — feeds a realistic sample through the SAME pipeline
+  // (with the deterministic Fake extractor: free, no Qwen call, not rate-limited),
+  // plus one deliberate contradiction so the self-audit has something to find.
+  // Universal financial terms only. Lets a first-time visitor see recall +
+  // self-audit + P&L on an otherwise empty store.
+  app.post(
+    "/demo/seed",
+    {
+      schema: {
+        summary: "Seed the demo memories",
+        description: "Runs a built-in sample document set through the pipeline (Fake extractor — free, unmetered) and seeds one contradiction, so the memory explorer has data to recall and self-audit.",
+        tags: ["memory"],
+        response: { 200: looseObject },
+      },
+    },
+    async () => {
+      const fakeExtractor = new Extractor(new FakeExtractionClient());
+      const out = await ingestPipeline(agent, DEMO_DOCUMENTS, { extractor: fakeExtractor });
+      // Seed the cross-session contradiction (two writes, same record, different amount).
+      for (const c of DEMO_CONTRADICTION) {
+        await agent.remember("document", c.content, {
+          company: DEMO_COMPANY,
+          period: "2026-05",
+          sourceRef: DEMO_INVOICE_RECORD,
+          metadata: { record: DEMO_INVOICE_RECORD, amount: c.amount },
+        });
+      }
+      return {
+        seeded: out.memoryIds.length + DEMO_CONTRADICTION.length,
+        company: DEMO_COMPANY,
+        events: out.events.length,
+      };
     },
   );
 

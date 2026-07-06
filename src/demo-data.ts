@@ -1,0 +1,55 @@
+// Built-in demo data for the "Run demo" button — universal financial terms only.
+//
+// A single sample company's payroll triplet (bank confirmation + payroll register
+// + payslips) plus one deliberate cross-session CONTRADICTION, so an empty
+// pgvector never looks broken: one click seeds a realistic memory the agent can
+// recall AND self-audit. The documents' `content` is the JSON an extractor would
+// return; POST /demo/seed runs them through the pipeline with the deterministic
+// Fake extractor (free, no Qwen call, not rate-limited), so the demo is instant
+// and repeatable on the live box regardless of whether a DashScope key is set.
+
+import type { RawDocument } from "./pipeline/models.js";
+
+export const DEMO_COMPANY = "Northwind Trading";
+const PERIOD = "2026-05";
+
+// The numbers pass R1–R4: bank net == sum(payslip net) == 10,800;
+// employer_cost / net = 14,600 / 10,800 = 1.352 ∈ [1.25, 1.45]; 3 == 3 payslips;
+// payment date 2026-05-27 is within the period.
+export const DEMO_DOCUMENTS: RawDocument[] = [
+  {
+    doc_id: "nw-register", filename: "payroll-register.pdf", source_kind: "text",
+    company: DEMO_COMPANY, period: PERIOD,
+    content: JSON.stringify({ doc_type: "payroll_register", gross_pay_total: 12000, employer_cost_total: 14600, employee_count: 3 }),
+  },
+  {
+    doc_id: "nw-bank", filename: "bank-confirmation.pdf", source_kind: "text",
+    company: DEMO_COMPANY, period: PERIOD,
+    content: JSON.stringify({ doc_type: "bank_confirmation", net_pay_total: 10800, payment_date: "2026-05-27" }),
+  },
+  {
+    doc_id: "nw-p1", filename: "payslip-cole.png", source_kind: "image",
+    company: DEMO_COMPANY, period: PERIOD,
+    content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-01", name: "Ana Cole", gross: 5000, employee_social_security: 150, tax: 350, net: 4500, employer_social_security: 900, employer_cost: 5900 } }),
+  },
+  {
+    doc_id: "nw-p2", filename: "payslip-reed.png", source_kind: "image",
+    company: DEMO_COMPANY, period: PERIOD,
+    content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-02", name: "Tom Reed", gross: 4000, employee_social_security: 120, tax: 280, net: 3600, employer_social_security: 700, employer_cost: 4700 } }),
+  },
+  {
+    doc_id: "nw-p3", filename: "payslip-novak.png", source_kind: "image",
+    company: DEMO_COMPANY, period: PERIOD,
+    content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-03", name: "Mia Novak", gross: 3000, employee_social_security: 100, tax: 200, net: 2700, employer_social_security: 1000, employer_cost: 4000 } }),
+  },
+];
+
+// Two write events describing the SAME purchase invoice with DIFFERENT amounts —
+// a cross-session contradiction the self-audit will flag (and recommend which to
+// trust). `record` is the audit's subject key; `amount` is the disagreeing
+// attribute. Written as `document` memories, so this does not affect the P&L view.
+export const DEMO_CONTRADICTION: Array<{ content: string; amount: number }> = [
+  { content: `Purchase invoice INV-5521 at ${DEMO_COMPANY} (2026-05): supplier order recorded at 8,400.`, amount: 8400 },
+  { content: `Purchase invoice INV-5521 at ${DEMO_COMPANY} (2026-05): a later entry records the same invoice at 8,900.`, amount: 8900 },
+];
+export const DEMO_INVOICE_RECORD = "INV-5521";

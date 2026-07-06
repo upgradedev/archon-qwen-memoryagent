@@ -71,3 +71,26 @@ test("the agent can recall what the pipeline wrote", { skip: !HAS_DB }, async ()
   const body = res.json();
   assert.ok(Array.isArray(body.hits) && body.hits.length > 0);
 });
+
+test("POST /demo/seed feeds the demo memories + a contradiction the self-audit finds", { skip: !HAS_DB }, async () => {
+  const seed = await app.inject({ method: "POST", url: "/demo/seed" });
+  assert.equal(seed.statusCode, 200);
+  const s = seed.json();
+  assert.equal(s.company, "Northwind Trading");
+  assert.ok(s.seeded > 0);
+
+  // The deliberate contradiction is detected by the full self-audit.
+  const audit = await app.inject({ method: "POST", url: "/consistency", payload: { company: "Northwind Trading" } });
+  assert.equal(audit.statusCode, 200);
+  const report = audit.json();
+  assert.ok(Array.isArray(report.contradictions) && report.contradictions.length >= 1);
+});
+
+test("GET /memory/list returns a recent slice for the browse view", { skip: !HAS_DB }, async () => {
+  const res = await app.inject({ method: "GET", url: "/memory/list?limit=5" });
+  assert.equal(res.statusCode, 200);
+  const body = res.json();
+  assert.ok(Array.isArray(body.items) && body.items.length > 0 && body.items.length <= 5);
+  const first = body.items[0];
+  assert.ok(typeof first.kind === "string" && typeof first.snippet === "string");
+});
