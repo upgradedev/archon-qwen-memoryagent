@@ -26,6 +26,7 @@ import { defaultEmbedder } from "./memory/embeddings.js";
 import { defaultNarrator } from "./agents/narrator.js";
 import { PgVectorStore, type MemoryKind } from "./memory/store.js";
 import { MemoryAgent } from "./agents/memory-agent.js";
+import { UI_HTML } from "./ui.js";
 import type { PayrollEvent } from "./types.js";
 
 const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
@@ -87,6 +88,16 @@ export async function buildServer() {
 
   // Serve the raw OpenAPI 3 spec at a stable path (hidden from the rendered spec).
   app.get("/openapi.json", { schema: { hide: true } }, async () => app.swagger());
+
+  // The memory explorer UI — a single static page served by this same backend.
+  // A company filter + question box drive POST /recall from the browser, same-
+  // origin, and render the grounded answer + citations + a /memory/count badge.
+  // Hidden from the OpenAPI spec (it is a page, not an API route). Both `/` and
+  // `/ui` serve it.
+  const serveUi = async (_req: unknown, reply: import("fastify").FastifyReply) =>
+    reply.type("text/html").send(UI_HTML);
+  app.get("/", { schema: { hide: true } }, serveUi);
+  app.get("/ui", { schema: { hide: true } }, serveUi);
 
   const embedder = defaultEmbedder();
   const narrator = defaultNarrator();
