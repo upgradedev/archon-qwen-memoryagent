@@ -34,8 +34,8 @@ test("pnlForEvent: employer cost is the accurate expense, cash-out is the bank n
   assert.equal(p.events, 1);
   assert.equal(p.employer_cost_total, 8600);
   assert.equal(p.cash_out_total, 6500);
-  // hidden cost = employer_cost - cash_out
-  assert.equal(p.hidden_cost_total, 2100);
+  // off-bank cost = employer_cost - cash_out
+  assert.equal(p.off_bank_cost, 2100);
   assert.equal(p.employee_count, 2);
 });
 
@@ -77,7 +77,7 @@ test("aggregatePnl: sums only event-summary memories (metadata has employer_cost
   assert.equal(p.events, 2);
   assert.equal(p.employer_cost_total, 12600);
   assert.equal(p.cash_out_total, 9500);
-  assert.equal(p.hidden_cost_total, 3100);
+  assert.equal(p.off_bank_cost, 3100);
   assert.equal(p.employee_count, 3);
   assert.equal(p.by_company.length, 2);
 });

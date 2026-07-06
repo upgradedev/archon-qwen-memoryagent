@@ -32,8 +32,8 @@ export interface PnlReport {
   // Cash flow (CashFlowAgent): the real cash that left the account.
   cash_out_total: number; // == bank_net_total
   // The insight: how much the bank transfer UNDERSTATES the true cost.
-  hidden_cost_total: number; // employer_cost_total - cash_out_total
-  cost_gap_pct: number; // hidden employer-contribution wedge over net
+  off_bank_cost: number; // employer_cost_total - cash_out_total
+  cost_gap_pct: number; // employer-contribution wedge, over net
   avg_cost_per_employee: number;
   by_company: CompanyPnl[];
   top_employees: EmployeePnl[];
@@ -44,7 +44,7 @@ export interface CompanyPnl {
   period: string | null;
   employer_cost_total: number;
   cash_out_total: number;
-  hidden_cost_total: number;
+  off_bank_cost: number;
   employee_count: number;
 }
 
@@ -55,7 +55,7 @@ function round(n: number): number {
 // Per-event P&L view (EmployeeAgent + PnLAgent) directly from a fused event.
 export function pnlForEvent(event: PayrollEvent): PnlReport {
   const cash_out_total = event.bank_net_total;
-  const hidden_cost_total = event.employer_cost_total - cash_out_total;
+  const off_bank_cost = event.employer_cost_total - cash_out_total;
   const cost_gap_pct =
     cash_out_total > 0 ? (event.employer_social_security_total / cash_out_total) * 100 : 0;
   const top_employees: EmployeePnl[] = [...event.employees]
@@ -77,7 +77,7 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
     employee_social_security_total: round(event.employee_social_security_total),
     tax_withheld_total: round(event.tax_withheld_total),
     cash_out_total: round(cash_out_total),
-    hidden_cost_total: round(hidden_cost_total),
+    off_bank_cost: round(off_bank_cost),
     cost_gap_pct: round(cost_gap_pct),
     avg_cost_per_employee:
       event.employee_count > 0 ? round(event.employer_cost_total / event.employee_count) : 0,
@@ -87,7 +87,7 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
         period: event.period,
         employer_cost_total: round(event.employer_cost_total),
         cash_out_total: round(cash_out_total),
-        hidden_cost_total: round(hidden_cost_total),
+        off_bank_cost: round(off_bank_cost),
         employee_count: event.employee_count,
       },
     ],
@@ -140,17 +140,17 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
       period: m.period,
       employer_cost_total: 0,
       cash_out_total: 0,
-      hidden_cost_total: 0,
+      off_bank_cost: 0,
       employee_count: 0,
     };
     prev.employer_cost_total += cost;
     prev.cash_out_total += cash;
-    prev.hidden_cost_total += cost - cash;
+    prev.off_bank_cost += cost - cash;
     prev.employee_count += emp;
     byKey.set(key, prev);
   }
 
-  const hidden_cost_total = employer_cost_total - cash_out_total;
+  const off_bank_cost = employer_cost_total - cash_out_total;
   return {
     events: summaries.length,
     employee_count,
@@ -160,14 +160,14 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
     employee_social_security_total: 0, // not carried on the summary memory
     tax_withheld_total: 0, // not carried on the summary memory
     cash_out_total: round(cash_out_total),
-    hidden_cost_total: round(hidden_cost_total),
-    cost_gap_pct: cash_out_total > 0 ? round((hidden_cost_total / cash_out_total) * 100) : 0,
+    off_bank_cost: round(off_bank_cost),
+    cost_gap_pct: cash_out_total > 0 ? round((off_bank_cost / cash_out_total) * 100) : 0,
     avg_cost_per_employee: employee_count > 0 ? round(employer_cost_total / employee_count) : 0,
     by_company: [...byKey.values()].map((c) => ({
       ...c,
       employer_cost_total: round(c.employer_cost_total),
       cash_out_total: round(c.cash_out_total),
-      hidden_cost_total: round(c.hidden_cost_total),
+      off_bank_cost: round(c.off_bank_cost),
     })),
     top_employees: [],
   };

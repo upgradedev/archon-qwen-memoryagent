@@ -48,10 +48,10 @@ test("POST /ingest/documents fuses the triplet and feeds memory", { skip: !HAS_D
   assert.equal(body.events, 1);
   assert.ok(body.written > 0);
   assert.ok(Array.isArray(body.memoryIds) && body.memoryIds.length === body.written);
-  // The fused event carries the accurate employer cost + hidden-cost gap.
+  // The fused event carries the accurate employer cost + off-bank cost gap.
   const result = body.results[0];
   assert.equal(result.event.employer_cost_total, 8600);
-  assert.equal(result.pnl.hidden_cost_total, 2100);
+  assert.equal(result.pnl.off_bank_cost, 2100);
   assert.equal(result.validation.length, 4);
 });
 
@@ -61,7 +61,7 @@ test("GET /pnl aggregates the pipeline-fed memories", { skip: !HAS_DB }, async (
   const pnl = res.json();
   assert.equal(pnl.employer_cost_total, 8600);
   assert.equal(pnl.cash_out_total, 6500);
-  assert.equal(pnl.hidden_cost_total, 2100);
+  assert.equal(pnl.off_bank_cost, 2100);
   assert.ok(pnl.by_company.length >= 1);
 });
 

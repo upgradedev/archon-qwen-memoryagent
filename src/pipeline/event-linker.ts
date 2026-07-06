@@ -5,7 +5,7 @@
 // and the per-employee payslips — into ONE accurate `PayrollEvent`. This is the
 // key insight the platform is built on: the bank confirmation alone understates
 // the true employer payroll cost, because it never sees employer social-security
-// contributions. The fused event carries the accurate number AND the hidden gap.
+// contributions. The fused event carries the accurate number AND the off-bank gap.
 //
 // The output is THIS repo's existing `PayrollEvent` (src/types.ts) — the exact
 // shape `MemoryAgent.ingestEvent()` already writes to memory. The pipeline PRODUCES
@@ -59,7 +59,7 @@ export function linkEvents(docs: ExtractedDocument[]): PayrollEvent[] {
     const employee_count = register?.employee_count ?? bank?.employee_count ?? employees.length;
 
     // Derived display fields (per the PayrollEvent field docs in src/types.ts).
-    const cost_gap_amount = employer_social_security_total; // the hidden employer wedge
+    const cost_gap_amount = employer_social_security_total; // the off-bank employer wedge
     const cost_gap_pct = bank_net_total > 0 ? (cost_gap_amount / bank_net_total) * 100 : 0;
     const hidden_total = employer_cost_total - bank_net_total;
 

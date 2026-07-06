@@ -337,7 +337,7 @@ Once the backend is running, open **`http://localhost:9000/docs`** for the inter
 | `GET /memory/count` | How many memories the agent holds. |
 | `POST /ingest` | `{ event }` → write memories for a fused financial event. |
 | `POST /ingest/documents` | `{ documents[] }` → run the ingestion **pipeline** (Extractor → Classifier → EventLinker → Validator → P&L) over raw documents and write the fused events + findings into memory. Returns the events, per-event P&L, validation, and the ids of every memory written. |
-| `GET /pnl` | `?company=&period=` → payroll-cost **P&L** aggregated over the pipeline-fed memories (employer cost, cash-out, hidden-cost gap, by company). |
+| `GET /pnl` | `?company=&period=` → payroll-cost **P&L** aggregated over the pipeline-fed memories (employer cost, cash-out, off-bank cost gap, by company). |
 | `POST /recall` | `{ question, company?, kind?, limit?, hybrid? }` → grounded, cited answer (hybrid on by default) + a best-effort self-audit over the recalled memories. |
 | `POST /consistency` | `{ company?, period?, kind? }` → **self-audit**: cross-session contradictions (each with a `resolution` recommending which value to trust) + dangling references across stored memories (read-only, no schema change). |
 | `POST /consolidate` | `{ company?, threshold? }` → collapse near-duplicate memories. |

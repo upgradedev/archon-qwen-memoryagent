@@ -267,7 +267,7 @@ export async function buildServer() {
   );
 
   // P&L view over the pipeline-generated memories the agent holds. Aggregates the
-  // fused event-summary memories (employer cost, cash-out, hidden-cost gap,
+  // fused event-summary memories (employer cost, cash-out, off-bank cost gap,
   // per-company) — the supporting context for the memory headline. Read-only.
   app.get<{ Querystring: { company?: string; period?: string } }>(
     "/pnl",
@@ -276,7 +276,7 @@ export async function buildServer() {
         summary: "P&L over stored memories",
         description:
           "Aggregates the fused payroll-event memories into a payroll-cost P&L: employer " +
-          "cost (the accurate expense), cash-out (what left the bank), and the hidden-cost " +
+          "cost (the accurate expense), cash-out (what left the bank), and the off-bank " +
           "gap between them, broken down by company. Computed over the memories the pipeline fed.",
         tags: ["memory"],
         querystring: {

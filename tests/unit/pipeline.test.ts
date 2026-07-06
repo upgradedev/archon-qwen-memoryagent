@@ -232,7 +232,7 @@ test("runPipeline: produces one event with P&L + validation, no DB", async () =>
   assert.equal(out.events.length, 1);
   const [r] = out.events;
   assert.equal(r!.event.employer_cost_total, 8600);
-  assert.equal(r!.pnl.hidden_cost_total, 2100);
+  assert.equal(r!.pnl.off_bank_cost, 2100);
   assert.equal(r!.validation.length, 4);
 });
 
