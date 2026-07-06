@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Archon MemoryAgent — Explorer</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --panel-2: #1c2330;
+      --border: #2b333f;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green-hi: #3fb950;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px; line-height: 1.55;
+    }
+    header {
+      padding: 20px 28px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+    header .sub { color: var(--muted); font-size: 13px; }
+    header .spacer { flex: 1; }
+    .pill {
+      font-family: var(--mono); font-size: 12px; color: var(--muted);
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 999px; padding: 3px 12px;
+    }
+    .pill .n { color: var(--accent); }
+    main { max-width: 860px; margin: 0 auto; padding: 28px 20px 80px; }
+    form { display: grid; gap: 12px; margin-bottom: 24px; }
+    label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+    input, textarea {
+      width: 100%; font-family: inherit; font-size: 14px; color: var(--text);
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      padding: 11px 13px;
+    }
+    input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    textarea { min-height: 74px; resize: vertical; line-height: 1.5; }
+    .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .row .grow { flex: 1; min-width: 220px; }
+    button {
+      font-family: inherit; font-size: 14px; border-radius: 8px;
+      border: 1px solid rgba(88,166,255,.4); background: rgba(88,166,255,.10);
+      color: var(--accent); padding: 11px 22px; cursor: pointer;
+      transition: background .12s ease, border-color .12s ease;
+    }
+    button:hover { background: rgba(88,166,255,.18); border-color: var(--accent); }
+    button:disabled { opacity: .5; cursor: default; }
+    .answer {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+      padding: 18px 20px; margin-bottom: 18px; white-space: pre-wrap;
+    }
+    .answer .model { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 18px 0 8px; }
+    .cite {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      padding: 11px 14px; margin-bottom: 8px; font-size: 13px;
+    }
+    .cite .head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 3px; }
+    .cite .marker { font-family: var(--mono); color: var(--accent); }
+    .cite .kind { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .cite .score { font-family: var(--mono); font-size: 11px; color: var(--green-hi); margin-left: auto; }
+    .cite .content { color: var(--text); }
+    .empty { text-align: center; color: var(--muted); padding: 40px 20px; border: 1px dashed var(--border); border-radius: 10px; }
+    #status { color: var(--muted); font-size: 13px; min-height: 20px; }
+    #status.err { color: #f85149; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Archon MemoryAgent</h1>
+    <span class="sub">Persistent, queryable, cross-session memory — grounded recall</span>
+    <span class="spacer"></span>
+    <span class="pill" id="count">memories <span class="n" id="countN">…</span></span>
+    <span class="pill" id="model">…</span>
+  </header>
+
+  <main>
+    <form id="ask">
+      <div class="row">
+        <div class="grow">
+          <label for="company">Company (optional filter)</label>
+          <input id="company" placeholder="e.g. ByteCraft" autocomplete="off" />
+        </div>
+      </div>
+      <div>
+        <label for="question">Question</label>
+        <textarea id="question" placeholder="What did it cost to employ the team last period?"></textarea>
+      </div>
+      <div class="row">
+        <button id="askBtn" type="submit">Recall</button>
+        <span id="status"></span>
+      </div>
+    </form>
+
+    <div id="result"></div>
+  </main>
+
+  <script>
+    // Vanilla JS memory explorer. Same-origin: served by the same Fastify backend,
+    // so all fetches are relative. No framework, no build step.
+    const $ = (id) => document.getElementById(id);
+    const el = (tag, props, kids) => {
+      const n = document.createElement(tag);
+      if (props) for (const k in props) {
+        if (k === 'class') n.className = props[k];
+        else if (k === 'text') n.textContent = props[k];
+        else n.setAttribute(k, props[k]);
+      }
+      (kids || []).forEach((c) => n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
+      return n;
+    };
+
+    async function api(method, path, body) {
+      const res = await fetch(path, {
+        method,
+        headers: body ? { 'content-type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const text = await res.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw: text }; }
+      if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+      return data;
+    }
+
+    function renderResult(r) {
+      const wrap = $('result');
+      wrap.innerHTML = '';
+
+      const ans = el('div', { class: 'answer' });
+      ans.appendChild(el('div', { class: 'model', text: 'answer · ' + (r.modelId || 'model') }));
+      ans.appendChild(el('div', { text: r.answer || '(no answer)' }));
+      wrap.appendChild(ans);
+
+      const cites = r.citations || [];
+      if (cites.length) {
+        wrap.appendChild(el('div', { class: 'section-label', text: 'Citations (' + cites.length + ')' }));
+        cites.forEach((c) => {
+          const head = el('div', { class: 'head' }, [
+            el('span', { class: 'marker', text: c.marker || '' }),
+            el('span', { class: 'kind', text: c.kind || 'memory' }),
+            el('span', { class: 'score', text: typeof c.score === 'number' ? c.score.toFixed(2) : '' }),
+          ]);
+          wrap.appendChild(el('div', { class: 'cite' }, [head, el('div', { class: 'content', text: c.content || '' })]));
+        });
+      } else {
+        wrap.appendChild(el('div', { class: 'empty', text: 'No memories were recalled for this question.' }));
+      }
+    }
+
+    async function loadStatus() {
+      try {
+        const h = await api('GET', '/health');
+        $('model').textContent = (h.embedder || '?') + ' · ' + (h.narrator || '?');
+      } catch (_) { $('model').textContent = 'offline'; }
+      try {
+        const c = await api('GET', '/memory/count');
+        $('countN').textContent = (c && typeof c.count === 'number') ? c.count : '?';
+      } catch (_) { $('countN').textContent = '?'; }
+    }
+
+    $('ask').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const question = $('question').value.trim();
+      const company = $('company').value.trim();
+      if (!question) { $('status').textContent = 'Enter a question first.'; return; }
+      const btn = $('askBtn');
+      btn.disabled = true;
+      $('status').className = '';
+      $('status').textContent = 'Recalling…';
+      try {
+        const body = company ? { question, company } : { question };
+        const r = await api('POST', '/recall', body);
+        renderResult(r);
+        $('status').textContent = '';
+      } catch (e) {
+        $('status').className = 'err';
+        $('status').textContent = 'Recall failed: ' + e.message;
+      } finally {
+        btn.disabled = false;
+        loadStatus();
+      }
+    });
+
+    loadStatus();
+  </script>
+</body>
+</html>

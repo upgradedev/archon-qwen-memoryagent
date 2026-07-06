@@ -76,6 +76,22 @@ test("POST /recall without a body.question → 400", async () => {
   assert.match(res.json().error, /question/);
 });
 
+test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
+  const res = await app.inject({ method: "GET", url: "/" });
+  assert.equal(res.statusCode, 200);
+  assert.match(String(res.headers["content-type"]), /text\/html/);
+  assert.match(res.body, /<!doctype html>/i);
+  assert.match(res.body, /Archon MemoryAgent/);
+  // The page wires the real recall endpoint (not a placeholder).
+  assert.match(res.body, /\/recall/);
+});
+
+test("GET /ui serves the same memory explorer (alias)", async () => {
+  const res = await app.inject({ method: "GET", url: "/ui" });
+  assert.equal(res.statusCode, 200);
+  assert.match(String(res.headers["content-type"]), /text\/html/);
+});
+
 test("GET /openapi.json returns 200 and documents the core routes", async () => {
   const res = await app.inject({ method: "GET", url: "/openapi.json" });
   assert.equal(res.statusCode, 200);
