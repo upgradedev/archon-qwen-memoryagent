@@ -3,7 +3,7 @@ name: Load Test (k6)
 # k6 load / performance test — the LOAD tier of the testing pyramid.
 #
 # MANUAL ONLY (workflow_dispatch). It is deliberately NOT wired to push / PR:
-# it drives the LIVE Alibaba Cloud box (http://43.106.13.19:9000), and every
+# it drives the LIVE Alibaba Cloud box (https://memory.43.106.13.19.sslip.io), and every
 # /recall is a real embedding + qwen-plus completion against a real pgvector DB
 # — i.e. real spend and real load. Running it on every commit would burn money
 # and pollute the live database, so it is opt-in only.
@@ -20,7 +20,7 @@ on:
       target_url:
         description: "Live base URL to load-test against."
         required: false
-        default: "http://43.106.13.19:9000"
+        default: "https://memory.43.106.13.19.sslip.io"
       write_load:
         description: "Include /ingest WRITE load (real spend + writes to the live DB). Default false."
         required: false

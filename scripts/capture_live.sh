@@ -26,12 +26,12 @@
 # Run it against a box redeployed from this branch (deploy/redeploy.sh --truncate).
 #
 # Env:
-#   DEMO_BASE_URL  live base URL (default http://43.106.13.19:9000)
+#   DEMO_BASE_URL  live base URL (default https://memory.43.106.13.19.sslip.io)
 #   GITHUB_RUN_ID  used to make the companies/events unique (falls back to a timestamp)
 #   TRANSCRIPT     output transcript path (default docs/screencast_transcript.txt)
 set -euo pipefail
 
-BASE="${DEMO_BASE_URL:-http://43.106.13.19:9000}"
+BASE="${DEMO_BASE_URL:-https://memory.43.106.13.19.sslip.io}"
 RUN="${GITHUB_RUN_ID:-local$(date +%s)}"
 COMPANY="DemoRun ${RUN}"
 AUDIT_COMPANY="DemoRun ${RUN} audit"

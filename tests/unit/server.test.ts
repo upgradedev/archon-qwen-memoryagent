@@ -76,6 +76,18 @@ test("POST /recall without a body.question → 400", async () => {
   assert.match(res.json().error, /question/);
 });
 
+test("POST /ingest/documents without documents → 400", async () => {
+  const res = await app.inject({ method: "POST", url: "/ingest/documents", payload: {} });
+  assert.equal(res.statusCode, 400);
+  assert.match(res.json().error, /documents/);
+});
+
+test("POST /ingest/documents with an empty array → 400", async () => {
+  const res = await app.inject({ method: "POST", url: "/ingest/documents", payload: { documents: [] } });
+  assert.equal(res.statusCode, 400);
+  assert.match(res.json().error, /documents/);
+});
+
 test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
   const res = await app.inject({ method: "GET", url: "/" });
   assert.equal(res.statusCode, 200);
@@ -99,7 +111,7 @@ test("GET /openapi.json returns 200 and documents the core routes", async () => 
   assert.equal(spec.openapi?.startsWith("3."), true);
   assert.equal(spec.info?.title, "Archon MemoryAgent API");
   // The onRoute capture must have picked up every registered handler.
-  for (const path of ["/health", "/recall", "/ingest", "/memory/count", "/consistency", "/consolidate", "/forget"]) {
+  for (const path of ["/health", "/recall", "/ingest", "/ingest/documents", "/pnl", "/memory/count", "/consistency", "/consolidate", "/forget"]) {
     assert.ok(spec.paths?.[path], `spec should document ${path}`);
   }
   // The raw-spec meta-route is hidden from the rendered spec.

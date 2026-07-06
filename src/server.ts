@@ -28,6 +28,9 @@ import { PgVectorStore, type MemoryKind } from "./memory/store.js";
 import { MemoryAgent } from "./agents/memory-agent.js";
 import { UI_HTML } from "./ui.js";
 import type { PayrollEvent } from "./types.js";
+import { ingestPipeline } from "./pipeline/pipeline.js";
+import { aggregatePnl } from "./pipeline/pnl.js";
+import type { RawDocument } from "./pipeline/models.js";
 
 const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
 
@@ -191,6 +194,106 @@ export async function buildServer() {
       }
       const ids = await agent.ingestEvent(event);
       return { written: ids.length, ids };
+    },
+  );
+
+  // Document-ingestion pipeline — the productized upstream that FEEDS memory.
+  // Takes a period's raw financial documents, extracts each with Qwen (vision /
+  // text), fuses the payroll triplet into one accurate event, computes the P&L,
+  // runs the R1–R4 cross-document validation, and WRITES the fused event +
+  // findings into the SAME memory via the unchanged MemoryAgent. Returns the
+  // events, per-event P&L, validation, and the ids of every memory written.
+  app.post<{ Body: { documents: RawDocument[] } }>(
+    "/ingest/documents",
+    {
+      schema: {
+        summary: "Ingest raw documents through the extraction pipeline",
+        description:
+          "Runs the document-ingestion pipeline (Extractor → Classifier → EventLinker → " +
+          "Validator → P&L) over a period's raw financial documents and writes the fused " +
+          "events + validation findings into the agent's memory. The memories the " +
+          "MemoryAgent then recalls are produced here.",
+        tags: ["memory"],
+        body: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            documents: {
+              type: "array",
+              description: "Raw documents (image data-URL or text) to extract and fuse.",
+              items: {
+                type: "object",
+                additionalProperties: true,
+                properties: {
+                  doc_id: { type: "string" },
+                  filename: { type: "string" },
+                  source_kind: { type: "string", description: "image | pdf | text" },
+                  content: { type: "string" },
+                  company: { type: "string" },
+                  period: { type: "string", description: "YYYY-MM" },
+                },
+              },
+            },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              events: { type: "integer" },
+              written: { type: "integer" },
+              results: { type: "array", items: looseObject },
+              memoryIds: { type: "array", items: { type: "string" } },
+            },
+          },
+          400: errorResponse,
+        },
+      },
+    },
+    async (req, reply) => {
+      const documents = req.body?.documents;
+      if (!Array.isArray(documents) || documents.length === 0) {
+        return reply.code(400).send({ error: "body.documents (a non-empty array) is required" });
+      }
+      const out = await ingestPipeline(agent, documents);
+      return {
+        events: out.events.length,
+        written: out.memoryIds.length,
+        results: out.events,
+        memoryIds: out.memoryIds,
+      };
+    },
+  );
+
+  // P&L view over the pipeline-generated memories the agent holds. Aggregates the
+  // fused event-summary memories (employer cost, cash-out, hidden-cost gap,
+  // per-company) — the supporting context for the memory headline. Read-only.
+  app.get<{ Querystring: { company?: string; period?: string } }>(
+    "/pnl",
+    {
+      schema: {
+        summary: "P&L over stored memories",
+        description:
+          "Aggregates the fused payroll-event memories into a payroll-cost P&L: employer " +
+          "cost (the accurate expense), cash-out (what left the bank), and the hidden-cost " +
+          "gap between them, broken down by company. Computed over the memories the pipeline fed.",
+        tags: ["memory"],
+        querystring: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            company: { type: "string", description: "Optional company filter." },
+            period: { type: "string", description: "Optional period filter (YYYY-MM)." },
+          },
+        },
+        response: { 200: looseObject },
+      },
+    },
+    async (req) => {
+      const { company, period } = req.query ?? {};
+      const memories = await store.listForAudit({ company, period, kind: "payroll_event" });
+      return aggregatePnl(memories);
     },
   );
 

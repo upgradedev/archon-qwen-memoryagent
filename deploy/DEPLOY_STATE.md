@@ -93,7 +93,7 @@ Crash-recoverable checkpoint. Updated after EVERY step. Secrets MASKED.
 ## ✅ DEPLOYMENT LIVE — REPORT
 
 ### Live public URL (hackathon proof of Alibaba deployment)
-**http://43.106.13.19:9000** — endpoints: `/health`, `/memory/count`, `/ingest`, `/recall`.
+**https://memory.43.106.13.19.sslip.io** — endpoints: `/health`, `/memory/count`, `/ingest`, `/recall`.
 
 ### Alibaba Cloud services used
 - **ECS** (Elastic Compute Service): instance `i-t4ngalzjr5nwtuowbv7y`, `ecs.e-c1m2.large`, Ubuntu 22.04, ap-southeast-1c, public IP 43.106.13.19, running Docker Compose (backend + pgvector).
@@ -130,7 +130,7 @@ ALL PASS (health 200 / embedDim 1024, ingest 4, count 4, recall cited pgvector a
 - Cleared old fake-embedded rows (`TRUNCATE agent_memory`), re-ingested 2 events (ACME 4 + ByteCraft 3 = count 7) with **real text-embedding-v4 embeddings** (no DashScope auth/region/model errors).
 - **Real recall:** `modelId: qwen-plus`, genuine synthesized answer (not the deterministic fake template), real cosine scores (top insight distance 0.29 / score 0.71), `company` filter correctly excluded ByteCraft. Sample answer: _"The hidden payroll cost at ACME SA for 2026-05 is €5,800 — the gap between the bank salary transfer of €10,000 and the true employer cost of €15,800 [2]. This €5,800 wedge represents 28.0% of the bank transfer and consists mostly of employer social-security contributions of €2,800 [1]..."_
 
-**RESULT: valid REAL-Qwen live deployment on Alibaba Cloud (ECS + pgvector) at http://43.106.13.19:9000.** Still open: release RDS orphan `pgm-gs558i717e0f8z6u` once Running; stop/release ECS after demo to cap cost.
+**RESULT: valid REAL-Qwen live deployment on Alibaba Cloud (ECS + pgvector) at https://memory.43.106.13.19.sslip.io.** Still open: release RDS orphan `pgm-gs558i717e0f8z6u` once Running; stop/release ECS after demo to cap cost.
 
 ## Resource IDs
 - ECS instance id: `i-t4ngalzjr5nwtuowbv7y` (ap-southeast-1c, ecs.e-c1m2.large)
@@ -138,4 +138,4 @@ ALL PASS (health 200 / embedDim 1024, ingest 4, count 4, recall cited pgvector a
 - VPC/vSwitch: `vpc-t4n52ldyprw3c6s7c0x5o` / `vsw-t4nkxqnrrmnl8sxpijtno`
 - RDS orphan (unused, delete once Running): `pgm-gs558i717e0f8z6u`
 - DATABASE_URL (masked): `postgresql://postgres:****@db:5432/postgres` (pgvector container)
-- **Live public URL: http://43.106.13.19:9000** (REAL Qwen)
+- **Live public URL: https://memory.43.106.13.19.sslip.io** (REAL Qwen)

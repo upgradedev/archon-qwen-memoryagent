@@ -4,6 +4,8 @@
 
 > **Track: MemoryAgent** — an agent with *persistent, queryable memory that retains and recalls information across sessions*.
 
+> **Live:** [`https://memory.43.106.13.19.sslip.io`](https://memory.43.106.13.19.sslip.io) — open the URL for the memory explorer (recall + self-audit + a P&L / pipeline context panel), `/docs` for the API, `/health` for liveness.
+
 ## What it is
 
 Archon MemoryAgent gives a small business's financial-intelligence pipeline a **memory**.
@@ -21,6 +23,23 @@ It ingests *all* of a business's financial documents and data into one environme
 It also **cross-checks the whole picture for missing or inconsistent information**. For example: *a bank payment appears with no matching invoice — did the vendor never send it, did the accountant never register it, or is the payment wrong?*
 
 This MemoryAgent gives that pipeline a memory. It remembers each consolidated figure and each cross-check finding across sessions, and can answer questions about them on any later run.
+
+## Platform context — where the memories come from
+
+The MemoryAgent is the headline: it **recalls** grounded, cited answers and **self-audits** its own memory for cross-session contradictions. But an agent's memory is only as real as what feeds it — so this entry ships the **productized upstream** that produces those memories: a document-ingestion pipeline (`src/pipeline/`), ported from the Archon extraction + analysis agents.
+
+```
+raw documents ──▶ Extractor (qwen-vl-max vision / qwen-plus text)   normalize each doc
+              ──▶ Classifier      rule-based doc-type refinement (no LLM)
+              ──▶ EventLinker     fuse the payroll triplet into one accurate event
+              ──▶ Validator       R1–R4 cross-document consistency checks
+              ──▶ P&L math        employer cost · cash-out · per-employee analytics
+              ──▶ MemoryAgent.ingestEvent()   WRITE the fused event + findings to pgvector
+```
+
+A single payroll event is told by three documents that each carry a *different part of the truth*: the **bank confirmation** (net cash that left the account), the **payroll register** (the full employer cost, including employer social-security), and the **payslips** (per-employee detail). The bank confirmation alone **understates** the true cost of employing the team. The pipeline fuses all three, computes the accurate P&L, and hands the result to the **unchanged** MemoryAgent to remember.
+
+The pipeline is **supporting cast** — it exists to make the memory demonstrably fed by a real productization path. The agent core (recall, self-audit, consolidation, forgetting) is untouched; `POST /ingest/documents` runs the pipeline and writes through the same `ingestEvent()` the agent already exposed, and `GET /pnl` reads a P&L back **over the memories the agent holds**. Everything stays offline-testable: `qwen-vl-max`/`qwen-plus` are auto-selected only when `DASHSCOPE_API_KEY` is set, and a deterministic Fake extractor drives the whole path in CI (same seam as `FakeEmbedder`/`FakeNarrator`).
 
 The financial picture it remembers is broad: one memory might be a sales invoice, the next a cash position, the next a completeness anomaly. Among them is the **true cost of employing a team** — a bank salary transfer understates it, because it never shows employer social-security contributions — but that is just *one* business aspect among many.
 
@@ -159,25 +178,38 @@ consistency(scope):                 ── the agent audits its OWN memory
 
 ## Architecture
 
+The **MemoryAgent is the centre** (recall + self-audit). The document-ingestion **pipeline is the supporting upstream** that *produces* the memories the agent remembers.
+
 ```mermaid
 flowchart TB
     Agent["AI agent / caller"]
+    Docs["Raw financial documents<br/>(scanned images · pdf · text)"]
 
     subgraph ECS["Alibaba Cloud · ECS ap-southeast-1 · docker-compose"]
         direction TB
         subgraph API["backend container — Fastify · src/server.ts"]
             direction LR
-            H["GET /health · /docs"]
-            I["POST /ingest"]
+            H["GET /health · /docs · /pnl"]
+            I["POST /ingest · /ingest/documents"]
             R["POST /recall"]
             C["POST /consistency"]
         end
-        MA["MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()"]
+        subgraph PIPE["Ingestion pipeline — src/pipeline (supporting cast)"]
+            direction LR
+            EX["Extractor<br/>(qwen-vl-max / qwen-plus)"]
+            CL["Classifier"]
+            EL["EventLinker<br/>fuse triplet"]
+            VA["Validator R1–R4"]
+            PN["P&amp;L math"]
+            EX --> CL --> EL --> VA --> PN
+        end
+        MA["★ MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()<br/>+ self-audit (contradictions · dangling refs)"]
         DB["pgvector container · PostgreSQL — THE MEMORY<br/>agent_memory(embedding vector(1024)) + HNSW cosine index<br/>recall = ORDER BY embedding &lt;=&gt; $query"]
     end
 
     subgraph QWEN["Model Studio / DashScope — Qwen Cloud"]
         direction TB
+        VL["qwen-vl-max (vision extraction)"]
         EMB["text-embedding-v4 (1024-d)"]
         LLM["qwen-plus (RAG narrator)"]
     end
@@ -185,7 +217,11 @@ flowchart TB
     RDS["Managed ApsaraDB RDS / AnalyticDB for PostgreSQL<br/>same pg-wire code · DATABASE_URL swap"]
 
     Agent -->|HTTP / JSON| API
+    Docs -->|POST /ingest/documents| API
+    API --> PIPE
     API --> MA
+    PIPE -->|fused events + findings| MA
+    EX -->|vision / text| VL
     MA -->|embed| EMB
     MA -->|chat| LLM
     MA -->|SQL · pg-wire| DB
@@ -300,6 +336,8 @@ Once the backend is running, open **`http://localhost:9000/docs`** for the inter
 | `GET /health` | Liveness; reports the live embedder/narrator model ids + dim. |
 | `GET /memory/count` | How many memories the agent holds. |
 | `POST /ingest` | `{ event }` → write memories for a fused financial event. |
+| `POST /ingest/documents` | `{ documents[] }` → run the ingestion **pipeline** (Extractor → Classifier → EventLinker → Validator → P&L) over raw documents and write the fused events + findings into memory. Returns the events, per-event P&L, validation, and the ids of every memory written. |
+| `GET /pnl` | `?company=&period=` → payroll-cost **P&L** aggregated over the pipeline-fed memories (employer cost, cash-out, hidden-cost gap, by company). |
 | `POST /recall` | `{ question, company?, kind?, limit?, hybrid? }` → grounded, cited answer (hybrid on by default) + a best-effort self-audit over the recalled memories. |
 | `POST /consistency` | `{ company?, period?, kind? }` → **self-audit**: cross-session contradictions (each with a `resolution` recommending which value to trust) + dangling references across stored memories (read-only, no schema change). |
 | `POST /consolidate` | `{ company?, threshold? }` → collapse near-duplicate memories. |

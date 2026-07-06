@@ -5,7 +5,8 @@
   "include": ["src/**/*.ts"],
   "exclude": [
     "src/**/*.d.ts",
-    "src/types.ts"
+    "src/types.ts",
+    "src/pipeline/models.ts"
   ],
   "reporter": ["text", "lcov"],
   "report-dir": "coverage",
