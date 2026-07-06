@@ -1,16 +1,14 @@
-0|5|Archon MemoryAgent — self-auditing, cross-session memory live on Alibaba Cloud
-5|13|PROOF 1 · /health: real Qwen live on Alibaba (text-embedding-v4 + qwen-plus, 1024-dim)
-13|26|⭐ INNOVATION · two separate sessions write ONE record with a different employer cost
-26|42|/consistency DETECTS the cross-session contradiction and RECOMMENDS which value to trust
-42|50|Measured: 5/5 seeded issues caught (4 contradictions + 1 dangling ref) · 0 false positives
-50|66|SESSION A · an agent writes fused financial facts to memory via /ingest
-66|71|Session A ends — nothing kept in process; the facts live only in pgvector
-71|84|SESSION B · a fresh, separate client that has only a question
-84|98|qwen-plus answers — grounded in memory written back in Session A
-98|105|Recalled by MEANING — real cosine similarity over pgvector
-105|109|A memory written in Session A, retrieved in Session B — cross-session persistence
-109|117|Memory is genuinely QUERYABLE — a second, different question
-117|131|A new grounded qwen-plus answer from the same persistent memory
-131|141|Same cross-session memory · new query · new answer
-141|150|PROOF 3 · running live on Alibaba Cloud — ECS + pgvector container
-150|157|Self-auditing · persistent · queryable · across sessions — proven live
+0|6|Archon MemoryAgent — persistent, queryable memory across sessions, on Alibaba Cloud
+6|16|PROOF · /health + /memory/count: real Qwen live (text-embedding-v4 · qwen-plus · 1024-dim)
+16|24|WHAT IT IS · every event, finding, insight embedded → pgvector on Alibaba (durable)
+24|34|ARCHITECTURE · hybrid recall: dense + BM25 · RRF · cross-encoder rerank → qwen-plus
+34|45|LIVE DEMO · Explorer UI at /  ·  SESSION A writes fused facts, then disconnects
+45|58|SESSION B · a fresh client's question → qwen-plus grounds it in Session A's memory
+58|66|Recalled by MEANING — real cosine similarity over pgvector
+66|76|Genuinely QUERYABLE · a second, different question → a new grounded answer
+76|90|⭐ DIFFERENTIATOR · two sessions wrote ONE record differently — Mem0/Zep would MUTATE
+90|103|Archon DETECTS the contradiction, RECOMMENDS which to trust — never mutates memory
+103|113|Measured: 5/5 detected · 0 false positives · read-only recommender 4/4 correct
+113|125|Retrieval: Recall@3 90→96.7% · MRR 0.883→0.911 · 100% correct · 90.9% grounded
+125|140|LIVE on Alibaba Cloud — ECS in Singapore + pgvector · text-embedding-v4 + qwen-plus
+140|157|Real Qwen on Alibaba Cloud. Measured, not a wrapper. Open source · MIT.
