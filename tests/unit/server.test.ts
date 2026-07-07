@@ -11,7 +11,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { FastifyInstance } from "fastify";
-import { buildServer } from "../../src/server.js";
+import { buildServer, makeDailyLimiter } from "../../src/server.js";
 
 let app: FastifyInstance;
 
@@ -76,6 +76,30 @@ test("POST /recall without a body.question → 400", async () => {
   assert.match(res.json().error, /question/);
 });
 
+test("POST /ingest/documents without documents → 400", async () => {
+  const res = await app.inject({ method: "POST", url: "/ingest/documents", payload: {} });
+  assert.equal(res.statusCode, 400);
+  assert.match(res.json().error, /documents/);
+});
+
+test("POST /ingest/documents with an empty array → 400", async () => {
+  const res = await app.inject({ method: "POST", url: "/ingest/documents", payload: { documents: [] } });
+  assert.equal(res.statusCode, 400);
+  assert.match(res.json().error, /documents/);
+});
+
+test("makeDailyLimiter: allows N takes then blocks, resets on a new UTC day", () => {
+  let day = "2026-07-06T10:00:00Z";
+  const take = makeDailyLimiter(2, () => new Date(day));
+  assert.equal(take().ok, true);
+  const second = take();
+  assert.equal(second.ok, true);
+  assert.equal(second.remaining, 0);
+  assert.equal(take().ok, false); // third → blocked
+  day = "2026-07-07T00:01:00Z"; // next UTC day
+  assert.equal(take().ok, true); // counter reset
+});
+
 test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
   const res = await app.inject({ method: "GET", url: "/" });
   assert.equal(res.statusCode, 200);
@@ -84,6 +108,18 @@ test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
   assert.match(res.body, /Archon MemoryAgent/);
   // The page wires the real recall endpoint (not a placeholder).
   assert.match(res.body, /\/recall/);
+  // Guided tour assets (inline, no CDN) + the "Take the tour" trigger.
+  assert.match(res.body, /Take the tour/);
+  assert.match(res.body, /tour-overlay/);
+  assert.match(res.body, /data-tour=/);
+  // One-click Run demo → seeds via the pipeline, then recalls.
+  assert.match(res.body, /Run demo/);
+  assert.match(res.body, /\/demo\/seed/);
+  // Clear empty-state instead of a blank panel.
+  assert.match(res.body, /No memories yet/);
+  // Supporting P&L + records views wired to their endpoints.
+  assert.match(res.body, /\/pnl/);
+  assert.match(res.body, /\/memory\/list/);
 });
 
 test("GET /ui serves the same memory explorer (alias)", async () => {
@@ -99,7 +135,7 @@ test("GET /openapi.json returns 200 and documents the core routes", async () => 
   assert.equal(spec.openapi?.startsWith("3."), true);
   assert.equal(spec.info?.title, "Archon MemoryAgent API");
   // The onRoute capture must have picked up every registered handler.
-  for (const path of ["/health", "/recall", "/ingest", "/memory/count", "/consistency", "/consolidate", "/forget"]) {
+  for (const path of ["/health", "/recall", "/ingest", "/ingest/documents", "/pnl", "/memory/list", "/demo/seed", "/memory/count", "/consistency", "/consolidate", "/forget"]) {
     assert.ok(spec.paths?.[path], `spec should document ${path}`);
   }
   // The raw-spec meta-route is hidden from the rendered spec.

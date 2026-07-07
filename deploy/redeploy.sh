@@ -160,7 +160,7 @@ if [ "$DO_SMOKE" -eq 1 ]; then
 {"event":{"event_id":"smoke-evt-1","company":"$SMOKE_COMPANY","period":"2026-01",
 "employee_count":1,"bank_net_total":1000,"gross_total":1300,"employer_social_security_total":300,
 "employee_social_security_total":100,"tax_withheld_total":200,"employer_cost_total":1600,
-"cost_gap_amount":600,"cost_gap_pct":60.0,"hidden_total":600,
+"cost_gap_amount":600,"cost_gap_pct":60.0,"off_bank_cost":600,
 "employees":[{"employee_id":"S-01","name":"Smoke Test","gross":1300,"employee_social_security":100,
 "tax":200,"net":1000,"employer_social_security":300,"employer_cost":1600}],
 "linked_docs":["smoke-doc-1"]}}

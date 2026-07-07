@@ -21,7 +21,7 @@
 //   WRITE_LOAD=true k6 run load/recall-load.js       # opt-in write load (spend!)
 //
 // ── Env knobs ──────────────────────────────────────────────────────────────
-//   TARGET_URL     base URL           (default http://43.106.13.19:9000)
+//   TARGET_URL     base URL           (default https://memory.43.106.13.19.sslip.io)
 //   RUN_RAMP       'true' → run the ramping-vus scenario after the smoke
 //   WRITE_LOAD     'true' → include /ingest writes (default OFF)
 //   READ_RATIO     0..1, share of iterations that hit /recall (default 0.15;
@@ -34,7 +34,7 @@ import { check, sleep } from "k6";
 import { Rate } from "k6/metrics";
 import { textSummary } from "https://jslib.k6.io/k6-summary/0.0.1/index.js";
 
-const BASE = (__ENV.TARGET_URL || "http://43.106.13.19:9000").replace(/\/+$/, "");
+const BASE = (__ENV.TARGET_URL || "https://memory.43.106.13.19.sslip.io").replace(/\/+$/, "");
 const RUN_RAMP = (__ENV.RUN_RAMP || "").toLowerCase() === "true";
 const WRITE_LOAD = (__ENV.WRITE_LOAD || "").toLowerCase() === "true";
 const READ_RATIO = clamp01(parseFloat(__ENV.READ_RATIO || "0.15"), 0.15);
@@ -189,7 +189,7 @@ function ingest() {
     employer_cost_total: 9800,
     cost_gap_amount: 4000,
     cost_gap_pct: 68.97,
-    hidden_total: 4000,
+    off_bank_cost: 4000,
     employees: [
       {
         employee_id: "E-01",

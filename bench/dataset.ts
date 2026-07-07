@@ -113,7 +113,7 @@ export const QUERIES: BenchQuery[] = [
 
   // mixed (need meaning AND a discriminating token) → hybrid should win
   { id: "q11", genre: "mixed", text: "Was there a bank payment with no matching invoice at Helios Retail, and how serious is it?", gold: ["m22", "m28"] },
-  { id: "q12", genre: "mixed", text: "What is the hidden employer-cost gap at Acme Foods for 2026-03?", gold: ["m20"] },
+  { id: "q12", genre: "mixed", text: "What is the off-bank employer-cost gap at Acme Foods for 2026-03?", gold: ["m20"] },
   { id: "q13", genre: "mixed", text: "Did the flour purchase from GrainCo fully reconcile?", gold: ["m25"] },
   { id: "q14", genre: "mixed", text: "How much cash did Acme Foods hold at the end of April 2026?", gold: ["m18"] },
   { id: "q15", genre: "mixed", text: "In what currency and rounding should amounts be reported?", gold: ["m27"] },

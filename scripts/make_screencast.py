@@ -3,7 +3,7 @@
 
 The Archon MemoryAgent demo is the agent's memory working ACROSS SESSIONS against
 the LIVE Alibaba Cloud deployment. CI first runs scripts/capture_live.sh, which
-drives the real box (http://43.106.13.19:9000): GET /health, then Session A
+drives the real box (https://memory.43.106.13.19.sslip.io): GET /health, then Session A
 POST /ingest, then a FRESH Session B POST /recall — and writes the REAL captured
 output (real qwen-plus answers, real pgvector cosine scores) to
 docs/screencast_transcript.txt with a per-line appearance time. This script draws

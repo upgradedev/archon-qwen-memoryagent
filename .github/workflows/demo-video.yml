@@ -3,7 +3,7 @@ name: Generate Demo Video
 # ~3-minute demo video for the Global AI Hackathon (Qwen Cloud) — MemoryAgent track.
 # No local recording needed:
 #   1. scripts/capture_live.sh drives the LIVE Alibaba Cloud box
-#      (http://43.106.13.19:9000): GET /health -> real Qwen proof; SESSION A
+#      (https://memory.43.106.13.19.sslip.io): GET /health -> real Qwen proof; SESSION A
 #      POST /ingest -> writes memories to pgvector on Alibaba; a FRESH SESSION B
 #      POST /recall (x2) -> recalls them by meaning with real qwen-plus answers +
 #      real pgvector cosine scores. Structured jq HARD-CHECKS: a box that is down,
@@ -23,7 +23,7 @@ on:
       base_url:
         description: "Live Alibaba Cloud base URL to demo against."
         required: false
-        default: "http://43.106.13.19:9000"
+        default: "https://memory.43.106.13.19.sslip.io"
       voice_id:
         description: "ElevenLabs voice ID."
         required: false

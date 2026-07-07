@@ -28,6 +28,12 @@ import { PgVectorStore, type MemoryKind } from "./memory/store.js";
 import { MemoryAgent } from "./agents/memory-agent.js";
 import { UI_HTML } from "./ui.js";
 import type { PayrollEvent } from "./types.js";
+import { ingestPipeline } from "./pipeline/pipeline.js";
+import { aggregatePnl } from "./pipeline/pnl.js";
+import type { RawDocument } from "./pipeline/models.js";
+import { Extractor } from "./pipeline/extractor.js";
+import { FakeExtractionClient } from "./pipeline/vision.js";
+import { DEMO_DOCUMENTS, DEMO_CONTRADICTION, DEMO_COMPANY, DEMO_INVOICE_RECORD } from "./demo-data.js";
 
 const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
 
@@ -47,6 +53,26 @@ const errorResponse = {
   additionalProperties: true,
   properties: { error: { type: "string" } },
 } as const;
+
+// Per-UTC-day rate limit for the document-ingestion route. The live demo is
+// intentionally OPEN (no login) so judges can test it end to end; the only path
+// that spends Qwen vision-model calls is /ingest/documents, so it is capped at
+// INGEST_DAILY_LIMIT uploads/day (default 10) to protect the API budget. The
+// counter is per-process and resets at 00:00 UTC. Exported + pure for unit tests.
+export const INGEST_DAILY_LIMIT = Number(process.env.INGEST_DAILY_LIMIT ?? 10);
+export function makeDailyLimiter(limit: number, now: () => Date = () => new Date()) {
+  const state = { day: "", count: 0 };
+  return function take(): { ok: boolean; remaining: number; limit: number } {
+    const today = now().toISOString().slice(0, 10); // UTC calendar day
+    if (state.day !== today) {
+      state.day = today;
+      state.count = 0;
+    }
+    if (state.count >= limit) return { ok: false, remaining: 0, limit };
+    state.count += 1;
+    return { ok: true, remaining: limit - state.count, limit };
+  };
+}
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -103,6 +129,7 @@ export async function buildServer() {
   const narrator = defaultNarrator();
   const store = new PgVectorStore();
   const agent = new MemoryAgent(embedder, store, narrator);
+  const ingestBudget = makeDailyLimiter(INGEST_DAILY_LIMIT);
 
   app.get(
     "/health",
@@ -191,6 +218,197 @@ export async function buildServer() {
       }
       const ids = await agent.ingestEvent(event);
       return { written: ids.length, ids };
+    },
+  );
+
+  // Document-ingestion pipeline — the productized upstream that FEEDS memory.
+  // Takes a period's raw financial documents, extracts each with Qwen (vision /
+  // text), fuses the payroll triplet into one accurate event, computes the P&L,
+  // runs the R1–R4 cross-document validation, and WRITES the fused event +
+  // findings into the SAME memory via the unchanged MemoryAgent. Returns the
+  // events, per-event P&L, validation, and the ids of every memory written.
+  app.post<{ Body: { documents: RawDocument[] } }>(
+    "/ingest/documents",
+    {
+      schema: {
+        summary: "Ingest raw documents through the extraction pipeline",
+        description:
+          "Runs the document-ingestion pipeline (Extractor → Classifier → EventLinker → " +
+          "Validator → P&L) over a period's raw financial documents and writes the fused " +
+          "events + validation findings into the agent's memory. The memories the " +
+          "MemoryAgent then recalls are produced here.",
+        tags: ["memory"],
+        body: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            documents: {
+              type: "array",
+              description: "Raw documents (image data-URL or text) to extract and fuse.",
+              items: {
+                type: "object",
+                additionalProperties: true,
+                properties: {
+                  doc_id: { type: "string" },
+                  filename: { type: "string" },
+                  source_kind: { type: "string", description: "image | pdf | text" },
+                  content: { type: "string" },
+                  company: { type: "string" },
+                  period: { type: "string", description: "YYYY-MM" },
+                },
+              },
+            },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              events: { type: "integer" },
+              written: { type: "integer" },
+              results: { type: "array", items: looseObject },
+              memoryIds: { type: "array", items: { type: "string" } },
+            },
+          },
+          400: errorResponse,
+          429: errorResponse,
+        },
+      },
+    },
+    async (req, reply) => {
+      const documents = req.body?.documents;
+      if (!Array.isArray(documents) || documents.length === 0) {
+        return reply.code(400).send({ error: "body.documents (a non-empty array) is required" });
+      }
+      // Budget guard — protects the shared Qwen API key on the open demo.
+      const budget = ingestBudget();
+      if (!budget.ok) {
+        return reply
+          .code(429)
+          .send({ error: `Daily ingest limit of ${budget.limit} reached. Resets at 00:00 UTC. Recall + self-audit remain open.` });
+      }
+      const out = await ingestPipeline(agent, documents);
+      return {
+        events: out.events.length,
+        written: out.memoryIds.length,
+        results: out.events,
+        memoryIds: out.memoryIds,
+      };
+    },
+  );
+
+  // P&L view over the pipeline-generated memories the agent holds. Aggregates the
+  // fused event-summary memories (employer cost, cash-out, off-bank cost gap,
+  // per-company) — the supporting context for the memory headline. Read-only.
+  app.get<{ Querystring: { company?: string; period?: string } }>(
+    "/pnl",
+    {
+      schema: {
+        summary: "P&L over stored memories",
+        description:
+          "Aggregates the fused payroll-event memories into a payroll-cost P&L: employer " +
+          "cost (the accurate expense), cash-out (what left the bank), and the off-bank " +
+          "gap between them, broken down by company. Computed over the memories the pipeline fed.",
+        tags: ["memory"],
+        querystring: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            company: { type: "string", description: "Optional company filter." },
+            period: { type: "string", description: "Optional period filter (YYYY-MM)." },
+          },
+        },
+        response: { 200: looseObject },
+      },
+    },
+    async (req) => {
+      const { company, period } = req.query ?? {};
+      const memories = await store.listForAudit({ company, period, kind: "payroll_event" });
+      return aggregatePnl(memories);
+    },
+  );
+
+  // Browse the agent's memories — a small, recent slice for the dashboard's
+  // records view (kind · company · snippet · timestamp). Read-only; reuses the
+  // existing audit read (no core change).
+  app.get<{ Querystring: { company?: string; kind?: MemoryKind; limit?: number } }>(
+    "/memory/list",
+    {
+      schema: {
+        summary: "List recent memories",
+        description: "Returns a recent slice of the agent's memories (id, kind, company, period, snippet, createdAt) for a browse view.",
+        tags: ["memory"],
+        querystring: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            company: { type: "string", description: "Optional company filter." },
+            kind: { type: "string", description: KIND_HINT },
+            limit: { type: "integer", description: "Max rows (default 20, capped at 100)." },
+          },
+        },
+        response: { 200: looseObject },
+      },
+    },
+    async (req) => {
+      const { company, kind, limit } = req.query ?? {};
+      const cap = Math.min(Math.max(Number(limit ?? 20) || 20, 1), 100);
+      const rows = await store.listForAudit({ company, kind });
+      const items = [...rows]
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+        .slice(0, cap)
+        .map((m) => ({
+          id: m.id,
+          kind: m.kind,
+          company: m.company,
+          period: m.period,
+          snippet: m.content.length > 160 ? m.content.slice(0, 157) + "…" : m.content,
+          createdAt: m.createdAt,
+        }));
+      return { count: items.length, items };
+    },
+  );
+
+  // One-click demo seed — feeds a realistic sample through the SAME pipeline
+  // (with the deterministic Fake extractor: free, no Qwen call, not rate-limited),
+  // plus one deliberate contradiction so the self-audit has something to find.
+  // Universal financial terms only. Lets a first-time visitor see recall +
+  // self-audit + P&L on an otherwise empty store.
+  app.post(
+    "/demo/seed",
+    {
+      schema: {
+        summary: "Seed the demo memories",
+        description: "Runs a built-in sample document set through the pipeline (Fake extractor — free, unmetered) and seeds one contradiction, so the memory explorer has data to recall and self-audit.",
+        tags: ["memory"],
+        response: { 200: looseObject },
+      },
+    },
+    async () => {
+      // Idempotent: if the demo company is already seeded, do NOT re-write (a
+      // judge clicking "Run demo" twice must not double the P&L or pile up
+      // duplicate contradictions). Return the already-seeded signal instead.
+      const existing = await store.listForAudit({ company: DEMO_COMPANY, kind: "payroll_event" });
+      if (existing.length > 0) {
+        return { seeded: 0, alreadySeeded: true, company: DEMO_COMPANY, events: 0 };
+      }
+      const fakeExtractor = new Extractor(new FakeExtractionClient());
+      const out = await ingestPipeline(agent, DEMO_DOCUMENTS, { extractor: fakeExtractor });
+      // Seed the cross-session contradiction (two writes, same record, different amount).
+      for (const c of DEMO_CONTRADICTION) {
+        await agent.remember("document", c.content, {
+          company: DEMO_COMPANY,
+          period: "2026-05",
+          sourceRef: DEMO_INVOICE_RECORD,
+          metadata: { record: DEMO_INVOICE_RECORD, amount: c.amount },
+        });
+      }
+      return {
+        seeded: out.memoryIds.length + DEMO_CONTRADICTION.length,
+        company: DEMO_COMPANY,
+        events: out.events.length,
+      };
     },
   );
 

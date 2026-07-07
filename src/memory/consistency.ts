@@ -181,7 +181,7 @@ function authorityOf(kind: string, map: Record<string, number>): number {
 
 // The explicit salience a memory carries. Prefers the top-level `importance`
 // COLUMN the store persists (so the rule fires on real ingested memories — the
-// production path writes salience there, e.g. the 0.9 hidden-cost insight), and
+// production path writes salience there, e.g. the 0.9 off-bank-cost insight), and
 // falls back to a caller-placed `metadata.importance` for backward-compat.
 // Returns null when absent/non-numeric (→ "no signal").
 function importanceOf(m: AuditMemory): number | null {

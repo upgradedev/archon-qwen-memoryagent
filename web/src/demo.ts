@@ -128,7 +128,7 @@ export const DEMO_RECALL: RecallResponse = {
         "transfer of €10,000 understates the true cost of employing the team by €9,000 " +
         "(90.0%), mostly employer social-security contributions of €6,000.",
       metadata: {
-        hidden_total: 9000,
+        off_bank_cost: 9000,
         cost_gap_pct: 90.0,
         employer_social_security_total: 6000,
       },

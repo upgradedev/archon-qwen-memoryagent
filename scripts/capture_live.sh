@@ -28,12 +28,12 @@
 # contradiction" are both deterministic.
 #
 # Env:
-#   DEMO_BASE_URL  live base URL (default http://43.106.13.19:9000)
+#   DEMO_BASE_URL  live base URL (default https://memory.43.106.13.19.sslip.io)
 #   GITHUB_RUN_ID  used to make the companies/events unique (falls back to a timestamp)
 #   TRANSCRIPT     output transcript path (default docs/screencast_transcript.txt)
 set -euo pipefail
 
-BASE="${DEMO_BASE_URL:-http://43.106.13.19:9000}"
+BASE="${DEMO_BASE_URL:-https://memory.43.106.13.19.sslip.io}"
 RUN="${GITHUB_RUN_ID:-local$(date +%s)}"
 COMPANY="DemoRun ${RUN}"
 AUDIT_COMPANY="DemoRun ${RUN} audit"
@@ -69,7 +69,7 @@ COUNT_C=$(echo "$COUNT_JSON" | jq -c .)
 # Workforce-cost example (ONE of many the agents remember): bank net €10,000 vs true
 # employer cost €15,800. Universal financial terms only, no country/authority names.
 EVENT=$(cat <<JSON
-{"event":{"event_id":"evt-${RUN}","company":"${COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":2000,"employer_cost_total":15800,"cost_gap_amount":5800,"cost_gap_pct":58.0,"hidden_total":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":1600,"net":5800,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
+{"event":{"event_id":"evt-${RUN}","company":"${COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":2000,"employer_cost_total":15800,"cost_gap_amount":5800,"cost_gap_pct":58.0,"off_bank_cost":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":1600,"net":5800,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
 JSON
 )
 INGEST=$(curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$EVENT") \
@@ -123,7 +123,7 @@ fi
 # side to trust (importance -> source-authority -> recency). Never mutates memory.
 audit_event() { # $1 = employer_cost_total
 cat <<JSON
-{"event":{"event_id":"evt-audit-${RUN}","company":"${AUDIT_COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":2000,"employer_cost_total":$1,"cost_gap_amount":5800,"cost_gap_pct":58.0,"hidden_total":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":1600,"net":5800,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
+{"event":{"event_id":"evt-audit-${RUN}","company":"${AUDIT_COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":2000,"employer_cost_total":$1,"cost_gap_amount":5800,"cost_gap_pct":58.0,"off_bank_cost":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":1600,"net":5800,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
 JSON
 }
 
