@@ -61,7 +61,7 @@ export function linkEvents(docs: ExtractedDocument[]): PayrollEvent[] {
     // Derived display fields (per the PayrollEvent field docs in src/types.ts).
     const cost_gap_amount = employer_social_security_total; // the off-bank employer wedge
     const cost_gap_pct = bank_net_total > 0 ? (cost_gap_amount / bank_net_total) * 100 : 0;
-    const hidden_total = employer_cost_total - bank_net_total;
+    const off_bank_cost = employer_cost_total - bank_net_total;
 
     events.push({
       event_id: `evt-${slug(company)}-${period}`,
@@ -76,7 +76,7 @@ export function linkEvents(docs: ExtractedDocument[]): PayrollEvent[] {
       employer_cost_total,
       cost_gap_amount,
       cost_gap_pct: Number(cost_gap_pct.toFixed(1)),
-      hidden_total,
+      off_bank_cost,
       employees,
       linked_docs: group.map((d) => d.doc_id),
     });

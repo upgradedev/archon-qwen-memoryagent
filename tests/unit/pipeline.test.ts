@@ -44,7 +44,7 @@ function triplet(company = "ByteCraft", period = "2026-05"): RawDocument[] {
 // ── Positioning guard ─────────────────────────────────────────────────────────
 // The new pipeline + demo sources must use universal financial terms only — no
 // jurisdiction-specific tax bodies, no "hidden cost" / "payroll gap" headline
-// framing. (The core PayrollEvent type's `hidden_total` field name is not a
+// framing. (The core PayrollEvent type's `off_bank_cost` field name is not a
 // "hidden cost" phrase and is intentionally not matched.)
 test("positioning guard: new pipeline + demo sources use universal terms only", () => {
   const forbidden = /\b(ika|efka|mydata|greek|greece|aade)\b|αφμ|payroll[- ]?gap|hidden[ _-]cost/i;
@@ -170,7 +170,7 @@ test("linkEvents: fuses the triplet into one accurate PayrollEvent", async () =>
   assert.equal(event.employer_cost_total, 8600);
   assert.equal(event.bank_net_total, 6500);
   assert.equal(event.employer_social_security_total, 1600); // 8600 - 7000
-  assert.equal(event.hidden_total, 2100); // 8600 - 6500
+  assert.equal(event.off_bank_cost, 2100); // 8600 - 6500
   assert.equal(event.employees.length, 2);
   assert.equal(event.linked_docs.length, 4);
 });
@@ -210,7 +210,7 @@ test("validateEvent: R1 flags a bank vs payslip mismatch beyond 2%", () => {
   const results = validateEvent({
     event_id: "e", company: "X", period: "2026-01", employee_count: 1, bank_net_total: 5000,
     gross_total: 4000, employer_social_security_total: 800, employee_social_security_total: 0,
-    tax_withheld_total: 0, employer_cost_total: 4800, cost_gap_amount: 800, cost_gap_pct: 16, hidden_total: -200,
+    tax_withheld_total: 0, employer_cost_total: 4800, cost_gap_amount: 800, cost_gap_pct: 16, off_bank_cost: -200,
     employees: [{ employee_id: "E1", name: "A", gross: 4000, employee_social_security: 0, tax: 0, net: 4000, employer_social_security: 800, employer_cost: 4800 }],
     linked_docs: [],
   });
@@ -223,7 +223,7 @@ test("validateEvent: R3 flags a payment date after the period end", () => {
   const r = validateEvent({
     event_id: "e", company: "X", period: "2026-02", employee_count: 1, bank_net_total: 100,
     gross_total: 100, employer_social_security_total: 20, employee_social_security_total: 0,
-    tax_withheld_total: 0, employer_cost_total: 120, cost_gap_amount: 20, cost_gap_pct: 20, hidden_total: 20,
+    tax_withheld_total: 0, employer_cost_total: 120, cost_gap_amount: 20, cost_gap_pct: 20, off_bank_cost: 20,
     employees: [{ employee_id: "E1", name: "A", gross: 100, employee_social_security: 0, tax: 0, net: 100, employer_social_security: 20, employer_cost: 120 }],
     linked_docs: [],
   }, "2026-03-05"); // March payment for a February period
@@ -235,7 +235,7 @@ test("ValidatorAgent: skips rules gracefully on an incomplete event", () => {
   const results = new ValidatorAgent().validate({
     event_id: "e", company: "X", period: "2026-01", employee_count: 0, bank_net_total: 0,
     gross_total: 0, employer_social_security_total: 0, employee_social_security_total: 0,
-    tax_withheld_total: 0, employer_cost_total: 0, cost_gap_amount: 0, cost_gap_pct: 0, hidden_total: 0,
+    tax_withheld_total: 0, employer_cost_total: 0, cost_gap_amount: 0, cost_gap_pct: 0, off_bank_cost: 0,
     employees: [], linked_docs: [],
   });
   assert.equal(results.length, 4);

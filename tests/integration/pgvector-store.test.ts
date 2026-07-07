@@ -36,8 +36,8 @@ test("PgVectorStore persists a memory and recalls it by cosine similarity", { sk
     company: "Acme Foods AE",
     period: "2026-03",
     sourceRef: "evt-1",
-    content: "Hidden employer social-security cost of €11,800 at Acme Foods.",
-    metadata: { hidden_total: 22800 },
+    content: "Off-bank employer social-security cost of €11,800 at Acme Foods.",
+    metadata: { off_bank_cost: 22800 },
   });
   await remember(embedder, store, {
     kind: "document",
@@ -46,13 +46,13 @@ test("PgVectorStore persists a memory and recalls it by cosine similarity", { sk
   });
   assert.equal(await store.count(), 2);
 
-  const hits = await recall(embedder, store, "what employer social security cost is hidden", { limit: 2 });
+  const hits = await recall(embedder, store, "what employer social security cost is off-bank", { limit: 2 });
   assert.ok(hits.length > 0, "vector recall returned nothing");
   // The social-security memory must rank above the invoice memory under cosine distance.
   assert.match(hits[0]!.content, /social-security/i);
   assert.ok(hits[0]!.score >= hits[hits.length - 1]!.score, "hits must be sorted by similarity");
   // Round-trip fidelity: metadata + distance survive the DB.
-  assert.equal(hits[0]!.metadata?.hidden_total, 22800);
+  assert.equal(hits[0]!.metadata?.off_bank_cost, 22800);
   assert.ok(hits[0]!.distance >= 0 && hits[0]!.distance <= 2);
 });
 
@@ -160,7 +160,7 @@ test("PgVectorStore audit read coerces createdAt to ISO string so the consistenc
 test("PgVectorStore consolidate supersedes duplicates and recall hides them", { skip: !HAS_DB }, async () => {
   await store.clear();
   const agent = new MemoryAgent(embedder, store, new FakeNarrator());
-  const fact = "Hidden employer social-security cost wedge at Acme for 2026-03.";
+  const fact = "Off-bank employer social-security cost wedge at Acme for 2026-03.";
   await agent.remember("insight", fact, { company: "Acme" });
   await agent.remember("insight", fact, { company: "Acme" });
   await agent.remember("insight", fact, { company: "Acme" });

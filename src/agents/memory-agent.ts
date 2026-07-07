@@ -67,23 +67,23 @@ export class MemoryAgent {
       })
     );
 
-    // 2. An insight — the hidden workforce-cost gap (one of several the agents remember).
+    // 2. An insight — the off-bank workforce-cost gap (one of several the agents remember).
     ids.push(
       await remember(this.embedder, this.store, {
         ...base,
         kind: "insight",
         sourceRef: event.event_id,
         content:
-          `Hidden workforce cost at ${event.company} for ${event.period}: the bank ` +
+          `Off-bank workforce cost at ${event.company} for ${event.period}: the bank ` +
           `salary transfer of ${money(event.bank_net_total)} understates the true ` +
-          `cost of employing the team by ${money(event.hidden_total)} ` +
+          `cost of employing the team by ${money(event.off_bank_cost)} ` +
           `(${event.cost_gap_pct.toFixed(1)}%), mostly employer social-security ` +
           `contributions of ${money(event.employer_social_security_total)}.`,
-        // The hidden-cost insight is the highest-salience memory the agent keeps,
+        // The off-bank-cost insight is the highest-salience memory the agent keeps,
         // so it survives forgetting and wins consolidation ties.
         importance: 0.9,
         metadata: {
-          hidden_total: event.hidden_total,
+          off_bank_cost: event.off_bank_cost,
           cost_gap_pct: event.cost_gap_pct,
           employer_social_security_total: event.employer_social_security_total,
         },

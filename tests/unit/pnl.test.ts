@@ -21,7 +21,7 @@ const EVENT: PayrollEvent = {
   employer_cost_total: 8600,
   cost_gap_amount: 1600,
   cost_gap_pct: 24.6,
-  hidden_total: 2100,
+  off_bank_cost: 2100,
   employees: [
     { employee_id: "E-01", name: "Ana Cole", gross: 4000, employee_social_security: 100, tax: 200, net: 3700, employer_social_security: 500, employer_cost: 4500 },
     { employee_id: "E-02", name: "Tom Reed", gross: 3000, employee_social_security: 80, tax: 120, net: 2800, employer_social_security: 1100, employer_cost: 4100 },
@@ -71,7 +71,7 @@ test("aggregatePnl: sums only event-summary memories (metadata has employer_cost
     // A per-employee line (NO employer_cost_total) — must be ignored.
     { company: "ByteCraft", period: "2026-05", metadata: { employee_id: "E-01", net: 3700, gross: 4000 } },
     // An insight (no metadata employer cost) — ignored.
-    { company: "ByteCraft", period: "2026-05", metadata: { hidden_total: 2100 } },
+    { company: "ByteCraft", period: "2026-05", metadata: { off_bank_cost: 2100 } },
   ];
   const p = aggregatePnl(memories);
   assert.equal(p.events, 2);

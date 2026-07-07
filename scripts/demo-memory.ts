@@ -66,7 +66,7 @@ const WORKFORCE_EVENT: PayrollEvent = {
   employer_cost_total: 63800,
   cost_gap_amount: 11800,
   cost_gap_pct: 28.8,
-  hidden_total: 22800,
+  off_bank_cost: 22800,
   employees: [
     { employee_id: "E-01", name: "Ana Ruiz", gross: 22000, employee_social_security: 1800, tax: 3000, net: 17200, employer_social_security: 5000, employer_cost: 27000 },
     { employee_id: "E-02", name: "Tom Becker", gross: 18000, employee_social_security: 1500, tax: 2400, net: 14100, employer_social_security: 4100, employer_cost: 22100 },

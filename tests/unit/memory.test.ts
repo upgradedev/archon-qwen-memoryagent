@@ -26,7 +26,7 @@ const EVENT: PayrollEvent = {
   employer_cost_total: 63800,
   cost_gap_amount: 11800,
   cost_gap_pct: 28.8,
-  hidden_total: 22800,
+  off_bank_cost: 22800,
   employees: [
     { employee_id: "E-01", name: "Elena Novak", gross: 22000, employee_social_security: 1800, tax: 3000, net: 17200, employer_social_security: 5000, employer_cost: 27000 },
     { employee_id: "E-02", name: "David Chen", gross: 18000, employee_social_security: 1500, tax: 2400, net: 14100, employer_social_security: 4100, employer_cost: 22100 },
@@ -41,11 +41,11 @@ test("toVectorLiteral renders the pgvector text form", () => {
 test("remember + recall round trip ranks the semantically closest memory first", async () => {
   const embedder = new FakeEmbedder();
   const store = new InMemoryStore();
-  await remember(embedder, store, { kind: "insight", content: "hidden employer social security contribution cost wedge" });
+  await remember(embedder, store, { kind: "insight", content: "off-bank employer social security contribution cost wedge" });
   await remember(embedder, store, { kind: "document", content: "quarterly sales invoice for office furniture" });
   assert.equal(await store.count(), 2);
 
-  const hits = await recall(embedder, store, "what is the hidden employer social security cost", { limit: 2 });
+  const hits = await recall(embedder, store, "what is the off-bank employer social security cost", { limit: 2 });
   assert.equal(hits.length, 2);
   assert.match(hits[0]!.content, /employer social security/i);
   assert.ok(hits[0]!.score >= hits[1]!.score, "hits must be sorted by descending similarity");

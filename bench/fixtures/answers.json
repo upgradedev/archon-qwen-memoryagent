@@ -92,7 +92,7 @@
       "answer": "Yes, there was a €3,200 bank payment to Pallas Freight in February 2026 with no matching purchase invoice, which is flagged as high severity [1]. This matches the user’s preference to treat such mismatches as high severity and surface them first [2]. The issue requires immediate review to determine whether the supplier failed to send the invoice, the accountant omitted recording it, or the payment itself is erroneous [1]."
     },
     "q12": {
-      "question": "What is the hidden employer-cost gap at Acme Foods for 2026-03?",
+      "question": "What is the off-bank employer-cost gap at Acme Foods for 2026-03?",
       "recalledIds": [
         "m19",
         "m20",
@@ -100,7 +100,7 @@
         "m14",
         "m11"
       ],
-      "answer": "The hidden employer-cost gap at Acme Foods for 2026-03 is €22,800 — the difference between the true employer cost of €63,800 and the net salary paid from bank of €41,000 [2]. This gap consists mostly of €11,800 in employer social-security contributions that do not appear on the bank statement [2]. The term “employer cost” includes both gross salary and the employer’s social-security contribution [3]."
+      "answer": "The off-bank employer-cost gap at Acme Foods for 2026-03 is €22,800 — the difference between the true employer cost of €63,800 and the net salary paid from bank of €41,000 [2]. This gap consists mostly of €11,800 in employer social-security contributions that do not appear on the bank statement [2]. The term “employer cost” includes both gross salary and the employer’s social-security contribution [3]."
     },
     "q13": {
       "question": "Did the flour purchase from GrainCo fully reconcile?",

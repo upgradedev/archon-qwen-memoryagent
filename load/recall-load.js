@@ -189,7 +189,7 @@ function ingest() {
     employer_cost_total: 9800,
     cost_gap_amount: 4000,
     cost_gap_pct: 68.97,
-    hidden_total: 4000,
+    off_bank_cost: 4000,
     employees: [
       {
         employee_id: "E-01",

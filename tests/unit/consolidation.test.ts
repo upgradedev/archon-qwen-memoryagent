@@ -57,7 +57,7 @@ test("MemoryAgent.consolidate collapses re-ingested duplicates so recall stops r
 
   // Same fact ingested three times across sessions (identical text → identical
   // FakeEmbedder vector) plus one distinct memory.
-  const fact = "hidden employer social-security cost wedge at acme for 2026 03";
+  const fact = "off-bank employer social-security cost wedge at acme for 2026 03";
   await agent.remember("insight", fact);
   await agent.remember("insight", fact);
   await agent.remember("insight", fact);

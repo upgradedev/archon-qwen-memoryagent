@@ -17,7 +17,7 @@ const HITS: RecallHit[] = [
     period: "2026-03",
     sourceRef: "evt-acme-2026-03",
     content:
-      "Hidden payroll cost at Acme Foods AE for 2026-03: the bank salary transfer of " +
+      "Off-bank payroll cost at Acme Foods AE for 2026-03: the bank salary transfer of " +
       "€41,000 understates the true employer cost by €22,800 (28.8%).",
     metadata: null,
     createdAt: "2026-03-31T00:00:00Z",
@@ -49,7 +49,7 @@ test("FakeNarrator grounds the answer in every recalled memory and cites each", 
   assert.equal(citations.length, 2);
   for (const c of citations) assert.ok(answer.includes(c.marker), `missing marker ${c.marker}`);
   assert.ok(answer.includes("€63,800"), "answer must cite the true employer cost");
-  assert.ok(answer.includes("€22,800"), "answer must surface the hidden-cost wedge");
+  assert.ok(answer.includes("€22,800"), "answer must surface the off-bank-cost wedge");
 });
 
 test("FakeNarrator returns the no-memory answer (no citations) on empty recall", async () => {
@@ -82,7 +82,7 @@ test("QwenNarrator sends recalled memories to the chat model and returns its cit
               {
                 message: {
                   content:
-                    "True employer cost was €63,800 [2], of which €22,800 is hidden from the bank transfer [1].",
+                    "True employer cost was €63,800 [2], of which €22,800 is off the bank transfer [1].",
                 },
               },
             ],

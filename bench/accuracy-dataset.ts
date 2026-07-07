@@ -31,7 +31,7 @@ export const ACCURACY_SET: AccuracyQuery[] = [
   { id: "q08", question: "ByteCraft EBITDA 2026-05", goldFigures: [38400], goldMemory: "m17" },
   { id: "q10", question: "PINV-771 supplier and terms", goldFigures: [6300], goldMemory: "m03" },
   { id: "q11", question: "Was there a bank payment with no matching invoice at Helios Retail, and how serious is it?", goldFigures: [3200], goldMemory: "m22" },
-  { id: "q12", question: "What is the hidden employer-cost gap at Acme Foods for 2026-03?", goldFigures: [22800], goldMemory: "m20" },
+  { id: "q12", question: "What is the off-bank employer-cost gap at Acme Foods for 2026-03?", goldFigures: [22800], goldMemory: "m20" },
   { id: "q13", question: "Did the flour purchase from GrainCo fully reconcile?", goldFigures: [12900], goldMemory: "m25" },
   { id: "q14", question: "How much cash did Acme Foods hold at the end of April 2026?", goldFigures: [27600], goldMemory: "m18" },
 ];

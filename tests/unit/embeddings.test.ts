@@ -25,7 +25,7 @@ test("FakeEmbedder produces vectors of the configured dimension", async () => {
 
 test("FakeEmbedder is deterministic", async () => {
   const e = new FakeEmbedder();
-  assert.deepEqual(await e.embed("hidden payroll cost"), await e.embed("hidden payroll cost"));
+  assert.deepEqual(await e.embed("off-bank payroll cost"), await e.embed("off-bank payroll cost"));
 });
 
 test("FakeEmbedder output is L2-normalized (unit length)", async () => {
@@ -36,8 +36,8 @@ test("FakeEmbedder output is L2-normalized (unit length)", async () => {
 
 test("overlapping text is more similar than disjoint text", async () => {
   const e = new FakeEmbedder();
-  const q = await e.embed("hidden employer payroll cost social security");
-  const near = await e.embed("the hidden employer cost from social security");
+  const q = await e.embed("off-bank employer payroll cost social security");
+  const near = await e.embed("the off-bank employer cost from social security");
   const far = await e.embed("quarterly sales invoice for office furniture");
   assert.ok(cosine(q, near) > cosine(q, far));
 });
