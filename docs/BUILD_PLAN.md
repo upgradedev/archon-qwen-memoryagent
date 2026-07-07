@@ -45,7 +45,7 @@
 - **Day 1–2 (done):** research, scaffold, memory layer, test pyramid, CI, HTTP backend, deploy assets.
 - **Day 3 (user-gated):** provision Alibaba PostgreSQL (pgvector) + Model Studio key; `deploy-fc.sh`; verify `/health` + `/recall` live with **real Qwen**.
 - **Day 4:** real-Qwen recall-quality check; tune `qwen-plus` prompt; optional per-tenant vector indexing note.
-- **Day 5:** polish architecture diagram (image), record the ~3-min video (ingest in one session → recall in a new one → hidden-cost answer), capture the Alibaba-Cloud-running recording.
+- **Day 5:** polish architecture diagram (image), record the ~3-min video (ingest in one session → recall in a new one → off-bank-cost answer), capture the Alibaba-Cloud-running recording.
 - **Day 6:** blog/write-up; Devpost form (track = MemoryAgent, repo URL, video, diagram, deployment proof).
 - **Day 7–8:** buffer + submit before **July 9 2:00pm PDT**.
 

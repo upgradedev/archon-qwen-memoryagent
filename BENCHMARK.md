@@ -437,7 +437,7 @@ source-authority):
   that the policy is universally right. Real conflicts can defy any fixed rule —
   hence a *recommendation* with a confidence, never an auto-edit.
 - **The importance signal reads the persisted `importance` column.** The store's
-  top-level 0..1 salience (e.g. the `0.9` hidden-cost insight `ingestEvent` writes)
+  top-level 0..1 salience (e.g. the `0.9` off-bank-cost insight `ingestEvent` writes)
   is surfaced into the audit view by `listForAudit`, with a caller-placed
   `metadata.importance` as a backward-compat fallback. So the importance rule fires
   on **real ingested memories** on the live box, not only on hand-crafted metadata —

@@ -60,7 +60,7 @@ export const DEMO_RECALL: RecallResponse = {
   answer:
     "ByteCraft Studios' true workforce cost for 2026-05 is €19,000 [1] — the full " +
     "employer cost of the four-person team, well above the €10,000 net salary that " +
-    "actually left the bank account [1]. The €9,000 gap is hidden workforce cost, " +
+    "actually left the bank account [1]. The €9,000 gap is off-bank employment cost, " +
     "mostly employer social-security contributions of €6,000 [2], so the bank " +
     "transfer alone understates the true cost of employing the team by 90% [2]. " +
     "Note: an earlier session recorded the employer cost as €18,000 [3]; that value " +
@@ -82,7 +82,7 @@ export const DEMO_RECALL: RecallResponse = {
       score: 0.588,
       sourceRef: "evt-bytecraft-2026-05",
       content:
-        "Hidden workforce cost at ByteCraft Studios for 2026-05: the bank salary " +
+        "Off-bank employment cost at ByteCraft Studios for 2026-05: the bank salary " +
         "transfer of €10,000 understates the true cost of employing the team by €9,000 " +
         "(90.0%), mostly employer social-security contributions of €6,000.",
     },
@@ -124,7 +124,7 @@ export const DEMO_RECALL: RecallResponse = {
       period: "2026-05",
       sourceRef: "evt-bytecraft-2026-05",
       content:
-        "Hidden workforce cost at ByteCraft Studios for 2026-05: the bank salary " +
+        "Off-bank employment cost at ByteCraft Studios for 2026-05: the bank salary " +
         "transfer of €10,000 understates the true cost of employing the team by €9,000 " +
         "(90.0%), mostly employer social-security contributions of €6,000.",
       metadata: {
