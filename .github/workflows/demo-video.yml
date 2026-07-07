@@ -209,12 +209,14 @@ jobs:
           # S_EFF = the effective terminal-screencast length used by the rest of the
           # pipeline (caption trim + voiceover pad). It ENDS the screencast right when
           # the main narration ends (A_MAIN + 0.3), so there is no long silent frozen
-          # frame before the browser appears — the beat flows straight on. Floored at
-          # the last caption end (CAP_END + 1) so the closing caption is never clipped,
-          # and hard-capped at SCAP so title+screencast+web+outro is ALWAYS <= 180 no
-          # matter how long the (pacing-variable) narration ran.
+          # frame before the browser appears — the beat flows straight on. The captions
+          # are SCALED to this window (scripts/build_caption_filter.py), so the closing
+          # caption is never clipped and never floored past the voice — which removes the
+          # old CAP_END+1 floor that could leave a silent frozen seam on a fast run.
+          # Hard-capped at SCAP so title+screencast+web+outro is ALWAYS <= 180 no matter
+          # how long the (pacing-variable) narration ran.
           SCAP=$(python3 -c "print(round(180.0 - 3.0 - 3.0 - ${WEB} - 0.3, 3))")
-          S_EFF=$(python3 -c "print(round(min(float('${S}'), ${SCAP}, max(float('${CAP_END}')+1.0, float('${A_MAIN}')+0.3)), 3))")
+          S_EFF=$(python3 -c "print(round(min(float('${S}'), ${SCAP}, float('${A_MAIN}')+0.3), 3))")
           echo "screencast=${S}s · web=${WEB}s · cap_end=${CAP_END}s · main=${A_MAIN}s · SCAP=${SCAP}s -> S_EFF=${S_EFF}s"
           echo "web_secs=${WEB}"   >> "$GITHUB_OUTPUT"
           echo "s_eff=${S_EFF}"    >> "$GITHUB_OUTPUT"
@@ -266,6 +268,9 @@ jobs:
           REPO_URL: ${{ github.event.inputs.repo_url }}
           HAVE_VO: ${{ steps.vo.outputs.have_vo }}
           S_EFF: ${{ steps.webseg.outputs.s_eff }}
+          A_MAIN: ${{ steps.vo.outputs.a_main }}
+          A_WEB: ${{ steps.vo.outputs.a_web }}
+          WEB_SECS: ${{ steps.webseg.outputs.web_secs }}
         run: |
           set -euo pipefail
           FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
@@ -290,19 +295,19 @@ jobs:
 
           # ---- Burned-caption drawtext chain from scripts/captions.txt ----
           # scale/pad FIRST (fontsize is output-pixel space), then one drawtext per line.
-          # Each text -> its own textfile (no escaping); expansion=none keeps % and \
-          # literal; enable= is single-quoted so its commas are protected inside the
-          # filtergraph. NO spaces between chained drawtext filters.
+          # Caption windows are SCALED to the MEASURED main-narration length (A_MAIN) and
+          # clamped inside the trimmed screencast (S_EFF) by build_caption_filter.py, so
+          # they cannot drift with ElevenLabs/edge-tts pacing (defect 2). The helper also
+          # writes caption_windows.json (ABSOLUTE video time = screencast-local + 3s title)
+          # for the sync gate. enable= is single-quoted so its commas are protected inside
+          # the filtergraph. NO spaces between chained drawtext filters.
           FILTER="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
-          i=0
-          while IFS='|' read -r s e text || [ -n "$s" ]; do
-            [ -z "$s" ] && continue
-            text="${text%$'\r'}"  # strip a trailing CR if checked out CRLF
-            printf '%s' "$text" > "caps/cap_$i.txt"
-            FILTER="$FILTER,drawtext=fontfile=$FONT:textfile=caps/cap_$i.txt:expansion=none:fontsize=40:fontcolor=white:line_spacing=8:box=1:boxcolor=black@0.55:boxborderw=18:x=(w-text_w)/2:y=h-140:enable='between(t,$s,$e)'"
-            i=$((i+1))
-          done < scripts/captions.txt
-          echo "built $i caption clauses"
+          CAP_CHAIN=$(CAPTIONS_FILE=scripts/captions.txt A_MAIN="${A_MAIN}" S_EFF="${S_EFF}" \
+            TITLE_DUR=3.0 LEAD=0.3 FONT="$FONT" CAPS_DIR=caps \
+            CAPTION_WINDOWS_JSON=caption_windows.json \
+            python3 scripts/build_caption_filter.py)
+          FILTER="$FILTER$CAP_CHAIN"
+          echo "built $(python3 -c "import json;print(len(json.load(open('caption_windows.json'))))") caption clauses (scaled to A_MAIN=${A_MAIN}s, S_EFF=${S_EFF}s)"
 
           # ---- Burn captions onto the screencast, trimmed to S_EFF ----
           # S_EFF is the hard-capped screencast length that guarantees the total stays
@@ -336,6 +341,34 @@ jobs:
           python3 -c "import sys; sys.exit(0 if float('${FINAL}') <= 180.0 else 1)" \
             || { echo "::error::final video ${FINAL}s exceeds the 180s cap"; exit 1; }
 
+          # ---- Segment manifest for the sync gate (concat order + measured durations) ----
+          # segments[] is the EXACT concat order used above: title -> screencast -> web -> outro.
+          python3 - <<PY
+          import json
+          json.dump({
+              "fps": 30,
+              "title_dur": 3.0,
+              "screencast_dur": float("${S_EFF}"),
+              "web_dur": float("${WEB_SECS}"),
+              "outro_dur": 3.0,
+              "segments": ["title", "screencast", "web", "outro"],
+              "a_main": float("${A_MAIN}"),
+              "a_web": float("${A_WEB}"),
+              "vo_delay": 3.0,
+              "have_vo": "${HAVE_VO}" == "true",
+          }, open("video_manifest.json", "w"), indent=2)
+          print("wrote video_manifest.json")
+          PY
+
+      # PERMANENT SYNC GATE — measures the shipped mp4 and FAILS the job unless the audio,
+      # frames and captions are aligned AND the segment order is title -> screencast -> web
+      # -> outro. This runs on every future build, so an out-of-sync or mis-ordered video
+      # can never ship again. See scripts/verify_video_sync.py for the four guarantees.
+      - name: Verify A/V/caption sync (permanent gate)
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_video_sync.py archon-memoryagent-demo.mp4
+
       - name: Upload demo video
         uses: actions/upload-artifact@v4
         with:
@@ -347,5 +380,7 @@ jobs:
             web.mp4
             web_shots/*.png
             docs/screencast_transcript.txt
+            video_manifest.json
+            caption_windows.json
           if-no-files-found: error
           retention-days: 14
