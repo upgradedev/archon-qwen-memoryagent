@@ -87,6 +87,45 @@ def max_volume(path, start, dur):
     return float(m.group(1)) if m else None
 
 
+# card (title/outro) vs content (screencast/browser) split by frame edge density.
+# Measured on real frames: solid emerald cards ~1.4-2.3, terminal/browser ~7.6-14.3.
+# Threshold 4.5 keeps a 2-5x margin on both sides.
+EDGE_CARD_CONTENT_THRESHOLD = 4.5
+
+
+def frame_edge_mean(path, t):
+    """Mean Sobel-edge magnitude of the frame at time t (detail density).
+
+    Reads the ACTUAL pixels of the shipped mp4 — this is what makes the order gate
+    measure the video instead of trusting a hardcoded manifest constant. A frozen
+    solid card scores low; a text-dense terminal/browser frame scores high.
+    """
+    from PIL import Image, ImageFilter, ImageStat  # provided in CI (pillow>=10)
+
+    png = f".sync_frame_{t:.3f}.png"
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{t}", "-i", path,
+         "-frames:v", "1", png],
+        capture_output=True, text=True)
+    if not os.path.exists(png):
+        return None
+    try:
+        im = Image.open(png).convert("L")
+        return ImageStat.Stat(im.filter(ImageFilter.FIND_EDGES)).mean[0]
+    finally:
+        try:
+            os.remove(png)
+        except OSError:
+            pass
+
+
+def frame_kind(path, t):
+    em = frame_edge_mean(path, t)
+    if em is None:
+        return None, None
+    return ("content" if em > EDGE_CARD_CONTENT_THRESHOLD else "card"), em
+
+
 def main():
     mp4 = sys.argv[1] if len(sys.argv) > 1 else "archon-memoryagent-demo.mp4"
     manifest_path = os.environ.get("VIDEO_MANIFEST", "video_manifest.json")
@@ -132,10 +171,30 @@ def main():
     print(f"  measured video={video_dur} audio={audio_dur} fps={fps}")
     print()
 
-    # ---- req 3: ORDER ----
+    # ---- req 3: ORDER (measured from the actual pixels, not a manifest constant) ----
     print("== req3: segment order + duration reconstruction ==")
-    g.check(segments == EXPECTED_ORDER, "order",
+    g.check(segments == EXPECTED_ORDER, "order-manifest",
             f"segments={segments} expected={EXPECTED_ORDER}")
+    # Authoritative order check: sample the MIDPOINT of each segment window and assert the
+    # content-type sequence is card -> content -> content -> card (title, screencast, web,
+    # outro). This reads the shipped frames, so a re-ordered concat (e.g. the defect-1
+    # outro-before-web bug) is caught even though the manifest constant looks right.
+    probes = [
+        (TITLE, title_end / 2.0, "card"),
+        (SCREENCAST, title_end + screencast_dur / 2.0, "content"),
+        (WEB, screencast_end + web_dur / 2.0, "content"),
+        (OUTRO, outro_start + outro_dur / 2.0, "card"),
+    ]
+    order_ok = True
+    seq = []
+    for name, t, expected_kind in probes:
+        kind, em = frame_kind(mp4, t)
+        seq.append(f"{name}@{t:.1f}s={kind}({em:.1f})" if em is not None else f"{name}=NA")
+        if kind != expected_kind:
+            order_ok = False
+            print(f"    {name} frame at {t:.2f}s is '{kind}' (edge={em}), expected '{expected_kind}'")
+    g.check(order_ok, "order-pixels",
+            "content-type sequence [card,content,content,card] :: " + " | ".join(seq))
     g.check(all(float(man.get(f"{n}_dur", man.get(n, 1))) > 0
                 for n in ("title", "screencast", "web", "outro")
                 if f"{n}_dur" in man),
