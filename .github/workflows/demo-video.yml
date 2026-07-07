@@ -308,7 +308,6 @@ jobs:
             python3 scripts/build_caption_filter.py)
           FILTER="$FILTER$CAP_CHAIN"
           echo "built $(python3 -c "import json;print(len(json.load(open('caption_windows.json'))))") caption clauses (scaled to A_MAIN=${A_MAIN}s, S_EFF=${S_EFF}s)"
-          echo "built $i caption clauses"
 
           # ---- Burn captions onto the screencast, trimmed to S_EFF ----
           # S_EFF is the hard-capped screencast length that guarantees the total stays
