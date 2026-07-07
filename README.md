@@ -406,6 +406,33 @@ curl <trigger-url>/health
 
 Because the store is pg-wire, switching between the two is a `DATABASE_URL` swap — no application change.
 
+## Proof of Alibaba Cloud Deployment
+
+This backend runs **live on Alibaba Cloud**. Two halves of proof:
+
+**1. Recording** — a short terminal capture ([`demo/alibaba-proof.mp4`](./demo/alibaba-proof.mp4), ~35s, silent, 1080p) showing the ECS instance `Running` in `ap-southeast-1` and both apps answering `GET /health` with the real Qwen model ids over HTTPS:
+
+```text
+$ aliyun ecs DescribeInstances --RegionId ap-southeast-1 --InstanceIds "['i-t4ngalzjr5nwtuowbv7y']"
+  InstanceId: i-t4ngalzjr5nwtuowbv7y   Region: ap-southeast-1 (ap-southeast-1c)   Status: Running
+  PublicIP: 43.106.13.19   Type: ecs.e-c1m2.large   Image: ubuntu_22_04_x64_20G_alibase_20260615.vhd
+
+$ curl https://memory.43.106.13.19.sslip.io/health
+  {"status":"ok","embedder":"text-embedding-v4","narrator":"qwen-plus","embedDim":1024}
+$ curl https://autopilot.43.106.13.19.sslip.io/health
+  {"status":"ok","embedder":"text-embedding-v4","decider":"qwen-plus","store":"pgvector"}
+```
+
+**2. Code that uses Alibaba Cloud services & APIs** — direct links:
+
+| Alibaba Cloud service | Code file | What it does |
+|---|---|---|
+| **ECS** (live deploy) | [`deploy/redeploy.sh`](./deploy/redeploy.sh) | Syncs source and (re)starts the docker-compose stack (backend + pgvector container) on the ECS instance behind one public HTTPS URL. |
+| **Function Compute** (serverless alternative) | [`deploy/s.yaml`](./deploy/s.yaml) | Serverless Devs spec for the custom-container HTTP function + managed ApsaraDB RDS memory store. |
+| **Model Studio / DashScope** (Qwen inference) | [`src/qwen/client.ts`](./src/qwen/client.ts) | OpenAI-compatible client to Alibaba Cloud Model Studio; calls `text-embedding-v4` (embeddings) and `qwen-plus` (narration). |
+
+Full proof doc with every service mapping: [`demo/ALIBABA_PROOF.md`](./demo/ALIBABA_PROOF.md).
+
 ## Testing & CI
 
 Full testing pyramid, all green in GitHub Actions (`.github/workflows/ci.yml`), fully offline. No Qwen/Alibaba credentials are needed — the Fakes auto-engage.
