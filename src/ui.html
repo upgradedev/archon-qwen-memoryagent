@@ -111,6 +111,18 @@
     .empty b { color: var(--text); }
     #status { color: var(--muted); font-size: 13px; min-height: 18px; }
     #status.err { color: var(--red); }
+    /* Inline loading spinner shown next to the status text while a recall runs. */
+    #status .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      margin-right: 7px;
+      vertical-align: -2px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: mem-spin .7s linear infinite;
+    }
+    @keyframes mem-spin { to { transform: rotate(360deg); } }
     a { color: var(--accent); }
 
     /* ── Inline guided tour (no external dependency) ───────────────────────── */
@@ -360,16 +372,30 @@
 
     async function refreshAll() { const n = await refreshStatus(); await loadPnl(); await loadRecords(); return n; }
 
+    // Show a spinner + message in the status line (used while a recall is in flight).
+    function statusBusy(msg) {
+      const s = $('status'); s.className = '';
+      s.innerHTML = '';
+      const sp = document.createElement('span'); sp.className = 'spinner';
+      s.appendChild(sp);
+      s.appendChild(document.createTextNode(msg));
+    }
+
     // ── Recall ────────────────────────────────────────────────────────────────
     $('ask').addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const question = $('question').value.trim();
       const company = $('company').value.trim();
       if (!question) { $('status').textContent = 'Enter a question first.'; return; }
-      const btn = $('askBtn'); btn.disabled = true; $('status').className = ''; $('status').textContent = 'Recalling…';
+      // Loading indicator: disable the button, relabel it "Recalling…", and show a
+      // spinner in the status line from click until the answer renders (qwen-plus
+      // recall can take a few seconds), then clear it.
+      const btn = $('askBtn'); const prevLabel = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Recalling…';
+      statusBusy('Recalling…');
       try { const r = await api('POST', '/recall', company ? { question, company } : { question }); renderRecall(r); $('status').textContent = ''; }
       catch (e) { $('status').className = 'err'; $('status').textContent = 'Recall failed: ' + e.message; }
-      finally { btn.disabled = false; refreshStatus(); }
+      finally { btn.disabled = false; btn.textContent = prevLabel; refreshStatus(); }
     });
 
     // ── Full self-audit (POST /consistency) ────────────────────────────────────
