@@ -44,6 +44,27 @@ jobs:
       - name: npm audit (fail on high/critical)
         run: npm audit --audit-level=high
 
+  # Stage 2b — documentation-drift fitness functions. Three executable guards
+  # that keep the README honest against the code: (1) doc-code consistency —
+  # every model id + HTTP endpoint the README claims exists in the code / route
+  # tree; (2) architecture conformance — every Mermaid diagram node maps to a
+  # real src/ artifact; (3) bench-golden — README headline metrics equal the
+  # pinned bench/golden.json SSOT. Fully OFFLINE: the app boots the Fakes and
+  # route introspection never opens the pg pool, so no DB service is needed.
+  docs-consistency:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install deps
+        run: npm ci
+      - name: Docs-consistency fitness functions (doc-drift, arch-conformance, bench-golden)
+        run: npm run test:docs
+
   build-test:
     needs: secret-scan
     runs-on: ubuntu-latest
