@@ -136,6 +136,7 @@ jobs:
           tests/unit/metrics.test.ts tests/unit/consolidation.test.ts
           tests/unit/consistency.test.ts tests/unit/rerank.test.ts
           tests/unit/accuracy.test.ts tests/unit/server.test.ts
+          tests/unit/skills.test.ts tests/unit/mcp.test.ts
           tests/unit/pnl.test.ts tests/unit/pipeline.test.ts
           tests/integration/pgvector-store.test.ts
           tests/integration/pipeline-ingest.test.ts
