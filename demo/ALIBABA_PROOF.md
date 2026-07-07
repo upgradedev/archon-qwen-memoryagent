@@ -16,7 +16,7 @@ This is the submission's **Proof of Alibaba Cloud Deployment**. It links the exa
 [`scripts/capture_live.sh`](../scripts/capture_live.sh) drives the **live Alibaba Cloud backend** end-to-end against the deployed URL — health → ingest → cross-session recall → self-audit. Running it (or hitting `GET /health`, which reports the live Qwen model ids) demonstrates the backend answering from Alibaba Cloud.
 
 - **Live backend URL:** provided in the submission form (see [`deploy/DEPLOY_STATE.md`](./../deploy/DEPLOY_STATE.md) for the current address); `GET /health` returns the live `text-embedding-v4` / `qwen-plus` model ids and the 1024-dim vector size.
-- **Proof recording (separate from the demo video):** _<add the public link here after recording the live box / Alibaba Cloud console>_
+- **Proof recording (separate from the demo video):** [`alibaba-proof.mp4`](./alibaba-proof.mp4) — ~35s silent terminal capture showing the ECS instance `Running` in `ap-southeast-1` and both apps answering `GET /health` with the real `text-embedding-v4` / `qwen-plus` model ids over HTTPS.
 
 ## Single-file link for the submission form
 

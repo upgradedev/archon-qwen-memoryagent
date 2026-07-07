@@ -31,5 +31,7 @@ docs/screencast_transcript.txt
 demo/video/
 *.mp4
 *.mp3
+# ...except the committed Proof-of-Alibaba-Cloud-Deployment recording (small submission artifact)
+!demo/alibaba-proof.mp4
 caps/
 body.json
