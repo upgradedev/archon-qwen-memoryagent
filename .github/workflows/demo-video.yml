@@ -222,7 +222,9 @@ jobs:
           D2=$(python3 -c "print(round(${WEB}*0.46, 3))")
           D3=$(python3 -c "print(round(${WEB} - ${WEB}*0.24 - ${WEB}*0.46, 3))")
           echo "web frames ${D1}/${D2}/${D3}s · beat=${A_WEB}s"
-          printf '%s' 'Live in the browser: type a company + a question -> the same grounded, cited answer' > web_cap.txt
+          # Keep this <= ~62 chars: DejaVuSans-Bold at fontsize 40 overflows 1920px
+          # (and clips at both edges) beyond that.
+          printf '%s' 'In the browser: a company + a question -> a cited answer' > web_cap.txt
           SP="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30"
           CAP="drawtext=fontfile=${FONT}:textfile=web_cap.txt:expansion=none:fontsize=40:fontcolor=white:line_spacing=8:box=1:boxcolor=black@0.55:boxborderw=18:x=(w-text_w)/2:y=h-140"
           ffmpeg -y \
