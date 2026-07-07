@@ -22,9 +22,9 @@ import swaggerUi from "@fastify/swagger-ui";
 import cors from "@fastify/cors";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
-import { defaultEmbedder } from "./memory/embeddings.js";
-import { defaultNarrator } from "./agents/narrator.js";
-import { PgVectorStore, type MemoryKind } from "./memory/store.js";
+import { defaultEmbedder, type Embedder } from "./memory/embeddings.js";
+import { defaultNarrator, type Narrator } from "./agents/narrator.js";
+import { PgVectorStore, type MemoryKind, type MemoryStore } from "./memory/store.js";
 import { MemoryAgent } from "./agents/memory-agent.js";
 import { UI_HTML } from "./ui.js";
 import type { PayrollEvent } from "./types.js";
@@ -74,7 +74,17 @@ export function makeDailyLimiter(limit: number, now: () => Date = () => new Date
   };
 }
 
-export async function buildServer() {
+// Injectable dependencies. Production passes nothing → the real pgvector store +
+// auto-selected Qwen/Fake embedder + narrator. Tests inject an InMemoryStore +
+// FakeEmbedder + FakeNarrator so the DB-backed routes (/demo/seed, /recall,
+// /memory/list, /pnl) run end-to-end, offline, with no database and no key.
+export interface ServerDeps {
+  store?: MemoryStore;
+  embedder?: Embedder;
+  narrator?: Narrator;
+}
+
+export async function buildServer(deps: ServerDeps = {}) {
   const app = Fastify({ logger: true });
 
   // CORS — lets a browser dashboard (e.g. the OSS static site) call this API
@@ -125,9 +135,9 @@ export async function buildServer() {
   app.get("/", { schema: { hide: true } }, serveUi);
   app.get("/ui", { schema: { hide: true } }, serveUi);
 
-  const embedder = defaultEmbedder();
-  const narrator = defaultNarrator();
-  const store = new PgVectorStore();
+  const embedder = deps.embedder ?? defaultEmbedder();
+  const narrator = deps.narrator ?? defaultNarrator();
+  const store = deps.store ?? new PgVectorStore();
   const agent = new MemoryAgent(embedder, store, narrator);
   const ingestBudget = makeDailyLimiter(INGEST_DAILY_LIMIT);
 
