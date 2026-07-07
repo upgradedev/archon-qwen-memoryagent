@@ -1,0 +1,224 @@
+// Docs-consistency fitness functions — three executable guards against
+// documentation drift. They keep README.md honest against the code, the
+// architecture diagram honest against src/, and the quoted benchmark numbers
+// honest against a committed golden SSOT. All fully offline (no key, no DB):
+// the Fastify app boots with the deterministic Fakes and route introspection
+// via `hasRoute` never opens the pg pool.
+//
+//   CHECK 1 — README claims  ↔ code   (doc-drift / doc-code consistency)
+//   CHECK 2 — Mermaid diagram ↔ src/  (architecture conformance)
+//   CHECK 3 — README metrics ↔ bench/golden.json (golden snapshot)
+
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import type { FastifyInstance } from "fastify";
+import { buildServer } from "../../src/server.js";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, "..", "..");
+const readText = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
+
+const README = readText("README.md");
+
+// Tokens that MATCH the model-id regex but are NOT models (the package / repo
+// slug `qwen-memoryagent`). Excluded from both the code set and the README set.
+const NON_MODEL_TOKENS = new Set(["qwen-memoryagent"]);
+// Matches Qwen/DashScope model ids: `text-embedding-vN`, `qwen-plus`,
+// `qwen-vl-max`, etc. Deliberately broad so a *phantom* model in the README
+// (e.g. `qwen-turbo` the code never uses) is still caught.
+const MODEL_RE = /\b(?:text-embedding-v\d+|qwen-[a-z]+(?:-[a-z]+)*)\b/g;
+
+function modelsIn(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of text.matchAll(MODEL_RE)) {
+    if (!NON_MODEL_TOKENS.has(m[0])) out.add(m[0]);
+  }
+  return out;
+}
+
+// Recursively collect model-id string literals actually referenced in src/.
+function codeModelSet(): Set<string> {
+  const out = new Set<string>();
+  const walk = (dir: string) => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, ent.name);
+      if (ent.isDirectory()) walk(p);
+      else if (ent.name.endsWith(".ts")) {
+        for (const model of modelsIn(readFileSync(p, "utf8"))) out.add(model);
+      }
+    }
+  };
+  walk(join(ROOT, "src"));
+  return out;
+}
+
+let app: FastifyInstance;
+
+before(async () => {
+  delete process.env.DASHSCOPE_API_KEY; // guarantee offline Fakes, never a real call
+  app = await buildServer();
+  await app.ready();
+});
+
+after(async () => {
+  await app.close();
+});
+
+// ─── CHECK 1 — README claims ↔ code ──────────────────────────────────────────
+
+test("CHECK 1a — every model id in README is one the code actually uses (no phantom models)", () => {
+  const code = codeModelSet();
+  const readme = modelsIn(README);
+
+  assert.ok(code.size >= 3, `expected the code to reference model ids, found ${[...code]}`);
+
+  // HARD: no phantom — a model the README advertises but the code never uses.
+  const phantom = [...readme].filter((m) => !code.has(m));
+  assert.deepEqual(
+    phantom,
+    [],
+    `README mentions model id(s) the code never references: ${phantom.join(", ")} (code uses: ${[...code].join(", ")})`,
+  );
+
+  // SOFT (warn): a primary code model that is undocumented in the README. Kept
+  // a warning so a legit internal-only model can't block CI — but surfaced.
+  const undocumented = [...code].filter((m) => !readme.has(m));
+  if (undocumented.length) {
+    console.warn(`[docs-drift] code models not documented in README: ${undocumented.join(", ")}`);
+  }
+});
+
+// The README HTTP-API table lists endpoints as `METHOD /path` in backticks.
+function readmeEndpoints(): Array<{ method: string; path: string }> {
+  const out: Array<{ method: string; path: string }> = [];
+  const re = /`(GET|POST|PUT|DELETE|PATCH)\s+(\/[a-zA-Z0-9/_.-]*)`/g;
+  for (const m of README.matchAll(re)) out.push({ method: m[1]!, path: m[2]! });
+  return out;
+}
+
+test("CHECK 1b — every endpoint documented in the README is a real Fastify route (no phantom endpoints)", () => {
+  const documented = readmeEndpoints();
+  assert.ok(documented.length >= 8, `expected the README API table to list endpoints, found ${documented.length}`);
+
+  const phantom = documented.filter((e) => !app.hasRoute({ method: e.method as any, url: e.path }));
+  assert.deepEqual(
+    phantom.map((e) => `${e.method} ${e.path}`),
+    [],
+    `README documents endpoint(s) that are not registered routes: ${phantom.map((e) => `${e.method} ${e.path}`).join(", ")}`,
+  );
+});
+
+test("CHECK 1b (warn) — undocumented real business routes are surfaced, not failed", async () => {
+  const res = await app.inject({ method: "GET", url: "/openapi.json" });
+  const businessPaths: string[] = Object.keys(res.json().paths);
+  const documented = new Set(readmeEndpoints().map((e) => e.path));
+  const undocumented = businessPaths.filter((p) => !documented.has(p));
+  if (undocumented.length) {
+    console.warn(`[docs-drift] real business routes not in the README API table: ${undocumented.join(", ")}`);
+  }
+  assert.ok(true); // warn-only direction — never fails the build
+});
+
+// ─── CHECK 2 — Mermaid diagram ↔ src/ modules (architecture conformance) ──────
+
+function mermaidBlock(): string {
+  const m = README.match(/```mermaid\r?\n([\s\S]*?)```/);
+  assert.ok(m && m[1], "README must contain a ```mermaid architecture diagram");
+  return m[1]!;
+}
+
+// Explicit, readable map: diagram node id → the code artifact it must denote.
+// A node token like `EX["` uniquely anchors the declaration inside the mermaid
+// fence (the plain-text pipeline block earlier in the README uses no such ids).
+const DIAGRAM_MAP: Array<{ node: string; file: string; what: string }> = [
+  { node: 'H["',   file: "src/server.ts",               what: "HTTP API routes" },
+  { node: 'EX["',  file: "src/pipeline/extractor.ts",   what: "Extractor" },
+  { node: 'CL["',  file: "src/pipeline/classifier.ts",  what: "Classifier" },
+  { node: 'EL["',  file: "src/pipeline/event-linker.ts", what: "EventLinker" },
+  { node: 'VA["',  file: "src/pipeline/validator.ts",   what: "Validator" },
+  { node: 'PN["',  file: "src/pipeline/pnl.ts",         what: "P&L math" },
+  { node: 'MT["',  file: "src/mcp/server.ts",           what: "MCP tools surface" },
+  { node: 'SK["',  file: "src/skills/dispatcher.ts",    what: "SkillDispatcher" },
+  { node: 'MA["',  file: "src/agents/memory-agent.ts",  what: "MemoryAgent (core)" },
+  { node: 'DB["',  file: "src/memory/store.ts",         what: "pgvector store" },
+  { node: 'VL["',  file: "src/pipeline/vision.ts",      what: "qwen-vl-max vision" },
+  { node: 'EMB["', file: "src/memory/embeddings.ts",    what: "text-embedding-v4 embedder" },
+  { node: 'LLM["', file: "src/agents/narrator.ts",      what: "qwen-plus narrator" },
+];
+
+test("CHECK 2 — every diagrammed component maps to a real src/ artifact (no orphan nodes)", () => {
+  const diagram = mermaidBlock();
+  for (const { node, file, what } of DIAGRAM_MAP) {
+    assert.ok(diagram.includes(node), `diagram is missing the expected node ${node} (${what})`);
+    let exists = true;
+    try {
+      readFileSync(join(ROOT, file));
+    } catch {
+      exists = false;
+    }
+    assert.ok(exists, `diagram node ${node} (${what}) has no code counterpart at ${file} (orphan)`);
+  }
+});
+
+test("CHECK 2 (warn) — every agent in src/agents is represented in the diagram (missing)", () => {
+  const diagram = mermaidBlock();
+  const mappedFiles = new Set(DIAGRAM_MAP.filter((e) => diagram.includes(e.node)).map((e) => e.file));
+  const agents = readdirSync(join(ROOT, "src", "agents"))
+    .filter((f) => f.endsWith(".ts"))
+    .map((f) => `src/agents/${f}`);
+  const missing = agents.filter((a) => !mappedFiles.has(a));
+  if (missing.length) {
+    console.warn(`[arch-drift] src/agents modules absent from the diagram: ${missing.join(", ")}`);
+  }
+  assert.ok(true); // warn-only direction
+});
+
+// ─── CHECK 3 — README metrics ↔ bench/golden.json (golden snapshot) ───────────
+
+interface Golden {
+  tolerance: { ratio: number; percent: number };
+  metrics: {
+    mrr_reranked_hybrid: number;
+    ndcg5_reranked_hybrid: number;
+    recall3_reranked_hybrid_pct: number;
+    grounding_faithfulness_pct: number;
+  };
+}
+
+// Read (not import) the JSON so we sidestep resolveJsonModule/tsconfig.
+const golden: Golden = JSON.parse(readText("bench/golden.json"));
+
+// Parse MRR, nDCG@5 and Recall@3 from the SINGLE reranked-hybrid headline
+// clause so all three share one source line — Recall@3 also appears earlier
+// (hybrid-vs-dense, 93.3%); pinning to this clause guarantees we read 96.7%.
+function parseHeadlineRetrieval(): { mrr: number; ndcg5: number; recall3: number } {
+  const m = README.match(
+    /MRR \*\*[\d.]+ → ([\d.]+)\*\*, nDCG@5 \*\*[\d.]+ → ([\d.]+)\*\*, Recall@3 \*\*[\d.]+% → ([\d.]+)%\*\*/,
+  );
+  assert.ok(m, "README must state the reranked-hybrid headline (MRR/nDCG@5/Recall@3) in one clause");
+  return { mrr: Number(m![1]), ndcg5: Number(m![2]), recall3: Number(m![3]) };
+}
+
+function parseGrounding(): number {
+  const m = README.match(/grounding \/ faithfulness: ([\d.]+)%/);
+  assert.ok(m, "README must state the answer grounding / faithfulness percentage");
+  return Number(m![1]);
+}
+
+test("CHECK 3 — README headline metrics equal the pinned golden.json values (within tolerance)", () => {
+  const { ratio, percent } = golden.tolerance;
+  const g = golden.metrics;
+  const rt = parseHeadlineRetrieval();
+  const grounding = parseGrounding();
+
+  const near = (a: number, b: number, tol: number, label: string) =>
+    assert.ok(Math.abs(a - b) <= tol, `${label}: README ${a} drifted from golden ${b} (tol ±${tol})`);
+
+  near(rt.mrr, g.mrr_reranked_hybrid, ratio, "MRR");
+  near(rt.ndcg5, g.ndcg5_reranked_hybrid, ratio, "nDCG@5");
+  near(rt.recall3, g.recall3_reranked_hybrid_pct, percent, "Recall@3");
+  near(grounding, g.grounding_faithfulness_pct, percent, "grounding/faithfulness");
+});
