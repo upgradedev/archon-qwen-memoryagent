@@ -55,7 +55,7 @@ const recallGrounded = new Rate("recall_grounded");
 // Realistic, universal finance-intelligence questions (no country/authority terms).
 const QUESTIONS = [
   "What was the true cost of employing our team last month compared with what actually left the bank account?",
-  "How much of last month's payroll cost was hidden employer contribution?",
+  "How much of last month's payroll cost was off-bank employer contribution?",
   "What was the total cost of employing Elena last month?",
   "Which payroll event had the largest gap between bank net and employer cost?",
   "Summarise the most recent payroll event for this company.",
