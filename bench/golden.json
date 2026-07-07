@@ -1,0 +1,12 @@
+{
+  "_comment": "SSOT for the headline benchmark numbers quoted in README.md. The docs-consistency CI check (tests/docs/docs-consistency.test.ts) parses the same numbers out of the README prose and asserts they equal these pinned values within tolerance, so README metrics can never silently drift from the pinned truth.",
+  "_regenerate": "These are the reranked-hybrid headline metrics. To refresh from a real bench run: `npm run bench` (retrieval: MRR / nDCG@5 / Recall@3 on the committed text-embedding-v4 fixture) and `npm run bench:accuracy` (grounded-answer faithfulness). Copy the reranked-hybrid row + grounding figure here and update the README prose in the same commit.",
+  "_source": "README.md reranked-hybrid retrieval result + grounded-answer accuracy section",
+  "tolerance": { "ratio": 0.001, "percent": 0.1 },
+  "metrics": {
+    "mrr_reranked_hybrid": 0.911,
+    "ndcg5_reranked_hybrid": 0.938,
+    "recall3_reranked_hybrid_pct": 96.7,
+    "grounding_faithfulness_pct": 90.9
+  }
+}
