@@ -74,7 +74,31 @@ jobs:
           test -s docs/screencast_transcript.txt \
             || { echo "::error::transcript not produced — live capture failed"; exit 1; }
 
-      - name: Synthesize voiceover (ElevenLabs -> edge-tts fallback)
+      # Drive the LIVE Explorer UI (src/ui.html, served at BASE/ and BASE/ui) in a
+      # headless Chromium: seed -> type a company + question -> Recall -> a grounded,
+      # CITED qwen-plus answer -> the "memories N" browse view. Captured as three
+      # 1920x1080 screenshots (assembled into the web segment later). The script
+      # HARD-FAILS on a blank/uncited answer or a positioning leak, so a bad web
+      # scene fails the job instead of shipping.
+      - name: Capture live Explorer UI (Playwright headless Chromium)
+        env:
+          DEMO_BASE_URL: ${{ github.event.inputs.base_url }}
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet playwright
+          python -m playwright install --with-deps chromium
+          python scripts/capture_web.py
+          for f in 1_home 2_answer 3_browse; do
+            test -s "web_shots/${f}.png" \
+              || { echo "::error::web screenshot ${f}.png missing — live UI capture failed"; exit 1; }
+          done
+
+      # narration.txt is one script but drives two clips: the MAIN narration (all but
+      # the last paragraph) times the terminal screencast exactly as before; the final
+      # paragraph is the WEB beat, spoken over the browser segment. Synthesizing them
+      # as two files lets us measure each and land the beat precisely on the web frames
+      # (the padded-voiceover step). Terminal timing is unchanged (main == today's text).
+      - name: Synthesize voiceover (main + web beat · ElevenLabs -> edge-tts fallback)
         id: vo
         env:
           XI_API_KEY: ${{ secrets.ELEVEN_LABS_KEY }}
@@ -82,62 +106,70 @@ jobs:
           MODEL_ID: ${{ github.event.inputs.model_id }}
         run: |
           set -euo pipefail
-          # The video MUST have a voiceover. ElevenLabs is the preferred (higher
-          # quality) TTS; edge-tts (free, no key, Microsoft Neural voices) is a
-          # guaranteed fallback so a missing/expired key or an ElevenLabs quota/HTTP
-          # error can NEVER leave the demo silent. Both failing is a HARD failure.
-          have=false
+          # Split narration.txt on blank lines: last paragraph -> web beat, rest -> main.
+          python3 - <<'PY'
+          import re
+          paras = [p.strip() for p in re.split(r"\n\s*\n", open("docs/narration.txt", encoding="utf-8").read()) if p.strip()]
+          assert len(paras) >= 2, "narration.txt must have >= 2 paragraphs (main + web beat)"
+          open("narration_main.txt", "w", encoding="utf-8").write("\n\n".join(paras[:-1]) + "\n")
+          open("narration_web.txt", "w", encoding="utf-8").write(paras[-1] + "\n")
+          print(f"main paragraphs: {len(paras)-1} · web beat chars: {len(paras[-1])}")
+          PY
 
-          # ---- Primary: ElevenLabs (only when the secret is set) ----
-          if [ -n "${XI_API_KEY:-}" ]; then
-            jq -Rs --arg m "$MODEL_ID" \
-              '{text: ., model_id: $m, voice_settings: {stability: 0.45, similarity_boost: 0.8, use_speaker_boost: true}}' \
-              docs/narration.txt > body.json
-            HTTP=$(curl -sS -w "%{http_code}" -X POST \
-              "https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_44100_128" \
-              -H "xi-api-key: ${XI_API_KEY}" -H "Content-Type: application/json" -H "Accept: audio/mpeg" \
-              --data @body.json -o voiceover.mp3 || echo "000")
-            if [ "$HTTP" = "200" ] && [ -f voiceover.mp3 ] && [ "$(wc -c < voiceover.mp3)" -gt 10000 ]; then
-              echo "ElevenLabs voiceover OK ($(wc -c < voiceover.mp3) bytes)"
-              have=true
+          # Synthesize one text file to one mp3. ElevenLabs (premium) when the secret
+          # is set; edge-tts (free Neural voice) is the guaranteed fallback so a
+          # missing/expired key or an ElevenLabs error can NEVER leave the demo silent.
+          synth() {
+            local IN="$1" OUT="$2" have=false HTTP
+            if [ -n "${XI_API_KEY:-}" ]; then
+              jq -Rs --arg m "$MODEL_ID" \
+                '{text: ., model_id: $m, voice_settings: {stability: 0.45, similarity_boost: 0.8, use_speaker_boost: true}}' \
+                "$IN" > body.json
+              HTTP=$(curl -sS -w "%{http_code}" -X POST \
+                "https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_44100_128" \
+                -H "xi-api-key: ${XI_API_KEY}" -H "Content-Type: application/json" -H "Accept: audio/mpeg" \
+                --data @body.json -o "$OUT" || echo "000")
+              if [ "$HTTP" = "200" ] && [ -f "$OUT" ] && [ "$(wc -c < "$OUT")" -gt 8000 ]; then
+                echo "ElevenLabs voiceover OK — ${OUT} ($(wc -c < "$OUT") bytes)"; have=true
+              else
+                echo "::warning::ElevenLabs synthesis failed for ${IN} (HTTP ${HTTP}) — falling back to edge-tts."
+                rm -f "$OUT"
+              fi
             else
-              echo "::warning::ElevenLabs synthesis failed (HTTP ${HTTP}) — falling back to edge-tts."
-              rm -f voiceover.mp3
+              echo "::warning::ELEVEN_LABS_KEY not set — using the free edge-tts voice for ${IN}."
             fi
-          else
-            echo "::warning::ELEVEN_LABS_KEY not set — using the free edge-tts voice."
-          fi
+            if [ "$have" != "true" ]; then
+              python -m pip install --quiet "edge-tts>=7"
+              python -m edge_tts --voice en-US-GuyNeural --file "$IN" --write-media "$OUT"
+              [ -f "$OUT" ] && [ "$(wc -c < "$OUT")" -gt 8000 ] \
+                || { echo "::error::edge-tts produced no usable audio for ${IN} — cannot ship a silent video."; exit 1; }
+              echo "edge-tts voiceover OK — ${OUT} ($(wc -c < "$OUT") bytes)"
+            fi
+          }
 
-          # ---- Fallback: edge-tts (free, no key). Guarantees the demo is narrated. ----
-          if [ "$have" != "true" ]; then
-            python -m pip install --quiet "edge-tts>=7"
-            python -m edge_tts --voice en-US-GuyNeural --file docs/narration.txt --write-media voiceover.mp3
-            [ -f voiceover.mp3 ] && [ "$(wc -c < voiceover.mp3)" -gt 10000 ] \
-              || { echo "::error::edge-tts produced no usable audio — cannot ship a silent video."; exit 1; }
-            echo "edge-tts voiceover OK ($(wc -c < voiceover.mp3) bytes)"
-            have=true
-          fi
+          synth narration_main.txt vo_main.mp3
+          synth narration_web.txt  vo_web.mp3
 
-          echo "have_vo=$have" >> "$GITHUB_OUTPUT"
+          A_MAIN=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 vo_main.mp3)
+          A_WEB=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 vo_web.mp3)
+          echo "main audio: ${A_MAIN}s · web beat audio: ${A_WEB}s"
+          echo "a_main=${A_MAIN}" >> "$GITHUB_OUTPUT"
+          echo "a_web=${A_WEB}"   >> "$GITHUB_OUTPUT"
+          echo "have_vo=true"      >> "$GITHUB_OUTPUT"
 
       - name: Compute target duration
         id: dur
         env:
-          HAVE_VO: ${{ steps.vo.outputs.have_vo }}
+          A_MAIN: ${{ steps.vo.outputs.a_main }}
         run: |
           set -euo pipefail
-          # Screencast must outlast BOTH the VO (+3s tail) AND the last caption end,
-          # so a fast VO never clips the closing captions. Silent path -> caption-driven.
+          # Screencast must outlast BOTH the MAIN VO (+3s tail) AND the last caption
+          # end, so a fast VO never clips the closing captions. Driven by the MAIN
+          # narration only (the web beat plays over the browser segment, not the
+          # screencast), so the terminal timeline is identical to before.
           CAP_END=$(awk -F'|' 'NF>=2{print $2}' scripts/captions.txt | sort -n | tail -1)
-          if [ "${HAVE_VO}" = "true" ] && [ -f voiceover.mp3 ]; then
-            AUDIO=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 voiceover.mp3)
-            echo "audio duration: ${AUDIO}s"
-            TARGET=$(python3 -c "print(round(max(float('${AUDIO}')+3.0, float('${CAP_END}')+2.0),1))")
-          else
-            echo "no voiceover — silent build"
-            TARGET=$(python3 -c "print(round(float('${CAP_END}')+2.0,1))")
-          fi
-          echo "caption end: ${CAP_END}s -> target=${TARGET}"
+          TARGET=$(python3 -c "print(round(max(float('${A_MAIN}')+3.0, float('${CAP_END}')+2.0),1))")
+          echo "caption end: ${CAP_END}s · main audio ${A_MAIN}s -> target=${TARGET}"
           echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
 
       - name: Render terminal screencast
@@ -152,10 +184,88 @@ jobs:
           test -f screencast.mp4
           ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 screencast.mp4
 
+      # Assemble the three live-UI screenshots into the browser segment. Length is
+      # SELF-CAPPED so title(3) + screencast + web + outro(3) <= 180, and must be at
+      # least as long as the spoken web beat. A one-line caption is burned on directly
+      # (same style as the terminal captions) — scripts/captions.txt is untouched, so
+      # the caption-driven screencast target is unaffected.
+      - name: Assemble web segment (browser) mp4
+        id: webseg
+        env:
+          FONT: /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+          A_WEB: ${{ steps.vo.outputs.a_web }}
+          A_MAIN: ${{ steps.vo.outputs.a_main }}
+        run: |
+          set -euo pipefail
+          for f in 1_home 2_answer 3_browse; do test -s "web_shots/${f}.png"; done
+          S=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 screencast.mp4)
+          CAP_END=$(awk -F'|' 'NF>=2{print $2}' scripts/captions.txt | sort -n | tail -1)
+          # The web segment is sized to comfortably contain the spoken web beat
+          # (which varies with ElevenLabs pacing): WEB = beat + 1.2s lead-out, clamped
+          # to the task's ~6-10s window.
+          WEB=$(python3 -c "print(round(min(10.0, max(6.0, float('${A_WEB}') + 1.2)), 2))")
+          python3 -c "import sys; sys.exit(0 if ${WEB} >= float('${A_WEB}') else 1)" \
+            || { echo "::error::web segment ${WEB}s is shorter than the web beat ${A_WEB}s"; exit 1; }
+          # S_EFF = the effective terminal-screencast length used by the rest of the
+          # pipeline (caption trim + voiceover pad). It ENDS the screencast right when
+          # the main narration ends (A_MAIN + 0.3), so there is no long silent frozen
+          # frame before the browser appears — the beat flows straight on. Floored at
+          # the last caption end (CAP_END + 1) so the closing caption is never clipped,
+          # and hard-capped at SCAP so title+screencast+web+outro is ALWAYS <= 180 no
+          # matter how long the (pacing-variable) narration ran.
+          SCAP=$(python3 -c "print(round(180.0 - 3.0 - 3.0 - ${WEB} - 0.3, 3))")
+          S_EFF=$(python3 -c "print(round(min(float('${S}'), ${SCAP}, max(float('${CAP_END}')+1.0, float('${A_MAIN}')+0.3)), 3))")
+          echo "screencast=${S}s · web=${WEB}s · cap_end=${CAP_END}s · main=${A_MAIN}s · SCAP=${SCAP}s -> S_EFF=${S_EFF}s"
+          echo "web_secs=${WEB}"   >> "$GITHUB_OUTPUT"
+          echo "s_eff=${S_EFF}"    >> "$GITHUB_OUTPUT"
+          # Frame split: home (typed query + count), answer (hero, cited), browse.
+          # Use per-image `-loop 1 -t D` inputs + the concat FILTER, whose output is
+          # EXACTLY D1+D2+D3 (the concat demuxer's trailing-frame handling inflates the
+          # duration and would blow the 180s budget). One burned caption after concat.
+          D1=$(python3 -c "print(round(${WEB}*0.24, 3))")
+          D2=$(python3 -c "print(round(${WEB}*0.46, 3))")
+          D3=$(python3 -c "print(round(${WEB} - ${WEB}*0.24 - ${WEB}*0.46, 3))")
+          echo "web frames ${D1}/${D2}/${D3}s · beat=${A_WEB}s"
+          # Keep this <= ~62 chars: DejaVuSans-Bold at fontsize 40 overflows 1920px
+          # (and clips at both edges) beyond that.
+          printf '%s' 'In the browser: a company + a question -> a cited answer' > web_cap.txt
+          SP="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30"
+          CAP="drawtext=fontfile=${FONT}:textfile=web_cap.txt:expansion=none:fontsize=40:fontcolor=white:line_spacing=8:box=1:boxcolor=black@0.55:boxborderw=18:x=(w-text_w)/2:y=h-140"
+          ffmpeg -y \
+            -loop 1 -t "$D1" -i web_shots/1_home.png \
+            -loop 1 -t "$D2" -i web_shots/2_answer.png \
+            -loop 1 -t "$D3" -i web_shots/3_browse.png \
+            -filter_complex "[0:v]${SP}[v0];[1:v]${SP}[v1];[2:v]${SP}[v2];[v0][v1][v2]concat=n=3:v=1:a=0[cat];[cat]${CAP},format=yuv420p[outv]" \
+            -map "[outv]" -r 30 -c:v libx264 -preset veryfast -pix_fmt yuv420p web.mp4
+          test -f web.mp4
+          echo "web segment duration:"
+          ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 web.mp4
+
+      # Build the final voiceover = main narration + silence pad + web beat, so the
+      # beat lands exactly when the browser segment appears. pad = (effective/capped
+      # screencast length S_EFF) - (main audio) + 0.5, so the browser is on screen a
+      # beat before "…in the browser" is spoken. Re-encoded via the concat FILTER
+      # (uniform 44.1k stereo) to avoid mp3 frame-boundary clicks from a raw concat.
+      - name: Assemble padded voiceover (main + silence + web beat)
+        env:
+          A_MAIN: ${{ steps.vo.outputs.a_main }}
+          S_EFF: ${{ steps.webseg.outputs.s_eff }}
+        run: |
+          set -euo pipefail
+          PAD=$(python3 -c "print(round(max(0.0, float('${S_EFF}') - float('${A_MAIN}') + 0.5), 3))")
+          echo "S_EFF=${S_EFF}s · main audio=${A_MAIN}s -> silence pad=${PAD}s"
+          ffmpeg -y -i vo_main.mp3 -f lavfi -t "${PAD}" -i anullsrc=r=44100:cl=stereo -i vo_web.mp3 \
+            -filter_complex "[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a1];[2:a]aformat=sample_rates=44100:channel_layouts=stereo[a2];[a0][a1][a2]concat=n=3:v=0:a=1[out]" \
+            -map "[out]" -c:a libmp3lame -q:a 2 voiceover.mp3
+          test -f voiceover.mp3
+          echo "final voiceover duration:"
+          ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 voiceover.mp3
+
       - name: Compose demo video (title + captions + screencast + outro + VO)
         env:
           REPO_URL: ${{ github.event.inputs.repo_url }}
           HAVE_VO: ${{ steps.vo.outputs.have_vo }}
+          S_EFF: ${{ steps.webseg.outputs.s_eff }}
         run: |
           set -euo pipefail
           FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
@@ -194,20 +304,24 @@ jobs:
           done < scripts/captions.txt
           echo "built $i caption clauses"
 
-          # ---- Burn captions onto the screencast ----
-          # No -t trim: make_screencast.py holds the final frame to TARGET
-          # (>= VO and >= last caption end), so trimming could only clip the reveal.
-          ffmpeg -y -i "$VID" -vf "$FILTER" -c:v libx264 -preset veryfast -pix_fmt yuv420p -r 30 -an tour_cap.mp4
+          # ---- Burn captions onto the screencast, trimmed to S_EFF ----
+          # S_EFF is the hard-capped screencast length that guarantees the total stays
+          # <= 180s. It sits past the last caption end (157s), so this only ever trims
+          # surplus held-final-frame tail — never a caption reveal or terminal content.
+          S_EFF="${S_EFF}"
+          ffmpeg -y -i "$VID" -vf "$FILTER" -t "$S_EFF" -c:v libx264 -preset veryfast -pix_fmt yuv420p -r 30 -an tour_cap.mp4
 
-          # ---- Concat title -> captioned screencast -> outro (filter concat) ----
-          ffmpeg -y -i title.mp4 -i tour_cap.mp4 -i outro.mp4 -filter_complex \
-            "[0:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v0];[1:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v1];[2:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v2];[v0][v1][v2]concat=n=3:v=1:a=0[outv]" \
+          # ---- Concat title -> captioned screencast -> web segment -> outro ----
+          test -f web.mp4 || { echo "::error::no web segment produced"; exit 1; }
+          ffmpeg -y -i title.mp4 -i tour_cap.mp4 -i web.mp4 -i outro.mp4 -filter_complex \
+            "[0:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v0];[1:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v1];[2:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v2];[3:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v3];[v0][v1][v2][v3]concat=n=4:v=1:a=0[outv]" \
             -map "[outv]" -c:v libx264 -preset veryfast -pix_fmt yuv420p -r 30 full.mp4
 
           if [ "${HAVE_VO}" = "true" ] && [ -f voiceover.mp3 ]; then
             # ---- Mux the VO, delayed by the 3s title so it starts on the screencast ----
             # apad makes the audio effectively infinite; -shortest then lands at the FULL
-            # video length (title + screencast + outro), so the outro is never truncated.
+            # video length (title + screencast + web segment + outro), so neither the
+            # web beat nor the outro is truncated.
             ffmpeg -y -i full.mp4 -i voiceover.mp3 \
               -filter_complex "[1:a]adelay=3000:all=1,apad[a]" \
               -map 0:v:0 -map "[a]" -c:v copy -c:a aac -b:a 192k -shortest archon-memoryagent-demo.mp4
@@ -216,7 +330,11 @@ jobs:
           fi
           ls -la archon-memoryagent-demo.mp4
           echo "final duration:"
-          ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 archon-memoryagent-demo.mp4
+          FINAL=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 archon-memoryagent-demo.mp4)
+          echo "${FINAL}s"
+          # Hard budget gate: the hackathon cap is 180s. Fail loudly rather than ship over.
+          python3 -c "import sys; sys.exit(0 if float('${FINAL}') <= 180.0 else 1)" \
+            || { echo "::error::final video ${FINAL}s exceeds the 180s cap"; exit 1; }
 
       - name: Upload demo video
         uses: actions/upload-artifact@v4
@@ -226,6 +344,8 @@ jobs:
             archon-memoryagent-demo.mp4
             voiceover.mp3
             screencast.mp4
+            web.mp4
+            web_shots/*.png
             docs/screencast_transcript.txt
           if-no-files-found: error
           retention-days: 14

@@ -13,3 +13,5 @@ Now the differentiator: a memory that audits itself. Two separate sessions wrote
 And it's measured: five of five seeded contradictions detected, zero false positives, and a read-only recommender correct four of four. Retrieval too — Recall at three rises from ninety to ninety-six point seven percent, at a hundred percent answer correctness.
 
 It runs live on Alibaba Cloud — an ECS instance in Singapore beside a self-hosted pgvector container. Real Qwen, measured, open source under MIT — not a wrapper.
+
+And the same memory is queryable right in the browser — with grounded, cited answers.

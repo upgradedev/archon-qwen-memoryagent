@@ -35,3 +35,9 @@ demo/video/
 !demo/alibaba-proof.mp4
 caps/
 body.json
+# web-segment pipeline scratch (generated in CI from the live Explorer UI)
+web_shots/
+web_cap.txt
+web_concat.txt
+narration_main.txt
+narration_web.txt
