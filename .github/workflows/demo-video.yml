@@ -198,10 +198,22 @@ jobs:
           set -euo pipefail
           for f in 1_home 2_answer 3_browse; do test -s "web_shots/${f}.png"; done
           S=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 screencast.mp4)
-          # Keep total <= 180: budget for web = 180 - title(3) - outro(3) - S - 0.3 margin.
-          WEB=$(python3 -c "print(round(min(8.5, 180.0 - 3.0 - 3.0 - float('${S}') - 0.3), 2))")
+          # The web segment is sized to comfortably contain the spoken web beat
+          # (which varies with ElevenLabs pacing): WEB = beat + 1.2s lead-out, clamped
+          # to the task's ~6-10s window. Then the terminal screencast is HARD-CAPPED so
+          # title(3) + screencast + web + outro(3) is ALWAYS <= 180, no matter how long
+          # the (pacing-variable) main narration ran. The cap (~167s) sits well past the
+          # last caption (157s), so all terminal CONTENT is preserved — only surplus
+          # held-final-frame tail is ever trimmed. S_EFF is the screencast length the
+          # rest of the pipeline (caption trim, voiceover pad) must use.
+          WEB=$(python3 -c "print(round(min(10.0, max(6.0, float('${A_WEB}') + 1.2)), 2))")
           python3 -c "import sys; sys.exit(0 if ${WEB} >= float('${A_WEB}') else 1)" \
-            || { echo "::error::web segment ${WEB}s is shorter than the web beat ${A_WEB}s — cannot fit the narration"; exit 1; }
+            || { echo "::error::web segment ${WEB}s is shorter than the web beat ${A_WEB}s"; exit 1; }
+          SCAP=$(python3 -c "print(round(180.0 - 3.0 - 3.0 - ${WEB} - 0.3, 3))")
+          S_EFF=$(python3 -c "print(round(min(float('${S}'), ${SCAP}), 3))")
+          echo "screencast=${S}s · web=${WEB}s · screencast cap=${SCAP}s -> S_EFF=${S_EFF}s"
+          echo "web_secs=${WEB}"   >> "$GITHUB_OUTPUT"
+          echo "s_eff=${S_EFF}"    >> "$GITHUB_OUTPUT"
           # Frame split: home (typed query + count), answer (hero, cited), browse.
           # Use per-image `-loop 1 -t D` inputs + the concat FILTER, whose output is
           # EXACTLY D1+D2+D3 (the concat demuxer's trailing-frame handling inflates the
@@ -209,7 +221,7 @@ jobs:
           D1=$(python3 -c "print(round(${WEB}*0.24, 3))")
           D2=$(python3 -c "print(round(${WEB}*0.46, 3))")
           D3=$(python3 -c "print(round(${WEB} - ${WEB}*0.24 - ${WEB}*0.46, 3))")
-          echo "screencast=${S}s -> web=${WEB}s (frames ${D1}/${D2}/${D3}) · beat=${A_WEB}s"
+          echo "web frames ${D1}/${D2}/${D3}s · beat=${A_WEB}s"
           printf '%s' 'Live in the browser: type a company + a question -> the same grounded, cited answer' > web_cap.txt
           SP="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30"
           CAP="drawtext=fontfile=${FONT}:textfile=web_cap.txt:expansion=none:fontsize=40:fontcolor=white:line_spacing=8:box=1:boxcolor=black@0.55:boxborderw=18:x=(w-text_w)/2:y=h-140"
@@ -222,21 +234,20 @@ jobs:
           test -f web.mp4
           echo "web segment duration:"
           ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 web.mp4
-          echo "web_secs=${WEB}" >> "$GITHUB_OUTPUT"
 
       # Build the final voiceover = main narration + silence pad + web beat, so the
-      # beat lands exactly when the browser segment appears. pad = (screencast length)
-      # - (main audio) + 0.5, so the browser is on screen a beat before "…in the
-      # browser" is spoken. Re-encoded via the concat FILTER (uniform 44.1k stereo)
-      # to avoid mp3 frame-boundary clicks from a raw concatenation.
+      # beat lands exactly when the browser segment appears. pad = (effective/capped
+      # screencast length S_EFF) - (main audio) + 0.5, so the browser is on screen a
+      # beat before "…in the browser" is spoken. Re-encoded via the concat FILTER
+      # (uniform 44.1k stereo) to avoid mp3 frame-boundary clicks from a raw concat.
       - name: Assemble padded voiceover (main + silence + web beat)
         env:
           A_MAIN: ${{ steps.vo.outputs.a_main }}
+          S_EFF: ${{ steps.webseg.outputs.s_eff }}
         run: |
           set -euo pipefail
-          S=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 screencast.mp4)
-          PAD=$(python3 -c "print(round(max(0.0, float('${S}') - float('${A_MAIN}') + 0.5), 3))")
-          echo "screencast=${S}s · main audio=${A_MAIN}s -> silence pad=${PAD}s"
+          PAD=$(python3 -c "print(round(max(0.0, float('${S_EFF}') - float('${A_MAIN}') + 0.5), 3))")
+          echo "S_EFF=${S_EFF}s · main audio=${A_MAIN}s -> silence pad=${PAD}s"
           ffmpeg -y -i vo_main.mp3 -f lavfi -t "${PAD}" -i anullsrc=r=44100:cl=stereo -i vo_web.mp3 \
             -filter_complex "[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a1];[2:a]aformat=sample_rates=44100:channel_layouts=stereo[a2];[a0][a1][a2]concat=n=3:v=0:a=1[out]" \
             -map "[out]" -c:a libmp3lame -q:a 2 voiceover.mp3
@@ -248,6 +259,7 @@ jobs:
         env:
           REPO_URL: ${{ github.event.inputs.repo_url }}
           HAVE_VO: ${{ steps.vo.outputs.have_vo }}
+          S_EFF: ${{ steps.webseg.outputs.s_eff }}
         run: |
           set -euo pipefail
           FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
@@ -286,10 +298,12 @@ jobs:
           done < scripts/captions.txt
           echo "built $i caption clauses"
 
-          # ---- Burn captions onto the screencast ----
-          # No -t trim: make_screencast.py holds the final frame to TARGET
-          # (>= VO and >= last caption end), so trimming could only clip the reveal.
-          ffmpeg -y -i "$VID" -vf "$FILTER" -c:v libx264 -preset veryfast -pix_fmt yuv420p -r 30 -an tour_cap.mp4
+          # ---- Burn captions onto the screencast, trimmed to S_EFF ----
+          # S_EFF is the hard-capped screencast length that guarantees the total stays
+          # <= 180s. It sits past the last caption end (157s), so this only ever trims
+          # surplus held-final-frame tail — never a caption reveal or terminal content.
+          S_EFF="${S_EFF}"
+          ffmpeg -y -i "$VID" -vf "$FILTER" -t "$S_EFF" -c:v libx264 -preset veryfast -pix_fmt yuv420p -r 30 -an tour_cap.mp4
 
           # ---- Concat title -> captioned screencast -> web segment -> outro ----
           test -f web.mp4 || { echo "::error::no web segment produced"; exit 1; }
