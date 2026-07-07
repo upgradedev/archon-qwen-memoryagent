@@ -12,6 +12,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { FastifyInstance } from "fastify";
 import { buildServer, makeDailyLimiter } from "../../src/server.js";
+import { DEMO_TEMPLATES } from "../../src/demo-data.js";
 
 let app: FastifyInstance;
 
@@ -120,6 +121,18 @@ test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
   // Supporting P&L + records views wired to their endpoints.
   assert.match(res.body, /\/pnl/);
   assert.match(res.body, /\/memory\/list/);
+  // Template chips are INJECTED from DEMO_TEMPLATES (single source of truth) — the
+  // placeholder must have been replaced, so the served page carries the real
+  // questions, not the empty-array fallback.
+  assert.doesNotMatch(res.body, /\/\*__ARCHON_TEMPLATES__\*\//, "template placeholder was not replaced");
+  for (const t of DEMO_TEMPLATES) {
+    assert.ok(res.body.includes(t.q), `served UI is missing template chip "${t.q}"`);
+  }
+  // Browse-memories affordance: the "memories N" count badge is a clickable door
+  // into the stored memories (FIX 2 — count → browsable list), not a dead number.
+  assert.match(res.body, /class="pill pill-btn" id="count"/);
+  assert.match(res.body, /Browse memories/);
+  assert.match(res.body, /browseMore/);
 });
 
 test("GET /ui serves the same memory explorer (alias)", async () => {

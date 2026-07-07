@@ -37,6 +37,9 @@
       border-radius: 999px; padding: 3px 12px;
     }
     .pill .n { color: var(--accent); }
+    .pill-btn { cursor: pointer; font-family: var(--mono); display: inline-flex; align-items: center; gap: 6px; }
+    .pill-btn:hover { border-color: var(--accent); color: var(--text); background: var(--panel-2); }
+    .pill-btn .pill-caret { color: var(--muted); font-size: 10px; }
     main { max-width: 960px; margin: 0 auto; padding: 24px 20px 90px; }
 
     .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
@@ -100,6 +103,7 @@
     td.num { text-align: right; font-family: var(--mono); }
     .rec-row { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
     .rec-row .badge { font-family: var(--mono); font-size: 10.5px; padding: 2px 7px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+    .rec-row .rec-co { font-size: 11px; color: var(--accent); white-space: nowrap; }
     .rec-row .txt { flex: 1; color: var(--text); }
     .rec-row .when { color: var(--muted); font-size: 11px; white-space: nowrap; }
 
@@ -128,7 +132,7 @@
     <h1>Archon MemoryAgent</h1>
     <span class="sub">Persistent, queryable, cross-session memory</span>
     <span class="spacer"></span>
-    <span class="pill" id="count">memories <span class="n" id="countN">…</span></span>
+    <button class="pill pill-btn" id="count" type="button" title="Browse the stored memories">memories <span class="n" id="countN">…</span> <span class="pill-caret">▾</span></button>
     <span class="pill" id="model">…</span>
     <button class="secondary" id="tourBtn" type="button">Take the tour</button>
   </header>
@@ -178,8 +182,8 @@
       </section>
 
       <section class="panel" id="recordsPanel" data-tour="records">
-        <h2>Memory records</h2>
-        <div class="tag">A recent slice of what the agent holds — the raw material recall draws on.</div>
+        <h2>Browse memories</h2>
+        <div class="tag">What the agent actually holds — kind · company · content · when. The raw material recall draws on. <a href="#" id="browseMore">Show more ▾</a></div>
         <div id="records"><div class="empty">No records yet.</div></div>
       </section>
     </div>
@@ -224,20 +228,41 @@
       return data;
     }
 
-    // Verified template questions — tied to the Run-demo seed data (Northwind Trading).
-    const TEMPLATES = [
-      { q: 'What did it really cost to employ the team?', c: 'Northwind Trading' },
-      { q: 'How much cash actually left the bank for salaries?', c: 'Northwind Trading' },
-      { q: 'Which employee costs the company the most?', c: 'Northwind Trading' },
-      { q: 'Is any invoice recorded with conflicting amounts?', c: 'Northwind Trading' },
-    ];
+    // Verified template questions — INJECTED at serve time from DEMO_TEMPLATES
+    // (src/demo-data.ts), the single source of truth the CI end-to-end test proves
+    // is answerable from the /demo/seed data. The empty-array fallback keeps this
+    // page valid if opened standalone (server injection replaces the placeholder).
+    const TEMPLATES = /*__ARCHON_TEMPLATES__*/[];
     function renderChips() {
       const wrap = $('chips'); wrap.innerHTML = '';
       TEMPLATES.forEach((t) => {
         const b = el('button', { class: 'chip', type: 'button', text: t.q });
-        b.addEventListener('click', () => { $('question').value = t.q; if (t.c) $('company').value = t.c; $('ask').requestSubmit(); });
+        b.addEventListener('click', async () => {
+          $('question').value = t.q; if (t.c) $('company').value = t.c;
+          // Guarantee a grounded answer: if memory is empty (e.g. right after a
+          // redeploy, before anyone has seeded), auto-seed the demo data first so
+          // a template click never returns "no relevant memories".
+          await ensureSeeded();
+          $('ask').requestSubmit();
+        });
         wrap.appendChild(b);
       });
+    }
+
+    // Seed the demo data if the store is empty. /demo/seed is idempotent, so a
+    // re-entry is harmless; we still gate on the live count to avoid a needless
+    // round trip when memories already exist. Returns when the store is non-empty.
+    let seeding = false;
+    async function ensureSeeded() {
+      if (seeding) return;
+      let count = 0;
+      try { const c = await api('GET', '/memory/count'); count = (c && typeof c.count === 'number') ? c.count : 0; } catch (_) {}
+      if (count > 0) return;
+      seeding = true;
+      $('status').className = ''; $('status').textContent = 'Empty memory — seeding demo data…';
+      try { await api('POST', '/demo/seed'); await refreshAll(); $('status').textContent = ''; }
+      catch (_) { /* recall will surface any error */ }
+      finally { seeding = false; }
     }
 
     function renderRecall(r) {
@@ -308,13 +333,15 @@
       } catch (_) { /* leave empty */ }
     }
 
+    let recordsLimit = 8; // grows when the reader asks to browse more
     async function loadRecords() {
       try {
-        const r = await api('GET', '/memory/list?limit=8');
+        const r = await api('GET', '/memory/list?limit=' + recordsLimit);
         const box = $('records'); box.innerHTML = '';
         if (!r.items || !r.items.length) { box.appendChild(el('div', { class: 'empty', text: 'No records yet.' })); return; }
         r.items.forEach((m) => box.appendChild(el('div', { class: 'rec-row' }, [
           el('span', { class: 'badge', text: m.kind }),
+          m.company ? el('span', { class: 'rec-co', text: m.company }) : el('span', {}),
           el('span', { class: 'txt', text: m.snippet || '' }),
           el('span', { class: 'when', text: (m.createdAt || '').slice(0, 10) }),
         ])));
@@ -369,6 +396,18 @@
       } catch (e) { $('status').className = 'err'; $('status').textContent = 'Demo failed: ' + e.message; }
       finally { btn.disabled = false; }
     });
+
+    // ── Browse memories (count badge → the memory list) ─────────────────────────
+    // The "memories N" badge is a live door into what the agent remembers: clicking
+    // it reveals the browse panel, loads a fuller slice via GET /memory/list, and
+    // scrolls it into view — so a judge SEES the stored memories, not just a number.
+    async function browseMemories() {
+      recordsLimit = Math.max(recordsLimit, 50);
+      await loadRecords();
+      $('recordsPanel').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    $('count').addEventListener('click', browseMemories);
+    $('browseMore').addEventListener('click', (ev) => { ev.preventDefault(); recordsLimit = Math.min(recordsLimit + 25, 100); loadRecords(); });
 
     // ── Inline guided tour ──────────────────────────────────────────────────────
     const TOUR = [

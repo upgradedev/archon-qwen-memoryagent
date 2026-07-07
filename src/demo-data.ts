@@ -53,3 +53,25 @@ export const DEMO_CONTRADICTION: Array<{ content: string; amount: number }> = [
   { content: `Purchase invoice INV-5521 at ${DEMO_COMPANY} (2026-05): a later entry records the same invoice at 8,900.`, amount: 8900 },
 ];
 export const DEMO_INVOICE_RECORD = "INV-5521";
+
+// ── Template questions (the UI chips) ─────────────────────────────────────────
+// SINGLE SOURCE OF TRUTH for the "try a question" chips the explorer renders and
+// for the CI end-to-end test that proves each one is answerable. Every question
+// here is provably grounded in the /demo/seed data above (the Northwind Trading
+// payroll triplet + the INV-5521 contradiction), so a judge clicking any chip on
+// a seeded box gets a grounded, cited answer — never the "no relevant memories"
+// fallback. Universal financial terms only (positioning guard scans this file).
+//
+//   1. total employer cost      → the payroll-event summary memory (employer_cost_total)
+//   2. cash off the bank line    → the off-bank workforce-cost insight memory
+//   3. most expensive employee   → the per-employee payroll_event memories
+//   4. conflicting invoice       → the two INV-5521 contradiction memories
+//
+// `q` is the question; `c` pre-fills the company filter so recall is scoped to
+// the seeded company (the scope that guarantees a non-empty hit set).
+export const DEMO_TEMPLATES: Array<{ q: string; c: string }> = [
+  { q: "What did it really cost to employ the team?", c: DEMO_COMPANY },
+  { q: "How much cash actually left the bank for salaries?", c: DEMO_COMPANY },
+  { q: "Which employee costs the company the most?", c: DEMO_COMPANY },
+  { q: "Is any invoice recorded with conflicting amounts?", c: DEMO_COMPANY },
+];
