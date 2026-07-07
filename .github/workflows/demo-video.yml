@@ -194,24 +194,28 @@ jobs:
         env:
           FONT: /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
           A_WEB: ${{ steps.vo.outputs.a_web }}
+          A_MAIN: ${{ steps.vo.outputs.a_main }}
         run: |
           set -euo pipefail
           for f in 1_home 2_answer 3_browse; do test -s "web_shots/${f}.png"; done
           S=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 screencast.mp4)
+          CAP_END=$(awk -F'|' 'NF>=2{print $2}' scripts/captions.txt | sort -n | tail -1)
           # The web segment is sized to comfortably contain the spoken web beat
           # (which varies with ElevenLabs pacing): WEB = beat + 1.2s lead-out, clamped
-          # to the task's ~6-10s window. Then the terminal screencast is HARD-CAPPED so
-          # title(3) + screencast + web + outro(3) is ALWAYS <= 180, no matter how long
-          # the (pacing-variable) main narration ran. The cap (~167s) sits well past the
-          # last caption (157s), so all terminal CONTENT is preserved — only surplus
-          # held-final-frame tail is ever trimmed. S_EFF is the screencast length the
-          # rest of the pipeline (caption trim, voiceover pad) must use.
+          # to the task's ~6-10s window.
           WEB=$(python3 -c "print(round(min(10.0, max(6.0, float('${A_WEB}') + 1.2)), 2))")
           python3 -c "import sys; sys.exit(0 if ${WEB} >= float('${A_WEB}') else 1)" \
             || { echo "::error::web segment ${WEB}s is shorter than the web beat ${A_WEB}s"; exit 1; }
+          # S_EFF = the effective terminal-screencast length used by the rest of the
+          # pipeline (caption trim + voiceover pad). It ENDS the screencast right when
+          # the main narration ends (A_MAIN + 0.3), so there is no long silent frozen
+          # frame before the browser appears — the beat flows straight on. Floored at
+          # the last caption end (CAP_END + 1) so the closing caption is never clipped,
+          # and hard-capped at SCAP so title+screencast+web+outro is ALWAYS <= 180 no
+          # matter how long the (pacing-variable) narration ran.
           SCAP=$(python3 -c "print(round(180.0 - 3.0 - 3.0 - ${WEB} - 0.3, 3))")
-          S_EFF=$(python3 -c "print(round(min(float('${S}'), ${SCAP}), 3))")
-          echo "screencast=${S}s · web=${WEB}s · screencast cap=${SCAP}s -> S_EFF=${S_EFF}s"
+          S_EFF=$(python3 -c "print(round(min(float('${S}'), ${SCAP}, max(float('${CAP_END}')+1.0, float('${A_MAIN}')+0.3)), 3))")
+          echo "screencast=${S}s · web=${WEB}s · cap_end=${CAP_END}s · main=${A_MAIN}s · SCAP=${SCAP}s -> S_EFF=${S_EFF}s"
           echo "web_secs=${WEB}"   >> "$GITHUB_OUTPUT"
           echo "s_eff=${S_EFF}"    >> "$GITHUB_OUTPUT"
           # Frame split: home (typed query + count), answer (hero, cited), browse.
