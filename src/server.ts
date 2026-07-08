@@ -120,6 +120,23 @@ export async function buildServer(deps: ServerDeps = {}) {
       : true,
   });
 
+  // A single, typed error envelope for anything that throws past a route handler:
+  // never leak a raw stack — always `{ error: <message> }`. Server-side faults
+  // (e.g. the memory store or embedder being unreachable) become a structured
+  // 503, so a caller gets a clear "temporarily unavailable" instead of a hang or
+  // an opaque crash. Client errors keep their own 4xx status (Fastify's schema
+  // validation and the explicit `reply.code(400)` guards below are unaffected —
+  // those never throw). The narrator-outage path degrades gracefully in
+  // recallAnswer() and never reaches here.
+  app.setErrorHandler((err: { statusCode?: number; message?: string }, req, reply) => {
+    req.log.error(err);
+    const status =
+      typeof err.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 500
+        ? err.statusCode
+        : 503;
+    reply.code(status).send({ error: err.message || "service temporarily unavailable" });
+  });
+
   await app.register(swagger, {
     openapi: {
       info: {

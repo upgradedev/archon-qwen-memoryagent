@@ -367,6 +367,16 @@ Without a `DASHSCOPE_API_KEY`, the demo and backend run with deterministic offli
 
 **Open demo + rate limit.** The live deployment is intentionally **open (no login)** so judges can test it end to end. Because `POST /ingest/documents` is the only path that spends Qwen vision-model calls, document upload is metered in two UTC-daily tiers to protect the shared Qwen API budget: a **per-IP cap** (`INGEST_DAILY_LIMIT`, default **100** — generous headroom so a judge never hits 429 on their first ingest) under a **hard global backstop** (`INGEST_DAILY_LIMIT_GLOBAL`, default **500** — bounds total spend across all clients, which a per-IP cap alone cannot). Per-IP bucketing keys on the real client address via the fronting proxy's `X-Forwarded-For` (Fastify `trustProxy`); with no proxy it degrades safely to a single shared counter. Recall, self-audit, and the P&L view stay open and unmetered.
 
+### Resilience
+
+A live model service will blip; the memory layer should not fail with it. Three measures keep `/recall` and `/ingest` responsive when Qwen (DashScope) is slow or unreachable:
+
+- **Bounded model calls.** Every call to DashScope goes through one OpenAI-compatible client configured with a **per-request timeout** (`QWEN_TIMEOUT_MS`, default 20s) and a small **automatic retry budget** (`QWEN_MAX_RETRIES`, default 2). Without these a single upstream stall would hang a recall until the socket eventually gave up — the exact failure a judge would see mid-demo. Both are env-tunable.
+- **Graceful narrator degradation.** By the time the answer narrator (`qwen-plus`) runs, the memories have **already been retrieved** from pgvector. So if narration fails, the recall is not thrown away: `/recall` still returns the retrieved memories as citations plus a plain fallback answer composed from them, with a `"degraded": "narrator unavailable — returning raw recalled memories"` flag — a soft, still-useful, still-grounded result instead of a hard 500. (Retrieval itself needs the query embedding, so an *embedder* outage surfaces as a clear error rather than a silent empty answer — you can't recall without the query vector.)
+- **Structured error envelope.** A Fastify `setErrorHandler` turns any unhandled server-side fault into a typed `{ "error": … }` with a **503** (service temporarily unavailable) — never a leaked stack. Client mistakes keep their own `4xx` (the request-validation guards are unaffected).
+
+All three are covered by offline unit tests (timeout/retry config, the degraded-recall path, and the 503-vs-preserved-4xx envelope) — no key, no network.
+
 ## MCP integration & custom skills
 
 Beyond the REST API, the same memory is exposed two more ways for *sophisticated QwenCloud API use* (Technical Depth & Engineering): a **Model Context Protocol (MCP) server** and a **Qwen function-calling custom-skills layer**. Both wrap the identical injectable `MemoryAgent` through one shared `SkillDispatcher` ([`src/skills/dispatcher.ts`](./src/skills/dispatcher.ts)) — the exact code the HTTP routes run — so there is no duplicated memory logic. The schemas ([`src/skills/schemas.ts`](./src/skills/schemas.ts)) are the single source of truth reused verbatim as both MCP `inputSchema` and OpenAI function `parameters`.

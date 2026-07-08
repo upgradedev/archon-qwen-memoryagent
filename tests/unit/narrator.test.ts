@@ -7,7 +7,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeNarrator, QwenNarrator, defaultNarrator } from "../../src/agents/narrator.js";
 import type { RecallHit } from "../../src/memory/store.js";
-import type { QwenChatClient } from "../../src/qwen/client.js";
+import {
+  createQwenClient,
+  QWEN_REQUEST_TIMEOUT_MS,
+  QWEN_MAX_RETRIES,
+  type QwenChatClient,
+} from "../../src/qwen/client.js";
 
 const HITS: RecallHit[] = [
   {
@@ -120,4 +125,14 @@ test("QwenNarrator short-circuits on empty recall without calling the model", as
   assert.equal(called, false, "must not call Qwen when there is no evidence");
   assert.equal(citations.length, 0);
   assert.match(answer, /No relevant memories/i);
+});
+
+test("createQwenClient applies the resilience defaults (per-request timeout + retry budget)", () => {
+  const c = createQwenClient("test-key", "http://example.invalid");
+  // The live OpenAI-compatible client is configured with a bounded per-request
+  // timeout and a small automatic retry budget, so a hung/blipping DashScope
+  // upstream cannot stall a recall indefinitely on the live box.
+  assert.equal((c as unknown as { timeout: number }).timeout, QWEN_REQUEST_TIMEOUT_MS);
+  assert.equal((c as unknown as { maxRetries: number }).maxRetries, QWEN_MAX_RETRIES);
+  assert.ok(QWEN_REQUEST_TIMEOUT_MS > 0 && QWEN_MAX_RETRIES >= 0);
 });

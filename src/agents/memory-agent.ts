@@ -136,6 +136,7 @@ export class MemoryAgent {
     citations: Citation[];
     modelId: string;
     consistency: ConsistencyReport;
+    degraded?: string;
   }> {
     const hits = await recall(this.embedder, this.store, question, {
       company: opts.company,
@@ -146,13 +147,31 @@ export class MemoryAgent {
       // hybrid:false to force pure vector recall.
       hybrid: opts.hybrid ?? true,
     });
-    const { answer, citations, modelId } = await this.narrator.narrate(question, hits);
+    // Graceful degradation: the memories are ALREADY retrieved by this point, so a
+    // narrator (qwen-plus) outage must not cost the user the recall. If narration
+    // fails, still return the retrieved memories as citations plus a plain
+    // fallback answer composed from them, flagged `degraded` — a soft, useful
+    // result instead of a hard 500. The self-audit below is unaffected. (Recall
+    // itself needs the query embedding, so an embedder outage throws upstream of
+    // here and correctly surfaces as an error, not a degraded answer.)
+    let answer: string;
+    let citations: Citation[];
+    let modelId: string;
+    let degraded: string | undefined;
+    try {
+      ({ answer, citations, modelId } = await this.narrator.narrate(question, hits));
+    } catch (err) {
+      citations = hits.map(hitToCitation);
+      answer = fallbackAnswer(citations);
+      modelId = "degraded";
+      degraded = "narrator unavailable — returning raw recalled memories";
+    }
     // Best-effort self-audit over the memories JUST recalled — no extra DB round
     // trip, so the live /recall hot path is unchanged. It surfaces a conflict when
     // both sides happen to be in the top-k. The exhaustive, guaranteed audit is
     // `auditConsistency()` (the /consistency route), which scans the full scope.
     const consistency = auditConsistency(hits.map(hitToAuditMemory));
-    return { answer, hits, citations, modelId, consistency };
+    return { answer, hits, citations, modelId, consistency, ...(degraded ? { degraded } : {}) };
   }
 
   // ── SELF-AUDIT (memory-consistency) ────────────────────────────────────────
@@ -195,6 +214,33 @@ export class MemoryAgent {
 function money(n: number | null | undefined): string {
   if (n == null) return "n/a";
   return `€${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
+// Degradation fallback: project the recalled hits into the same Citation shape
+// the narrators emit (marker + content), so a degraded answer stays grounded and
+// cited even with the model down. Mirrors the narrator's numbering ([1], [2], …).
+function hitToCitation(h: RecallHit, i: number): Citation {
+  return {
+    marker: `[${i + 1}]`,
+    kind: h.kind,
+    score: h.score,
+    sourceRef: h.sourceRef,
+    content: h.content,
+  };
+}
+
+// A plain, non-model answer composed directly from the recalled memories — used
+// only when the narrator is unavailable. No prose synthesis, just the grounded
+// evidence, so the caller still gets a useful, cited result.
+function fallbackAnswer(citations: Citation[]): string {
+  if (citations.length === 0) {
+    return "No relevant memories found in the agent's persistent memory.";
+  }
+  const grounded = citations.map((c) => `${c.marker} ${c.content}`).join(" ");
+  return (
+    `The answer narrator is temporarily unavailable, so here are the ` +
+    `${citations.length} most relevant memory item(s) recalled for this question: ${grounded}`
+  );
 }
 
 // A RecallHit already carries every field the audit needs (it is a MemoryRecord

@@ -149,3 +149,32 @@ test("MemoryAgent.recallAnswer grounds a cited answer in the recalled memories",
     "recalled memories must include the employer-cost figures"
   );
 });
+
+test("MemoryAgent.recallAnswer degrades gracefully when the narrator is down (returns the recalled memories, flagged)", async () => {
+  // A narrator that always throws stands in for a qwen-plus outage. The memories
+  // are already retrieved by the time narration runs, so the recall must NOT be
+  // lost to a hard error — the agent returns them as citations plus a `degraded`
+  // flag and a plain fallback answer.
+  const throwingNarrator = {
+    modelId: "qwen-plus",
+    async narrate(): Promise<never> {
+      throw new Error("DashScope unreachable");
+    },
+  };
+  const agent = new MemoryAgent(new FakeEmbedder(), new InMemoryStore(), throwingNarrator);
+  await agent.ingestEvent(EVENT);
+  const res = await agent.recallAnswer("What was our real employer payroll cost last month?", {
+    company: "Acme Foods AE",
+    limit: 3,
+  });
+  // Still returns the retrieved memories (not an empty/error result).
+  assert.ok(res.hits.length > 0, "degraded recall must still return the retrieved memories");
+  assert.ok(res.citations.length > 0, "degraded answer must stay grounded in citations");
+  // Flagged as degraded, with the documented reason.
+  assert.equal(res.degraded, "narrator unavailable — returning raw recalled memories");
+  assert.equal(res.modelId, "degraded");
+  // The fallback answer is composed from the recalled memories, cited by marker.
+  for (const c of res.citations) assert.ok(res.answer.includes(c.marker), `fallback missing marker ${c.marker}`);
+  // The self-audit still runs over the recalled memories in the degraded path.
+  assert.ok(res.consistency && typeof res.consistency.audited === "number");
+});
