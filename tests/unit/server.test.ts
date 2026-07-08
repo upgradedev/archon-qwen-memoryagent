@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import type { FastifyInstance } from "fastify";
 import { buildServer, makeDailyLimiter } from "../../src/server.js";
 import { DEMO_TEMPLATES } from "../../src/demo-data.js";
+import { InMemoryStore } from "../../src/memory/store.js";
 
 let app: FastifyInstance;
 
@@ -162,5 +163,48 @@ test("GET /docs serves the interactive Swagger UI", async () => {
   if (res.statusCode >= 300) {
     const follow = await app.inject({ method: "GET", url: res.headers.location as string });
     assert.equal(follow.statusCode, 200);
+  }
+});
+
+test("global error handler: an unexpected server-side throw becomes a structured 503 { error } (no raw stack)", async () => {
+  // A store whose count() throws a generic error exercises the /memory/count
+  // handler → the global setErrorHandler, which must answer a typed { error }
+  // envelope with a 503 (service temporarily unavailable), never a raw stack.
+  const brokenStore = {
+    ...new InMemoryStore(),
+    async count(): Promise<number> {
+      throw new Error("memory store unreachable");
+    },
+  } as unknown as NonNullable<Parameters<typeof buildServer>[0]>["store"];
+  const local = await buildServer({ store: brokenStore });
+  await local.ready();
+  try {
+    const res = await local.inject({ method: "GET", url: "/memory/count" });
+    assert.equal(res.statusCode, 503);
+    assert.deepEqual(Object.keys(res.json()), ["error"]);
+    assert.match(res.json().error, /unreachable/);
+    assert.doesNotMatch(res.json().error, /at .*\(.*:\d+:\d+\)/); // no stack frames leaked
+  } finally {
+    await local.close();
+  }
+});
+
+test("global error handler: a thrown client (4xx) status is preserved, not masked as 503", async () => {
+  // An error carrying its own 4xx status (e.g. a bad-request-shaped store error)
+  // must keep that status — the handler only defaults server faults to 503.
+  const badRequestStore = {
+    ...new InMemoryStore(),
+    async count(): Promise<number> {
+      throw Object.assign(new Error("bad memory query"), { statusCode: 400 });
+    },
+  } as unknown as NonNullable<Parameters<typeof buildServer>[0]>["store"];
+  const local = await buildServer({ store: badRequestStore });
+  await local.ready();
+  try {
+    const res = await local.inject({ method: "GET", url: "/memory/count" });
+    assert.equal(res.statusCode, 400);
+    assert.match(res.json().error, /bad memory query/);
+  } finally {
+    await local.close();
   }
 });
