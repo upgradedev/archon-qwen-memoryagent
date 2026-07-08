@@ -2,6 +2,15 @@
 
 **Entry for the [Global AI Hackathon Series with Qwen Cloud](https://qwencloud-hackathon.devpost.com/) — `MemoryAgent` track.**
 
+[![CI](https://github.com/upgradedev/archon-qwen-memoryagent/actions/workflows/ci.yml/badge.svg)](https://github.com/upgradedev/archon-qwen-memoryagent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Alibaba%20Cloud-ff6a00?logo=alibabacloud&logoColor=white)](https://memory.43.106.13.19.sslip.io)
+[![Demo Video](https://img.shields.io/badge/Demo%20Video-watch-ff0000?logo=youtube)](demo/video/final/archon-memoryagent-demo.mp4)
+[![Tests](https://img.shields.io/badge/Tests-140%20node%3Atest%20%2B%20Playwright-brightgreen)](tests)
+[![Project Story](https://img.shields.io/badge/Project%20Story-Devpost-003e54)](demo/PROJECT_STORY.md)
+<!-- TODO after YouTube upload: point the Demo Video badge at the YouTube URL -->
+
+
 > **Track: MemoryAgent** — an agent with *persistent, queryable memory that retains and recalls information across sessions*.
 
 > **Live:** [`https://memory.43.106.13.19.sslip.io`](https://memory.43.106.13.19.sslip.io) — open the URL for the memory explorer (recall + self-audit + a P&L / pipeline context panel), `/docs` for the API, `/health` for liveness.
