@@ -15,6 +15,8 @@
 
 > **Live:** [`https://memory.43.106.13.19.sslip.io`](https://memory.43.106.13.19.sslip.io) — open the URL for the memory explorer (recall + self-audit + a P&L / pipeline context panel), `/docs` for the API, `/health` for liveness.
 
+> **Judges:** [`docs/JUDGE-GUIDE.md`](docs/JUDGE-GUIDE.md) is a 2-minute click path — see a cross-session contradiction recalled *and resolved* in ~60 seconds.
+
 ## What it is
 
 Archon MemoryAgent gives a small business's financial-intelligence pipeline a **memory**.
@@ -188,6 +190,8 @@ consistency(scope):                 ── the agent audits its OWN memory
 ## Architecture
 
 The **MemoryAgent is the centre** (recall + self-audit). The document-ingestion **pipeline is the supporting upstream** that *produces* the memories the agent remembers.
+
+In standard-pattern terms this is three well-understood pieces, not a novel framework: an **agent** (the recall/RAG loop over persistent memory), **MCP** in its canonical role as the coordination + context-sharing standard that lets any external client or agent read and write that memory through one typed tool surface, and a deterministic **self-audit workflow** the agent runs over its *own* stored state to flag contradictions and dangling references. The pattern choice is deliberate: memory is exposed via MCP (an interoperability standard) rather than a bespoke protocol, and the consistency check is a plain deterministic workflow rather than an LLM judging itself — so its findings are reproducible and testable. Because the Track-4 **Autopilot** agent consumes this same memory foundation and both agents expose MCP, an external orchestrator could compose them over that shared surface — the system is **A2A-ready via MCP** without shipping speculative multi-agent debate machinery it doesn't yet need.
 
 ```mermaid
 flowchart TB
@@ -411,11 +415,13 @@ Connect an MCP client (e.g. Claude Desktop `claude_desktop_config.json`) over st
 }
 ```
 
-For a **remote** MCP client against the live Alibaba Cloud box, the operator redeploys the container with `MCP_TRANSPORT=http` (the live `43.106.13.19:9000` currently serves the Fastify HTTP API; the MCP HTTP transport comes up on the configured port after that redeploy) and the client points at the Streamable HTTP endpoint:
+**Remote clients.** stdio is the standard MCP transport (what Claude Desktop uses, above). The same server also speaks **Streamable HTTP** for a remote client: start it with `MCP_TRANSPORT=http` (default port `9100`, endpoint `/mcp`) and point the client at that endpoint:
 
 ```json
-{ "mcpServers": { "archon-memoryagent": { "url": "http://43.106.13.19:9100/mcp" } } }
+{ "mcpServers": { "archon-memoryagent": { "url": "http://<host>:9100/mcp" } } }
 ```
+
+(The public Alibaba Cloud box serves the REST API + memory explorer on `:9000`; run the container with `MCP_TRANSPORT=http` to expose the MCP HTTP transport as well.)
 
 ### 2. Custom-skills layer for qwen-plus ([`src/skills/loop.ts`](./src/skills/loop.ts))
 
