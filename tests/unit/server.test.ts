@@ -101,6 +101,85 @@ test("makeDailyLimiter: allows N takes then blocks, resets on a new UTC day", ()
   assert.equal(take().ok, true); // counter reset
 });
 
+test("makeDailyLimiter: buckets independently per key (per-IP isolation)", () => {
+  const day = "2026-07-06T10:00:00Z";
+  const take = makeDailyLimiter(2, () => new Date(day));
+  // IP a exhausts its own bucket…
+  assert.equal(take("1.1.1.1").ok, true);
+  assert.equal(take("1.1.1.1").ok, true);
+  assert.equal(take("1.1.1.1").ok, false); // a is blocked
+  // …but IP b still has a fresh, untouched bucket.
+  assert.equal(take("2.2.2.2").ok, true);
+  assert.equal(take("2.2.2.2").ok, true);
+  assert.equal(take("2.2.2.2").ok, false);
+  // The default key is a distinct shared bucket, untouched by either IP.
+  assert.equal(take().ok, true);
+});
+
+test("POST /ingest/documents: per-IP + global backstop both meter, per-IP is isolated", async () => {
+  // A fresh server with tiny caps proves the two-tier guard end to end over the
+  // real route (no DB is reached — the 429 fires before the pipeline runs).
+  const prevIp = process.env.INGEST_DAILY_LIMIT;
+  const prevGlobal = process.env.INGEST_DAILY_LIMIT_GLOBAL;
+  process.env.INGEST_DAILY_LIMIT = "1"; // 1 ingest per IP
+  process.env.INGEST_DAILY_LIMIT_GLOBAL = "10"; // generous global backstop
+  // Re-import with the fresh env (module reads the caps at import time). The
+  // query string busts the ESM cache; a variable specifier keeps tsc from
+  // statically resolving the (intentionally cache-busting) path.
+  const perIpSpecifier = "../../src/server.js?perip=1";
+  const { buildServer: build } = await import(perIpSpecifier);
+  const local = await build();
+  await local.ready();
+  try {
+    const doc = { documents: [{ doc_id: "d1", source_kind: "text", content: "x", company: "C", period: "2026-01" }] };
+    const hdrA = { "x-forwarded-for": "9.9.9.9" };
+    const hdrB = { "x-forwarded-for": "8.8.8.8" };
+    // IP A: first ingest is allowed past the guard (may 500 on no DB — that is the
+    // point past the limiter), second is 429.
+    const a1 = await local.inject({ method: "POST", url: "/ingest/documents", headers: hdrA, payload: doc });
+    assert.notEqual(a1.statusCode, 429, "IP A first ingest must pass the per-IP guard");
+    const a2 = await local.inject({ method: "POST", url: "/ingest/documents", headers: hdrA, payload: doc });
+    assert.equal(a2.statusCode, 429, "IP A second ingest must be blocked by the per-IP cap");
+    // IP B is a different bucket → its first ingest still passes the per-IP guard.
+    const b1 = await local.inject({ method: "POST", url: "/ingest/documents", headers: hdrB, payload: doc });
+    assert.notEqual(b1.statusCode, 429, "IP B has its own per-IP bucket");
+  } finally {
+    await local.close();
+    if (prevIp === undefined) delete process.env.INGEST_DAILY_LIMIT;
+    else process.env.INGEST_DAILY_LIMIT = prevIp;
+    if (prevGlobal === undefined) delete process.env.INGEST_DAILY_LIMIT_GLOBAL;
+    else process.env.INGEST_DAILY_LIMIT_GLOBAL = prevGlobal;
+  }
+});
+
+test("POST /ingest/documents: global backstop blocks once total spend is exhausted, across IPs", async () => {
+  const prevIp = process.env.INGEST_DAILY_LIMIT;
+  const prevGlobal = process.env.INGEST_DAILY_LIMIT_GLOBAL;
+  process.env.INGEST_DAILY_LIMIT = "100"; // per-IP is not the binding tier here
+  process.env.INGEST_DAILY_LIMIT_GLOBAL = "2"; // total budget of 2 across all IPs
+  const globalSpecifier = "../../src/server.js?global=1";
+  const { buildServer: build } = await import(globalSpecifier);
+  const local = await build();
+  await local.ready();
+  try {
+    const doc = { documents: [{ doc_id: "d1", source_kind: "text", content: "x", company: "C", period: "2026-01" }] };
+    // Two different IPs consume the global budget of 2…
+    const r1 = await local.inject({ method: "POST", url: "/ingest/documents", headers: { "x-forwarded-for": "1.0.0.1" }, payload: doc });
+    assert.notEqual(r1.statusCode, 429);
+    const r2 = await local.inject({ method: "POST", url: "/ingest/documents", headers: { "x-forwarded-for": "1.0.0.2" }, payload: doc });
+    assert.notEqual(r2.statusCode, 429);
+    // …a third IP, still under its own per-IP cap, is stopped by the global tier.
+    const r3 = await local.inject({ method: "POST", url: "/ingest/documents", headers: { "x-forwarded-for": "1.0.0.3" }, payload: doc });
+    assert.equal(r3.statusCode, 429, "global backstop must block once total budget is spent");
+  } finally {
+    await local.close();
+    if (prevIp === undefined) delete process.env.INGEST_DAILY_LIMIT;
+    else process.env.INGEST_DAILY_LIMIT = prevIp;
+    if (prevGlobal === undefined) delete process.env.INGEST_DAILY_LIMIT_GLOBAL;
+    else process.env.INGEST_DAILY_LIMIT_GLOBAL = prevGlobal;
+  }
+});
+
 test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
   const res = await app.inject({ method: "GET", url: "/" });
   assert.equal(res.statusCode, 200);

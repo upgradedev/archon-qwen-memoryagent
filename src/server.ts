@@ -56,17 +56,36 @@ const errorResponse = {
 
 // Per-UTC-day rate limit for the document-ingestion route. The live demo is
 // intentionally OPEN (no login) so judges can test it end to end; the only path
-// that spends Qwen vision-model calls is /ingest/documents, so it is capped at
-// INGEST_DAILY_LIMIT uploads/day (default 10) to protect the API budget. The
-// counter is per-process and resets at 00:00 UTC. Exported + pure for unit tests.
-export const INGEST_DAILY_LIMIT = Number(process.env.INGEST_DAILY_LIMIT ?? 10);
+// that spends Qwen vision-model calls is /ingest/documents, so it is metered to
+// protect the API budget. Two tiers, both reset at 00:00 UTC:
+//
+//   INGEST_DAILY_LIMIT         PER-IP cap (default 100). Generous headroom so a
+//                              judge never hits 429 on their first ingest, while
+//                              a single abusive client is still bounded.
+//   INGEST_DAILY_LIMIT_GLOBAL  hard TOTAL cap across all IPs (default 500). The
+//                              real Qwen-spend ceiling — per-IP alone has none.
+//
+// A request must pass BOTH tiers. The default was raised from a global 10 to a
+// per-IP 100 so the judging window is comfortable; the global backstop keeps
+// total spend bounded even under many distinct IPs. Per-IP bucketing is real in
+// production because the server trusts the fronting proxy's X-Forwarded-For
+// (see `trustProxy` below); where no proxy forwards it, every request shares one
+// bucket and the behavior degrades safely to exactly the old single-cap semantics.
+// Exported + pure for unit tests.
+export const INGEST_DAILY_LIMIT = Number(process.env.INGEST_DAILY_LIMIT ?? 100);
+export const INGEST_DAILY_LIMIT_GLOBAL = Number(process.env.INGEST_DAILY_LIMIT_GLOBAL ?? 500);
+
+// A keyed per-UTC-day counter. `take(key)` buckets independently per key (the
+// caller passes the client IP for per-IP metering; the default key "global"
+// gives a single shared counter). Pure + injectable clock for unit tests.
 export function makeDailyLimiter(limit: number, now: () => Date = () => new Date()) {
-  const state = { day: "", count: 0 };
-  return function take(): { ok: boolean; remaining: number; limit: number } {
+  const buckets = new Map<string, { day: string; count: number }>();
+  return function take(key: string = "global"): { ok: boolean; remaining: number; limit: number } {
     const today = now().toISOString().slice(0, 10); // UTC calendar day
-    if (state.day !== today) {
-      state.day = today;
-      state.count = 0;
+    let state = buckets.get(key);
+    if (!state || state.day !== today) {
+      state = { day: today, count: 0 };
+      buckets.set(key, state);
     }
     if (state.count >= limit) return { ok: false, remaining: 0, limit };
     state.count += 1;
@@ -85,7 +104,12 @@ export interface ServerDeps {
 }
 
 export async function buildServer(deps: ServerDeps = {}) {
-  const app = Fastify({ logger: true });
+  // `trustProxy` — the live box terminates TLS at a fronting reverse proxy (the
+  // public HTTPS URL fronts the container's plain :9000), so the client address
+  // arrives in X-Forwarded-For. Trusting it makes `req.ip` the real client IP,
+  // which is what the per-IP ingest limiter buckets on. With no proxy (local
+  // dev), req.ip is just the socket address — the limiter still works, per host.
+  const app = Fastify({ logger: true, trustProxy: true });
 
   // CORS — lets a browser dashboard (e.g. the OSS static site) call this API
   // cross-origin. Default reflects any origin (a demo memory service with no
@@ -139,7 +163,9 @@ export async function buildServer(deps: ServerDeps = {}) {
   const narrator = deps.narrator ?? defaultNarrator();
   const store = deps.store ?? new PgVectorStore();
   const agent = new MemoryAgent(embedder, store, narrator);
+  // Per-IP tier (keyed by req.ip) + a global backstop tier (shared "global" key).
   const ingestBudget = makeDailyLimiter(INGEST_DAILY_LIMIT);
+  const ingestBudgetGlobal = makeDailyLimiter(INGEST_DAILY_LIMIT_GLOBAL);
 
   app.get(
     "/health",
@@ -291,8 +317,12 @@ export async function buildServer(deps: ServerDeps = {}) {
       if (!Array.isArray(documents) || documents.length === 0) {
         return reply.code(400).send({ error: "body.documents (a non-empty array) is required" });
       }
-      // Budget guard — protects the shared Qwen API key on the open demo.
-      const budget = ingestBudget();
+      // Budget guard — protects the shared Qwen API key on the open demo. The
+      // per-IP tier bounds a single client; the global tier bounds total spend.
+      // The request must pass both. Check per-IP first so a blocked client never
+      // consumes a slot from the shared global backstop.
+      const perIp = ingestBudget(req.ip);
+      const budget = perIp.ok ? ingestBudgetGlobal() : perIp;
       if (!budget.ok) {
         return reply
           .code(429)
