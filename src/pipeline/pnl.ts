@@ -38,10 +38,18 @@ export interface PnlReport {
   purchases_total: number;
   purchases: Array<{ vendor: string; invoice_number: string; amount: number; date: string }>;
   
+  // Sales & Revenue
+  revenue_total: number;
+  sales: Array<{ customer: string; invoice_number: string; amount: number; date: string }>;
+  
   // Combined P&L totals
   total_expenses: number; // employer_cost_total + purchases_total
   net_cash_outflow: number; // cash_out_total + purchases_total
   
+  // Profitability
+  net_profit: number; // revenue_total - total_expenses
+  net_profit_margin_pct: number; // (net_profit / revenue_total) * 100
+
   by_company: CompanyPnl[];
   top_employees: EmployeePnl[];
 }
@@ -90,8 +98,12 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
       event.employee_count > 0 ? round(event.employer_cost_total / event.employee_count) : 0,
     purchases_total: 0,
     purchases: [],
+    revenue_total: 0,
+    sales: [],
     total_expenses: round(event.employer_cost_total),
     net_cash_outflow: round(cash_out_total),
+    net_profit: -round(event.employer_cost_total),
+    net_profit_margin_pct: 0,
     by_company: [
       {
         company: event.company,
@@ -138,6 +150,10 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
     employer_ss_total += num(meta.employer_social_security_total) || num(meta.employer_cost_total) - num(meta.gross_total);
   }
 
+  // Filter invoices into sales (revenue) and purchases (expenses)
+  const purchaseInvoices = invoices.filter((m) => !m.metadata || m.metadata.type !== "sales");
+  const salesInvoices = invoices.filter((m) => m.metadata && m.metadata.type === "sales");
+
   let purchases_total = 0;
   const purchasesList: Array<{ vendor: string; invoice_number: string; amount: number; date: string }> = [];
   const byKey = new Map<string, CompanyPnl>();
@@ -163,14 +179,14 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
     byKey.set(key, prev);
   }
 
-  // Process invoices
-  for (const m of invoices) {
+  // Process purchases
+  for (const m of purchaseInvoices) {
     const meta = m.metadata!;
     const amt = num(meta.total);
     purchases_total += amt;
     
     const vendorName = String(meta.vendor || m.company || "Unknown");
-    const invNumber = String(meta.vendor_ref || "None");
+    const invNumber = String(meta.vendor_ref || meta.invoice_number || "None");
     const invDate = String(meta.invoice_date || "");
 
     purchasesList.push({
@@ -195,7 +211,30 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
     byKey.set(key, prev);
   }
 
+  // Process sales (revenue)
+  let revenue_total = 0;
+  const salesList: Array<{ customer: string; invoice_number: string; amount: number; date: string }> = [];
+  for (const m of salesInvoices) {
+    const meta = m.metadata!;
+    const amt = num(meta.total);
+    revenue_total += amt;
+
+    const customerName = String(meta.customer || m.company || "Customer");
+    const invNumber = String(meta.invoice_number || "None");
+    const invDate = String(meta.invoice_date || "");
+
+    salesList.push({
+      customer: customerName,
+      invoice_number: invNumber,
+      amount: amt,
+      date: invDate
+    });
+  }
+
   const off_bank_cost = employer_cost_total - cash_out_total;
+  const total_expenses = employer_cost_total + purchases_total;
+  const net_profit = revenue_total - total_expenses;
+  const net_profit_margin_pct = revenue_total > 0 ? (net_profit / revenue_total) * 100 : 0;
 
   return {
     events: summaries.length + invoices.length,
@@ -212,8 +251,14 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
     
     purchases_total: round(purchases_total),
     purchases: purchasesList,
-    total_expenses: round(employer_cost_total + purchases_total),
+    
+    revenue_total: round(revenue_total),
+    sales: salesList,
+    
+    total_expenses: round(total_expenses),
     net_cash_outflow: round(cash_out_total + purchases_total),
+    net_profit: round(net_profit),
+    net_profit_margin_pct: round(net_profit_margin_pct),
     
     by_company: [...byKey.values()].map((c) => ({
       ...c,

@@ -385,28 +385,59 @@
         const box = $('pnl'); box.innerHTML = '';
         if (!p.events) { box.appendChild(el('div', { class: 'empty', text: 'Run the demo to compute a P&L.' })); return; }
         
-        // Render 3 top-level KPIs
+        // Render 3 top-level P&L KPIs
+        const netProfitColor = p.net_profit >= 0 ? 'var(--green-hi)' : 'var(--red)';
         const kpis = el('div', { class: 'kpis' }, [
           el('div', { class: 'kpi' }, [
-            el('div', { class: 'k', text: 'Total Workforce Cost' }), 
-            el('div', { class: 'v accent', text: money(p.employer_cost_total) })
+            el('div', { class: 'k', text: 'Total Revenue (Sales)' }), 
+            el('div', { class: 'v', style: 'color: var(--green-hi);', text: money(p.revenue_total) })
           ]),
           el('div', { class: 'kpi' }, [
-            el('div', { class: 'k', text: 'Net Payroll (Bank Outflow)' }), 
-            el('div', { class: 'v', text: money(p.cash_out_total) })
+            el('div', { class: 'k', text: 'Total Operating Expenses' }), 
+            el('div', { class: 'v', style: 'color: var(--amber);', text: money(p.total_expenses) })
           ]),
           el('div', { class: 'kpi' }, [
-            el('div', { class: 'k', text: 'Taxes & Social Security Contributions' }), 
-            el('div', { class: 'v amber', text: money(p.off_bank_cost) })
+            el('div', { class: 'k', text: 'Net Profit / Loss' }), 
+            el('div', { class: 'v', style: 'color: ' + netProfitColor + ';', text: money(p.net_profit) })
           ]),
         ]);
         box.appendChild(kpis);
 
+        // Section: Revenue & Sales Breakdown
+        box.appendChild(el('h3', { text: 'Revenue & Sales Breakdown', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
+        const revTable = el('table', { style: 'width: 100%; margin-top: 8px; margin-bottom: 20px;' }, [
+          el('tr', {}, [
+            el('th', { text: 'Customer / Counterparty', style: 'text-align: left;' }),
+            el('th', { text: 'Invoice Ref', style: 'text-align: left;' }),
+            el('th', { text: 'Date', style: 'text-align: left;' }),
+            el('th', { text: 'Amount', class: 'num' })
+          ])
+        ]);
+        if ((p.sales || []).length) {
+          p.sales.forEach((s) => {
+            revTable.appendChild(el('tr', {}, [
+              el('td', { text: s.customer }),
+              el('td', { text: s.invoice_number }),
+              el('td', { text: s.date }),
+              el('td', { class: 'num', text: money(s.amount) })
+            ]));
+          });
+        } else {
+          revTable.appendChild(el('tr', {}, [
+            el('td', { colspan: 4, text: 'No sales records found.', style: 'text-align: center; color: var(--muted); padding: 12px;' })
+          ]));
+        }
+        revTable.appendChild(el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
+          el('td', { text: 'Total Operating Revenue', colspan: 3 }),
+          el('td', { class: 'num', text: money(p.revenue_total) })
+        ]));
+        box.appendChild(revTable);
+
         // Section: Workforce Payroll Expenses Breakdown
-        box.appendChild(el('h3', { text: 'Workforce & Payroll Breakdown', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
+        box.appendChild(el('h3', { text: 'Operating Expenses (OPEX) — Workforce Payroll', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
         const payTable = el('table', { style: 'width: 100%; margin-top: 8px; margin-bottom: 20px;' }, [
           el('tr', {}, [
-            el('th', { text: 'Category', style: 'text-align: left;' }),
+            el('th', { text: 'Expense Category', style: 'text-align: left;' }),
             el('th', { text: 'Amount', class: 'num' })
           ]),
           el('tr', {}, [
@@ -418,23 +449,23 @@
             el('td', { class: 'num', text: money(p.employer_social_security_total) })
           ]),
           el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
-            el('td', { text: 'Total Payroll Cost (OPEX)' }),
+            el('td', { text: 'Total Payroll Expenses' }),
             el('td', { class: 'num', text: money(p.employer_cost_total) })
           ])
         ]);
         box.appendChild(payTable);
 
         // Section: Vendor Purchases & Expenses Breakdown
+        box.appendChild(el('h3', { text: 'Operating Expenses (OPEX) — Vendor Purchases', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
+        const purTable = el('table', { style: 'width: 100%; margin-top: 8px; margin-bottom: 20px;' }, [
+          el('tr', {}, [
+            el('th', { text: 'Supplier / Vendor', style: 'text-align: left;' }),
+            el('th', { text: 'Invoice Ref', style: 'text-align: left;' }),
+            el('th', { text: 'Date', style: 'text-align: left;' }),
+            el('th', { text: 'Amount', class: 'num' })
+          ])
+        ]);
         if ((p.purchases || []).length) {
-          box.appendChild(el('h3', { text: 'Vendor Purchases & Expenses Breakdown', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
-          const purTable = el('table', { style: 'width: 100%; margin-top: 8px; margin-bottom: 20px;' }, [
-            el('tr', {}, [
-              el('th', { text: 'Supplier / Vendor', style: 'text-align: left;' }),
-              el('th', { text: 'Invoice Ref', style: 'text-align: left;' }),
-              el('th', { text: 'Date', style: 'text-align: left;' }),
-              el('th', { text: 'Amount', class: 'num' })
-            ])
-          ]);
           p.purchases.forEach((c) => {
             purTable.appendChild(el('tr', {}, [
               el('td', { text: c.vendor }),
@@ -443,15 +474,19 @@
               el('td', { class: 'num', text: money(c.amount) })
             ]));
           });
-          purTable.appendChild(el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
-            el('td', { text: 'Total Purchases / OPEX', colspan: 3 }),
-            el('td', { class: 'num', text: money(p.purchases_total) })
+        } else {
+          purTable.appendChild(el('tr', {}, [
+            el('td', { colspan: 4, text: 'No vendor purchase records found.', style: 'text-align: center; color: var(--muted); padding: 12px;' })
           ]));
-          box.appendChild(purTable);
         }
+        purTable.appendChild(el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
+          el('td', { text: 'Total Vendor Purchases', colspan: 3 }),
+          el('td', { class: 'num', text: money(p.purchases_total) })
+        ]));
+        box.appendChild(purTable);
 
         // Section: P&L Summary & Financial Performance
-        box.appendChild(el('h3', { text: 'Combined Financial Summary', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
+        box.appendChild(el('h3', { text: 'Financial Performance Summary', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
         const summaryTable = el('table', { style: 'width: 100%; margin-top: 8px;' }, [
           el('tr', {}, [
             el('th', { text: 'Financial Metric', style: 'text-align: left;' }),
@@ -468,6 +503,10 @@
           el('tr', {}, [
             el('td', { text: 'Accrued Taxes & Outstanding Contributions' }),
             el('td', { class: 'num', text: money(p.off_bank_cost) })
+          ]),
+          el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
+            el('td', { text: 'Net Operating Profit Margin' }),
+            el('td', { class: 'num', text: (p.net_profit_margin_pct || 0).toFixed(1) + '%' })
           ])
         ]);
         box.appendChild(summaryTable);
@@ -480,12 +519,29 @@
         const r = await api('GET', '/memory/list?limit=' + recordsLimit);
         const box = $('records'); box.innerHTML = '';
         if (!r.items || !r.items.length) { box.appendChild(el('div', { class: 'empty', text: 'No records yet.' })); return; }
-        r.items.forEach((m) => box.appendChild(el('div', { class: 'rec-row' }, [
-          el('span', { class: 'badge', text: m.kind }),
-          m.company ? el('span', { class: 'rec-co', text: m.company }) : el('span', {}),
-          el('span', { class: 'txt', text: m.snippet || '' }),
-          el('span', { class: 'when', text: (m.createdAt || '').slice(0, 10) }),
-        ])));
+        r.items.forEach((m) => {
+          const ts = m.createdAt ? m.createdAt.slice(0, 10) : '';
+          let counterparty = m.company || "Unknown";
+          if (m.kind === 'invoice' && m.metadata) {
+            if (m.metadata.type === 'sales') {
+              counterparty = m.metadata.customer || counterparty;
+            } else {
+              counterparty = m.metadata.vendor || counterparty;
+            }
+          }
+          box.appendChild(el('div', { class: 'rec-row', style: 'display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13px;' }, [
+            el('div', { style: 'display: flex; justify-content: space-between; align-items: center; width: 100%;' }, [
+              el('div', { style: 'display: flex; gap: 8px; align-items: center;' }, [
+                el('span', { class: 'badge', text: m.kind }),
+                el('span', { class: 'rec-co', text: counterparty })
+              ]),
+              el('span', { class: 'when', text: ts })
+            ]),
+            el('div', { class: 'txt', style: 'width: 100%; color: var(--text); line-height: 1.4;' }, [
+              el('span', { text: m.snippet || '' })
+            ])
+          ]));
+        });
       } catch (_) { /* leave empty */ }
     }
 

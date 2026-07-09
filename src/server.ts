@@ -33,7 +33,7 @@ import { aggregatePnl } from "./pipeline/pnl.js";
 import type { RawDocument } from "./pipeline/models.js";
 import { Extractor } from "./pipeline/extractor.js";
 import { FakeExtractionClient } from "./pipeline/vision.js";
-import { DEMO_DOCUMENTS, DEMO_CONTRADICTION, DEMO_COMPANY, DEMO_INVOICE_RECORD } from "./demo-data.js";
+import { DEMO_DOCUMENTS, DEMO_CONTRADICTION, DEMO_COMPANY, DEMO_INVOICE_RECORD, DEMO_SALES } from "./demo-data.js";
 
 const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
 
@@ -461,8 +461,16 @@ export async function buildServer(deps: ServerDeps = {}) {
           metadata: { record: DEMO_INVOICE_RECORD, amount: c.amount },
         });
       }
+      // Seed sales invoices (revenue)
+      for (const s of DEMO_SALES) {
+        await agent.remember("invoice", s.content, {
+          company: DEMO_COMPANY,
+          period: "2026-05",
+          metadata: s.metadata,
+        });
+      }
       return {
-        seeded: out.memoryIds.length + DEMO_CONTRADICTION.length,
+        seeded: out.memoryIds.length + DEMO_CONTRADICTION.length + DEMO_SALES.length,
         company: DEMO_COMPANY,
         events: out.events.length,
       };

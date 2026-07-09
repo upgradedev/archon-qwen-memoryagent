@@ -53,6 +53,28 @@ export const DEMO_CONTRADICTION: Array<{ content: string; amount: number }> = [
   { content: `Purchase invoice INV-5521 at ${DEMO_COMPANY} (2026-05): a later entry records the same invoice at 8,900.`, amount: 8900 },
 ];
 export const DEMO_INVOICE_RECORD = "INV-5521";
+export const DEMO_SALES: Array<{ content: string; metadata: Record<string, any> }> = [
+  {
+    content: "Sales invoice INV-SALES-101 issued to Chop Suey Chinese for EUR 28500.00 dated 2026-05-10.",
+    metadata: {
+      invoice_number: "INV-SALES-101",
+      customer: "Chop Suey Chinese",
+      total: 28500,
+      invoice_date: "2026-05-10",
+      type: "sales"
+    }
+  },
+  {
+    content: "Sales invoice INV-SALES-102 issued to Alfreds Futterkiste for EUR 14200.00 dated 2026-05-20.",
+    metadata: {
+      invoice_number: "INV-SALES-102",
+      customer: "Alfreds Futterkiste",
+      total: 14200,
+      invoice_date: "2026-05-20",
+      type: "sales"
+    }
+  }
+];
 
 // ── Template questions (the UI chips) ─────────────────────────────────────────
 // SINGLE SOURCE OF TRUTH for the "try a question" chips the explorer renders and
