@@ -122,8 +122,8 @@ export class PgVectorStore implements MemoryStore {
       filters.push(`kind = $${params.length}`);
     }
     if (opts.company) {
-      params.push(opts.company);
-      filters.push(`company = $${params.length}`);
+      params.push(`%${opts.company}%`);
+      filters.push(`company ILIKE $${params.length}`);
     }
     return filters.length ? `WHERE ${filters.join(" AND ")}` : "";
   }
@@ -285,8 +285,8 @@ export class PgVectorStore implements MemoryStore {
     const params: unknown[] = [];
     const filters = ["superseded_at IS NULL"];
     if (scope.company) {
-      params.push(scope.company);
-      filters.push(`company = $${params.length}`);
+      params.push(`%${scope.company}%`);
+      filters.push(`company ILIKE $${params.length}`);
     }
     if (scope.period) {
       params.push(scope.period);
@@ -402,7 +402,7 @@ export class InMemoryStore implements MemoryStore {
     return this.rows
       .filter((r) => (opts.includeSuperseded ? true : r.supersededAt === null))
       .filter((r) => (opts.kind ? r.kind === opts.kind : true))
-      .filter((r) => (opts.company ? r.company === opts.company : true));
+      .filter((r) => (opts.company ? r.company.toLowerCase().includes(opts.company.toLowerCase()) : true));
   }
 
   async recall(queryVec: number[], opts: RecallOptions = {}): Promise<RecallHit[]> {
@@ -439,7 +439,7 @@ export class InMemoryStore implements MemoryStore {
   }
 
   async count(company?: string): Promise<number> {
-    return this.rows.filter((r) => (company ? r.company === company : true)).length;
+    return this.rows.filter((r) => (company ? r.company.toLowerCase().includes(company.toLowerCase()) : true)).length;
   }
 
   async clear(): Promise<void> {
@@ -448,7 +448,7 @@ export class InMemoryStore implements MemoryStore {
 
   async listForConsolidation(company?: string): Promise<ConsolidatableMemory[]> {
     return this.rows
-      .filter((r) => r.supersededAt === null && (company ? r.company === company : true))
+      .filter((r) => r.supersededAt === null && (company ? r.company.toLowerCase().includes(company.toLowerCase()) : true))
       .map((r) => ({
         id: r.id,
         kind: r.kind,
@@ -475,7 +475,7 @@ export class InMemoryStore implements MemoryStore {
 
   async listForForget(company?: string): Promise<ForgetCandidate[]> {
     return this.rows
-      .filter((r) => (company ? r.company === company : true))
+      .filter((r) => (company ? r.company.toLowerCase().includes(company.toLowerCase()) : true))
       .map((r) => ({
         id: r.id,
         importance: r.importance,
@@ -496,7 +496,7 @@ export class InMemoryStore implements MemoryStore {
   ): Promise<AuditMemory[]> {
     return this.rows
       .filter((r) => r.supersededAt === null)
-      .filter((r) => (scope.company ? r.company === scope.company : true))
+      .filter((r) => (scope.company ? r.company.toLowerCase().includes(scope.company.toLowerCase()) : true))
       .filter((r) => (scope.period ? r.period === scope.period : true))
       .filter((r) => (scope.kind ? r.kind === scope.kind : true))
       .map((r) => ({
