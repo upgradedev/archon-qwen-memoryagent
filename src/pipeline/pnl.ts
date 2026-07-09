@@ -23,18 +23,25 @@ export interface EmployeePnl {
 export interface PnlReport {
   events: number;
   employee_count: number;
-  // P&L (PnLAgent): the accurate payroll expense.
+  // Payroll expenses
   employer_cost_total: number;
   gross_total: number;
   employer_social_security_total: number;
   employee_social_security_total: number;
   tax_withheld_total: number;
-  // Cash flow (CashFlowAgent): the real cash that left the account.
-  cash_out_total: number; // == bank_net_total
-  // The insight: how much the bank transfer UNDERSTATES the true cost.
-  off_bank_cost: number; // employer_cost_total - cash_out_total
-  cost_gap_pct: number; // employer-contribution wedge, over net
+  cash_out_total: number; // net salaries paid
+  off_bank_cost: number;  // employer taxes/ss
+  cost_gap_pct: number;
   avg_cost_per_employee: number;
+  
+  // Vendor purchases & expenses
+  purchases_total: number;
+  purchases: Array<{ vendor: string; invoice_number: string; amount: number; date: string }>;
+  
+  // Combined P&L totals
+  total_expenses: number; // employer_cost_total + purchases_total
+  net_cash_outflow: number; // cash_out_total + purchases_total
+  
   by_company: CompanyPnl[];
   top_employees: EmployeePnl[];
 }
@@ -81,6 +88,10 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
     cost_gap_pct: round(cost_gap_pct),
     avg_cost_per_employee:
       event.employee_count > 0 ? round(event.employer_cost_total / event.employee_count) : 0,
+    purchases_total: 0,
+    purchases: [],
+    total_expenses: round(event.employer_cost_total),
+    net_cash_outflow: round(cash_out_total),
     by_company: [
       {
         company: event.company,
@@ -95,10 +106,9 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
   };
 }
 
-// A stored event-summary memory as seen by the audit read (store.listForAudit):
-// the per-event summary carries employer_cost_total in its metadata; the
-// per-employee lines do not (so they are naturally excluded from the P&L sum).
+// A stored event-summary memory as seen by the audit read (store.listForAudit)
 export interface PnlSourceMemory {
+  kind: string;
   company: string;
   period: string | null;
   metadata: Record<string, unknown> | null;
@@ -108,14 +118,11 @@ function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
-// Aggregate a P&L across the agent's STORED memories — this is what GET /pnl
-// serves: a P&L view computed over the pipeline-generated memories the agent
-// holds. Only event-summary memories (metadata carries employer_cost_total) are
-// summed; per-employee lines are ignored.
+// Aggregate a P&L across the agent's STORED memories
 export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
-  const summaries = memories.filter((m) => m.metadata && m.metadata.employer_cost_total != null);
+  const summaries = memories.filter((m) => m.kind === "payroll_event" && m.metadata && m.metadata.employer_cost_total != null);
+  const invoices = memories.filter((m) => m.kind === "invoice" && m.metadata && m.metadata.vendor !== "__smoke__");
 
-  const byKey = new Map<string, CompanyPnl>();
   let employer_cost_total = 0;
   let gross_total = 0;
   let cash_out_total = 0;
@@ -124,17 +131,23 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
 
   for (const m of summaries) {
     const meta = m.metadata!;
-    const cost = num(meta.employer_cost_total);
-    const gross = num(meta.gross_total);
-    const cash = num(meta.bank_net_total);
-    const emp = num(meta.employee_count);
-    employer_cost_total += cost;
-    gross_total += gross;
-    cash_out_total += cash;
-    employer_ss_total += num(meta.employer_social_security_total) || cost - gross;
-    employee_count += emp;
+    employer_cost_total += num(meta.employer_cost_total);
+    gross_total += num(meta.gross_total);
+    cash_out_total += num(meta.bank_net_total);
+    employee_count += num(meta.employee_count);
+    employer_ss_total += num(meta.employer_social_security_total) || num(meta.employer_cost_total) - num(meta.gross_total);
+  }
 
-    const key = `${m.company}::${m.period}`;
+  let purchases_total = 0;
+  const purchasesList: Array<{ vendor: string; invoice_number: string; amount: number; date: string }> = [];
+  const byKey = new Map<string, CompanyPnl>();
+
+  // Process payroll events for byCompany
+  for (const m of summaries) {
+    const meta = m.metadata!;
+    const cost = num(meta.employer_cost_total);
+    const cash = num(meta.bank_net_total);
+    const key = `${m.company}::${m.period || ''}`;
     const prev = byKey.get(key) ?? {
       company: m.company,
       period: m.period,
@@ -146,23 +159,58 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
     prev.employer_cost_total += cost;
     prev.cash_out_total += cash;
     prev.off_bank_cost += cost - cash;
-    prev.employee_count += emp;
+    prev.employee_count += num(meta.employee_count);
+    byKey.set(key, prev);
+  }
+
+  // Process invoices
+  for (const m of invoices) {
+    const meta = m.metadata!;
+    const amt = num(meta.total);
+    purchases_total += amt;
+    purchasesList.push({
+      vendor: meta.vendor || m.company || "Unknown",
+      invoice_number: meta.vendor_ref || "None",
+      amount: amt,
+      date: meta.invoice_date || ""
+    });
+
+    // Also count vendor invoices as expenses for the company
+    const co = meta.vendor || m.company || "Unknown";
+    const key = `${co}::Vendor`;
+    const prev = byKey.get(key) ?? {
+      company: co,
+      period: "Invoices",
+      employer_cost_total: 0,
+      cash_out_total: 0,
+      off_bank_cost: 0,
+      employee_count: 0,
+    };
+    prev.employer_cost_total += amt; // Add to total expenses
+    prev.cash_out_total += amt; // Assume paid or payable
     byKey.set(key, prev);
   }
 
   const off_bank_cost = employer_cost_total - cash_out_total;
+
   return {
-    events: summaries.length,
+    events: summaries.length + invoices.length,
     employee_count,
     employer_cost_total: round(employer_cost_total),
     gross_total: round(gross_total),
     employer_social_security_total: round(employer_ss_total),
-    employee_social_security_total: 0, // not carried on the summary memory
-    tax_withheld_total: 0, // not carried on the summary memory
+    employee_social_security_total: 0,
+    tax_withheld_total: 0,
     cash_out_total: round(cash_out_total),
     off_bank_cost: round(off_bank_cost),
     cost_gap_pct: cash_out_total > 0 ? round((off_bank_cost / cash_out_total) * 100) : 0,
     avg_cost_per_employee: employee_count > 0 ? round(employer_cost_total / employee_count) : 0,
+    
+    purchases_total: round(purchases_total),
+    purchases: purchasesList,
+    total_expenses: round(employer_cost_total + purchases_total),
+    net_cash_outflow: round(cash_out_total + purchases_total),
+    
     by_company: [...byKey.values()].map((c) => ({
       ...c,
       employer_cost_total: round(c.employer_cost_total),

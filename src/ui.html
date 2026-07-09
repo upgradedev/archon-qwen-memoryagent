@@ -107,6 +107,62 @@
     .rec-row .txt { flex: 1; color: var(--text); }
     .rec-row .when { color: var(--muted); font-size: 11px; white-space: nowrap; }
 
+    /* Right drawer panel for Browse memories */
+    #recordsPanel {
+      position: fixed;
+      top: 0;
+      right: -420px; /* Start hidden on the right */
+      width: 400px;
+      height: 100vh;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      box-shadow: -8px 0 30px rgba(0,0,0,.45);
+      z-index: 1000;
+      transition: right .3s ease;
+      display: flex;
+      flex-direction: column;
+      margin: 0;
+      border-radius: 0;
+      padding: 24px;
+    }
+    #recordsPanel.show {
+      right: 0;
+    }
+    #recordsPanel h2 {
+      margin-top: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #recordsPanel .close-btn {
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0 8px;
+    }
+    #records {
+      flex: 1;
+      overflow-y: auto;
+      margin-top: 14px;
+    }
+    /* Backdrop overlay for the drawer */
+    #drawerOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 999;
+      display: none;
+      backdrop-filter: blur(2px);
+    }
+    #drawerOverlay.show {
+      display: block;
+    }
+
     .empty { text-align: center; color: var(--muted); padding: 26px 20px; border: 1px dashed var(--border); border-radius: 10px; }
     .empty b { color: var(--text); }
     #status { color: var(--muted); font-size: 13px; min-height: 18px; }
@@ -187,20 +243,22 @@
     </section>
 
     <!-- SUPPORTING: the pipeline context that produced those memories -->
-    <div class="support-grid">
-      <section class="panel" id="pnlPanel" data-tour="pnl">
-        <h2>P&amp;L — supporting context</h2>
-        <div class="tag">Aggregated over the memories the ingestion pipeline fed (docs → Qwen-VL → fuse → P&amp;L → memory).</div>
-        <div id="pnl"><div class="empty">Run the demo to compute a P&amp;L.</div></div>
-      </section>
-
-      <section class="panel" id="recordsPanel" data-tour="records">
-        <h2>Browse memories</h2>
-        <div class="tag">What the agent actually holds — kind · company · content · when. The raw material recall draws on. <a href="#" id="browseMore">Show more ▾</a></div>
-        <div id="records"><div class="empty">No records yet.</div></div>
-      </section>
-    </div>
+    <section class="panel" id="pnlPanel" data-tour="pnl">
+      <h2>P&amp;L &amp; Expense Breakdown</h2>
+      <div class="tag">Aggregated over the memories the ingestion pipeline fed (docs → Qwen-VL → fuse → P&amp;L → memory).</div>
+      <div id="pnl"><div class="empty">Run the demo to compute a P&amp;L.</div></div>
+    </section>
   </main>
+
+  <div id="drawerOverlay"></div>
+  <section class="panel" id="recordsPanel" data-tour="records">
+    <h2>
+      <span>Browse memories</span>
+      <button class="close-btn" id="closeDrawer" type="button" title="Close panel">&times;</button>
+    </h2>
+    <div class="tag">What the agent actually holds — kind · company · content · when. The raw material recall draws on. <a href="#" id="browseMore">Show more ▾</a></div>
+    <div id="records"><div class="empty">No records yet.</div></div>
+  </section>
 
   <!-- Tour DOM (inert until started) -->
   <div id="tour-overlay"><div id="tour-spot"></div></div>
@@ -326,23 +384,93 @@
         const p = await api('GET', '/pnl');
         const box = $('pnl'); box.innerHTML = '';
         if (!p.events) { box.appendChild(el('div', { class: 'empty', text: 'Run the demo to compute a P&L.' })); return; }
+        
+        // Render 3 top-level KPIs
         const kpis = el('div', { class: 'kpis' }, [
-          el('div', { class: 'kpi' }, [el('div', { class: 'k', text: 'Employer cost' }), el('div', { class: 'v accent', text: money(p.employer_cost_total) })]),
-          el('div', { class: 'kpi' }, [el('div', { class: 'k', text: 'Cash out (bank)' }), el('div', { class: 'v', text: money(p.cash_out_total) })]),
-          el('div', { class: 'kpi' }, [el('div', { class: 'k', text: 'Cost off the bank line' }), el('div', { class: 'v amber', text: money(p.off_bank_cost) })]),
+          el('div', { class: 'kpi' }, [
+            el('div', { class: 'k', text: 'Total Workforce Cost' }), 
+            el('div', { class: 'v accent', text: money(p.employer_cost_total) })
+          ]),
+          el('div', { class: 'kpi' }, [
+            el('div', { class: 'k', text: 'Net Payroll (Bank Outflow)' }), 
+            el('div', { class: 'v', text: money(p.cash_out_total) })
+          ]),
+          el('div', { class: 'kpi' }, [
+            el('div', { class: 'k', text: 'Taxes & Social Security Contributions' }), 
+            el('div', { class: 'v amber', text: money(p.off_bank_cost) })
+          ]),
         ]);
         box.appendChild(kpis);
-        if ((p.by_company || []).length) {
-          const t = el('table');
-          t.appendChild(el('tr', {}, [el('th', { text: 'Company' }), el('th', { text: 'Employer cost' }), el('th', { text: 'Cash out' }), el('th', { text: 'Off-bank' })]));
-          p.by_company.forEach((c) => t.appendChild(el('tr', {}, [
-            el('td', { text: c.company }),
-            el('td', { class: 'num', text: money(c.employer_cost_total) }),
-            el('td', { class: 'num', text: money(c.cash_out_total) }),
-            el('td', { class: 'num', text: money(c.off_bank_cost) }),
-          ])));
-          box.appendChild(t);
+
+        // Section: Workforce Payroll Expenses Breakdown
+        box.appendChild(el('h3', { text: 'Workforce & Payroll Breakdown', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
+        const payTable = el('table', { style: 'width: 100%; margin-top: 8px; margin-bottom: 20px;' }, [
+          el('tr', {}, [
+            el('th', { text: 'Category', style: 'text-align: left;' }),
+            el('th', { text: 'Amount', class: 'num' })
+          ]),
+          el('tr', {}, [
+            el('td', { text: 'Gross Salaries (Payroll Expense)' }),
+            el('td', { class: 'num', text: money(p.gross_total) })
+          ]),
+          el('tr', {}, [
+            el('td', { text: 'Employer Social Security Contributions' }),
+            el('td', { class: 'num', text: money(p.employer_social_security_total) })
+          ]),
+          el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
+            el('td', { text: 'Total Payroll Cost (OPEX)' }),
+            el('td', { class: 'num', text: money(p.employer_cost_total) })
+          ])
+        ]);
+        box.appendChild(payTable);
+
+        // Section: Vendor Purchases & Expenses Breakdown
+        if ((p.purchases || []).length) {
+          box.appendChild(el('h3', { text: 'Vendor Purchases & Expenses Breakdown', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
+          const purTable = el('table', { style: 'width: 100%; margin-top: 8px; margin-bottom: 20px;' }, [
+            el('tr', {}, [
+              el('th', { text: 'Supplier / Vendor', style: 'text-align: left;' }),
+              el('th', { text: 'Invoice Ref', style: 'text-align: left;' }),
+              el('th', { text: 'Date', style: 'text-align: left;' }),
+              el('th', { text: 'Amount', class: 'num' })
+            ])
+          ]);
+          p.purchases.forEach((c) => {
+            purTable.appendChild(el('tr', {}, [
+              el('td', { text: c.vendor }),
+              el('td', { text: c.invoice_number }),
+              el('td', { text: c.date }),
+              el('td', { class: 'num', text: money(c.amount) })
+            ]));
+          });
+          purTable.appendChild(el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
+            el('td', { text: 'Total Purchases / OPEX', colspan: 3 }),
+            el('td', { class: 'num', text: money(p.purchases_total) })
+          ]));
+          box.appendChild(purTable);
         }
+
+        // Section: P&L Summary & Financial Performance
+        box.appendChild(el('h3', { text: 'Combined Financial Summary', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
+        const summaryTable = el('table', { style: 'width: 100%; margin-top: 8px;' }, [
+          el('tr', {}, [
+            el('th', { text: 'Financial Metric', style: 'text-align: left;' }),
+            el('th', { text: 'Total Amount', class: 'num' })
+          ]),
+          el('tr', {}, [
+            el('td', { text: 'Total Operating Expenses (Payroll + Purchases)' }),
+            el('td', { class: 'num', text: money(p.total_expenses) })
+          ]),
+          el('tr', {}, [
+            el('td', { text: 'Net Cash Outflow (Paid Outflow)' }),
+            el('td', { class: 'num', text: money(p.net_cash_outflow) })
+          ]),
+          el('tr', {}, [
+            el('td', { text: 'Accrued Taxes & Outstanding Contributions' }),
+            el('td', { class: 'num', text: money(p.off_bank_cost) })
+          ])
+        ]);
+        box.appendChild(summaryTable);
       } catch (_) { /* leave empty */ }
     }
 
@@ -431,9 +559,16 @@
     async function browseMemories() {
       recordsLimit = Math.max(recordsLimit, 50);
       await loadRecords();
-      $('recordsPanel').scrollIntoView({ block: 'center', behavior: 'smooth' });
+      $('recordsPanel').classList.add('show');
+      $('drawerOverlay').classList.add('show');
+    }
+    function closeMemoriesDrawer() {
+      $('recordsPanel').classList.remove('show');
+      $('drawerOverlay').classList.remove('show');
     }
     $('count').addEventListener('click', browseMemories);
+    $('closeDrawer').addEventListener('click', closeMemoriesDrawer);
+    $('drawerOverlay').addEventListener('click', closeMemoriesDrawer);
     $('browseMore').addEventListener('click', (ev) => { ev.preventDefault(); recordsLimit = Math.min(recordsLimit + 25, 100); loadRecords(); });
 
     // ── Inline guided tour ──────────────────────────────────────────────────────
@@ -448,26 +583,43 @@
     ];
     let tourIdx = 0;
     function positionTour() {
-      const step = TOUR[tourIdx]; const target = document.querySelector(step.sel);
+      const step = TOUR[tourIdx];
+      if (step.sel === '[data-tour="records"]') {
+        $('recordsPanel').classList.add('show');
+        $('drawerOverlay').classList.add('show');
+      } else {
+        $('recordsPanel').classList.remove('show');
+        $('drawerOverlay').classList.remove('show');
+      }
+
+      const target = document.querySelector(step.sel);
       const overlay = $('tour-overlay'), spot = $('tour-spot'), tip = $('tour-tip');
       if (!target) { return endTour(); }
-      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      const r = target.getBoundingClientRect(); const pad = 8;
-      spot.style.left = (r.left - pad) + 'px'; spot.style.top = (r.top - pad) + 'px';
-      spot.style.width = (r.width + pad * 2) + 'px'; spot.style.height = (r.height + pad * 2) + 'px';
-      $('tour-title').textContent = step.title; $('tour-body').textContent = step.body;
-      $('tour-step').textContent = (tourIdx + 1) + ' / ' + TOUR.length;
-      $('tour-back').style.visibility = tourIdx === 0 ? 'hidden' : 'visible';
-      $('tour-next').textContent = tourIdx === TOUR.length - 1 ? 'Done' : 'Next';
-      overlay.style.display = 'block'; tip.style.display = 'block';
-      const belowTop = r.bottom + 14; const tipH = tip.offsetHeight || 150;
-      const top = (belowTop + tipH < window.innerHeight) ? belowTop : Math.max(14, r.top - tipH - 14);
-      const left = Math.min(Math.max(14, r.left), window.innerWidth - (tip.offsetWidth || 320) - 14);
-      tip.style.top = top + 'px'; tip.style.left = left + 'px';
+      
+      if (step.sel !== '[data-tour="records"]') {
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+
+      setTimeout(() => {
+        const r = target.getBoundingClientRect(); const pad = 8;
+        spot.style.left = (r.left - pad) + 'px'; spot.style.top = (r.top - pad) + 'px';
+        spot.style.width = (r.width + pad * 2) + 'px'; spot.style.height = (r.height + pad * 2) + 'px';
+        $('tour-title').textContent = step.title; $('tour-body').textContent = step.body;
+        $('tour-step').textContent = (tourIdx + 1) + ' / ' + TOUR.length;
+        $('tour-back').style.visibility = tourIdx === 0 ? 'hidden' : 'visible';
+        $('tour-next').textContent = tourIdx === TOUR.length - 1 ? 'Done' : 'Next';
+        overlay.style.display = 'block'; tip.style.display = 'block';
+        const belowTop = r.bottom + 14; const tipH = tip.offsetHeight || 150;
+        const top = (belowTop + tipH < window.innerHeight) ? belowTop : Math.max(14, r.top - tipH - 14);
+        const left = Math.min(Math.max(14, r.left), window.innerWidth - (tip.offsetWidth || 320) - 14);
+        tip.style.top = top + 'px'; tip.style.left = left + 'px';
+      }, 50);
     }
     function startTour() { tourIdx = 0; positionTour(); }
     function endTour() {
       $('tour-overlay').style.display = 'none'; $('tour-tip').style.display = 'none';
+      $('recordsPanel').classList.remove('show');
+      $('drawerOverlay').classList.remove('show');
       try { localStorage.setItem('archon_tour_done', '1'); } catch (_) {}
     }
     $('tour-next').addEventListener('click', () => { if (tourIdx >= TOUR.length - 1) return endTour(); tourIdx++; positionTour(); });

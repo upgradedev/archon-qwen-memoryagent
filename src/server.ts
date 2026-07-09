@@ -381,7 +381,7 @@ export async function buildServer(deps: ServerDeps = {}) {
     },
     async (req) => {
       const { company, period } = req.query ?? {};
-      const memories = await store.listForAudit({ company, period, kind: "payroll_event" });
+      const memories = await store.listForAudit({ company, period });
       return aggregatePnl(memories);
     },
   );
