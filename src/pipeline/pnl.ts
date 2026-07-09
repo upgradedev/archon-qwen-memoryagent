@@ -108,7 +108,7 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
 
 // A stored event-summary memory as seen by the audit read (store.listForAudit)
 export interface PnlSourceMemory {
-  kind: string;
+  kind?: string;
   company: string;
   period: string | null;
   metadata: Record<string, unknown> | null;
@@ -120,7 +120,7 @@ function num(v: unknown): number {
 
 // Aggregate a P&L across the agent's STORED memories
 export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
-  const summaries = memories.filter((m) => m.kind === "payroll_event" && m.metadata && m.metadata.employer_cost_total != null);
+  const summaries = memories.filter((m) => (m.kind === "payroll_event" || !m.kind) && m.metadata && m.metadata.employer_cost_total != null);
   const invoices = memories.filter((m) => m.kind === "invoice" && m.metadata && m.metadata.vendor !== "__smoke__");
 
   let employer_cost_total = 0;
@@ -168,18 +168,22 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
     const meta = m.metadata!;
     const amt = num(meta.total);
     purchases_total += amt;
+    
+    const vendorName = String(meta.vendor || m.company || "Unknown");
+    const invNumber = String(meta.vendor_ref || "None");
+    const invDate = String(meta.invoice_date || "");
+
     purchasesList.push({
-      vendor: meta.vendor || m.company || "Unknown",
-      invoice_number: meta.vendor_ref || "None",
+      vendor: vendorName,
+      invoice_number: invNumber,
       amount: amt,
-      date: meta.invoice_date || ""
+      date: invDate
     });
 
     // Also count vendor invoices as expenses for the company
-    const co = meta.vendor || m.company || "Unknown";
-    const key = `${co}::Vendor`;
+    const key = `${vendorName}::Vendor`;
     const prev = byKey.get(key) ?? {
-      company: co,
+      company: vendorName,
       period: "Invoices",
       employer_cost_total: 0,
       cash_out_total: 0,
