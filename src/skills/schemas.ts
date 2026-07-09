@@ -31,6 +31,8 @@ export const MEMORY_KINDS: readonly MemoryKind[] = [
   "payroll_event",
   "validation",
   "insight",
+  "invoice",
+  "action",
 ] as const;
 
 // ── Typed argument contracts (what a caller passes) ──────────────────────────

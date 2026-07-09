@@ -21,7 +21,7 @@ import { rrfFuse, topK, BM25, cosineSimilarity } from "./retrieval.js";
 import type { ConsolidatableMemory, ForgetCandidate } from "./consolidation.js";
 import type { AuditMemory } from "./consistency.js";
 
-export type MemoryKind = "document" | "payroll_event" | "validation" | "insight";
+export type MemoryKind = "document" | "payroll_event" | "validation" | "insight" | "invoice" | "action";
 
 export interface MemoryInput {
   kind: MemoryKind;
