@@ -163,6 +163,9 @@ jobs:
           tests/integration/pipeline-ingest.test.ts
           tests/e2e/cross-session.test.ts
           tests/e2e/templates.test.ts
+          tests/e2e/http-journeys.test.ts
+          tests/e2e/mcp-journeys.test.ts
+          tests/e2e/robustness.test.ts
       - name: Upload lcov coverage report
         if: always()
         uses: actions/upload-artifact@v4
