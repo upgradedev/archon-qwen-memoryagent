@@ -121,13 +121,16 @@ real mechanism on the diverse corpus, not by reverting to a duplicate-heavy one.
 
 **Honesty + reproducibility caveats we own:**
 
-- **Provider substitution.** The intended model was Alibaba's dedicated
+- **Provider substitution & listwise efficiency.** The intended model was Alibaba's dedicated
   `gte-rerank`, but that service returned `AccessDenied` on the hackathon account
   (rerank not activated). So the shipped `Reranker` is an **LLM cross-encoder
   using `qwen-plus`** — the same Model Studio chat model the narrator uses, which
-  *is* accessible: it reads each query/memory pair and returns a joint relevance
-  score. The seam (`src/memory/rerank.ts`) is model-agnostic — swap in a
-  `GteReranker` once the rerank API is enabled; the benchmark path is unchanged.
+  *is* accessible. Crucially, the implementation is **listwise** rather than pairwise:
+  `LlmReranker` (`src/memory/rerank.ts`) packs the entire candidate pool (top-10) into
+  a **single, unified prompt** and scores them listwise. This avoids the cost/latency
+  bottleneck of N pairwise completions, executing in exactly **one** API call. The seam
+  is model-agnostic — swap in a `GteReranker` once the rerank API is enabled; the
+  benchmark path is unchanged.
 - **Cached once, replayed free.** `npm run bench:rerank` calls `qwen-plus` **once**
   per query over the frozen corpus (15 calls, `temperature 0`) and commits the
   scores to `bench/fixtures/rerank.json`. `npm run bench` and CI **replay** those

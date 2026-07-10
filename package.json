@@ -21,6 +21,7 @@
     "bench:consistency": "tsx bench/consistency-run.ts",
     "bench:resolution": "tsx bench/resolution-run.ts",
     "bench:export": "tsx bench/external/export-data.ts",
+    "bench:scale": "tsx bench/scale-stress.ts",
     "bench": "tsx bench/run.ts",
     "start": "tsx src/server.ts",
     "mcp": "tsx src/mcp/server.ts",
