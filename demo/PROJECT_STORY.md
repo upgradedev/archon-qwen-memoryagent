@@ -28,6 +28,67 @@ Three ideas make the memory *strong*, not merely present:
 2. **Memory that audits itself** — a pure function that flags when two of the agent's own memories contradict, and *recommends* which to trust without ever mutating them.
 3. **Honest measurement** — every claim above is backed by a frozen, reproducible benchmark, including a real head-to-head against Mem0.
 
+## System Architecture
+
+Below is the system architecture diagram showing the ingestion pipeline, MemoryAgent core, and Qwen Cloud / Alibaba Cloud integration:
+
+```mermaid
+flowchart TB
+    Agent["AI agent / HTTP caller"]
+    Docs["Raw financial documents<br/>(scanned images · pdf · text)"]
+    MCPClient["MCP client — Claude Desktop / IDE / agent"]
+
+    subgraph ECS["Alibaba Cloud · ECS ap-southeast-1 · docker-compose"]
+        direction TB
+        subgraph API["backend container — Fastify · src/server.ts"]
+            direction LR
+            H["GET /health · /docs · /pnl"]
+            I["POST /ingest · /ingest/documents"]
+            R["POST /recall"]
+            C["POST /consistency"]
+        end
+        subgraph PIPE["Ingestion pipeline — src/pipeline (supporting cast)"]
+            direction LR
+            EX["Extractor<br/>(qwen-vl-max / qwen-plus)"]
+            CL["Classifier"]
+            EL["EventLinker<br/>fuse triplet"]
+            VA["Validator R1–R4"]
+            PN["P&amp;L math"]
+            EX --> CL --> EL --> VA --> PN
+        end
+        subgraph MCPSURF["MCP surface — src/mcp/* + src/skills/*"]
+            direction LR
+            MT["4 MCP tools<br/>recall · ingest · audit · count"]
+            SK["SkillDispatcher (shared)<br/>+ qwen-plus function-calling skills"]
+        end
+        MA["★ MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()<br/>+ self-audit (contradictions · dangling refs)"]
+        DB["pgvector container · PostgreSQL — THE MEMORY<br/>agent_memory(embedding vector(1024)) + HNSW cosine index<br/>recall = ORDER BY embedding &lt;=&gt; $query"]
+    end
+
+    subgraph QWEN["Model Studio / DashScope — Qwen Cloud"]
+        direction TB
+        VL["qwen-vl-max (vision extraction)"]
+        EMB["text-embedding-v4 (1024-d)"]
+        LLM["qwen-plus (RAG narrator · function-calling)"]
+    end
+
+    RDS["Managed ApsaraDB RDS / AnalyticDB for PostgreSQL<br/>same pg-wire code · DATABASE_URL swap"]
+
+    Agent -->|HTTP / JSON| API
+    Docs -->|POST /ingest/documents| API
+    API --> PIPE
+    API --> MA
+    PIPE -->|fused events + findings| MA
+    EX -->|vision / text| VL
+    MCPClient -->|MCP · stdio / Streamable HTTP| MT
+    MT --> SK
+    SK --> MA
+    MA -->|embed| EMB
+    MA -->|chat| LLM
+    MA -->|SQL · pg-wire| DB
+    DB -. drop-in swap .-> RDS
+```
+
 ## How we built it
 
 The service is **TypeScript on Fastify**, deployed live on **Alibaba Cloud ECS** (with a serverless Function Compute + managed RDS path as an alternative). Qwen models are called through the OpenAI-compatible DashScope endpoint. The memory lives in `pgvector` on PostgreSQL.

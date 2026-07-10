@@ -7,6 +7,7 @@
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Alibaba%20Cloud-ff6a00?logo=alibabacloud&logoColor=white)](https://memory.43.106.13.19.sslip.io)
 [![Demo Video](https://img.shields.io/badge/Demo%20Video-CI%20build-ff0000?logo=youtube)](https://github.com/upgradedev/archon-qwen-memoryagent/actions/workflows/demo-video.yml)
 [![Tests](https://img.shields.io/badge/Tests-140%20node%3Atest%20%2B%20Playwright-brightgreen)](tests)
+[![Coverage](https://img.shields.io/badge/Coverage-97.79%25-brightgreen)](tests)
 [![Project Story](https://img.shields.io/badge/Project%20Story-Devpost-003e54)](demo/PROJECT_STORY.md)
 <!-- TODO after YouTube upload: point the Demo Video badge at the YouTube URL -->
 
