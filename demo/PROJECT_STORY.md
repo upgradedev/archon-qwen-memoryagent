@@ -20,7 +20,7 @@ So the guiding question became: *not just how does an agent remember, but how do
 
 Every fused financial event, validation finding, and narrated insight is embedded with **Qwen `text-embedding-v4`** and written to a **pgvector** store. On any later run — a different session, process, or container — the agent **recalls the relevant prior facts by meaning** and grounds a **Qwen `qwen-plus`** answer in them, citing the exact memories it used.
 
-It exposes a small HTTP surface: `/ingest` (write memories for an event), `/recall` (grounded, cited answer), `/consistency` (the self-audit), plus `/consolidate` and `/forget` for hygiene — and an interactive `/docs` explorer.
+It exposes a small HTTP surface: `/ingest` (write memories for an event), `/recall` (grounded, cited answer), `/consistency` (the field-level self-audit) and `/consistency/semantic` (the meaning-level self-audit), plus `/consolidate` and `/forget` for hygiene — and an interactive `/docs` explorer.
 
 Three ideas make the memory *strong*, not merely present:
 
@@ -45,7 +45,7 @@ flowchart TB
             H["GET /health · /docs · /pnl"]
             I["POST /ingest · /ingest/documents"]
             R["POST /recall"]
-            C["POST /consistency"]
+            C["POST /consistency · /consistency/semantic"]
         end
         subgraph PIPE["Ingestion pipeline — src/pipeline (supporting cast)"]
             direction LR
@@ -58,7 +58,7 @@ flowchart TB
         end
         subgraph MCPSURF["MCP surface — src/mcp/* + src/skills/*"]
             direction LR
-            MT["4 MCP tools<br/>recall · ingest · audit · count"]
+            MT["4 MCP tools<br/>recall · ingest · audit(+semantic) · count"]
             SK["SkillDispatcher (shared)<br/>+ qwen-plus function-calling skills"]
         end
         MA["★ MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()<br/>+ self-audit (contradictions · dangling refs)"]
@@ -129,6 +129,10 @@ $$
 $$
 
 Higher importance wins; ties break on source authority; remaining ties break on recency (the later write wins). The result carries `rule + confidence + rationale`, so a human or agent can accept or override it. It is a **recommender, not ground truth** — the memory is never overwritten.
+
+### The audit sees *meaning*, not just fields
+
+`POST /consistency` compares metadata fields, so it is blind to a whole class of real contradiction: two memories that oppose each other in *meaning* while sharing no comparable key — *"vendor always pays on time"* vs *"vendor is chronically late"*. A companion **semantic** audit (`POST /consistency/semantic`, `src/memory/semantic-consistency.ts`) closes that gap, additively. It embeds each memory with the same `text-embedding-v4` recall path, keeps only same-subject pairs by cosine, then asks a judge whether they *directly* contradict — **qwen-plus** online, a deterministic polarity/negation heuristic offline (so it still runs in CI with no key). The online judge **fails closed**: an upstream error is "no contradiction", never a fabricated one. It reuses the **same read-only resolution ladder**, never mutates memory, and is reachable over HTTP, over MCP (`audit_memory` with `semantic: true`), and in the seeded live demo. Honest scope: a proven mechanism with a working live demo and full offline unit coverage — not yet a scored labelled-set benchmark (that's the stated next step in `BENCHMARK.md`).
 
 ### Offline-first engineering
 

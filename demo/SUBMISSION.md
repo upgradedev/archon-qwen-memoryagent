@@ -28,6 +28,15 @@ value to trust **without ever mutating** what it holds.
   references, then **recommends** which value to trust over a fixed
   importance → source-authority → recency ladder — read-only, never mutating.
   Measured: **5/5 detected, 0 false positives; 4/4 correct resolutions.**
+- **Meaning-level self-audit**: a companion `POST /consistency/semantic` catches
+  memories that oppose each other in *meaning* with no shared field (*"pays on
+  time"* vs *"chronically late"*): it embeds each memory, keeps same-subject pairs
+  by cosine, then asks a judge — **qwen-plus** online, a deterministic polarity
+  heuristic offline — whether they contradict, reusing the same read-only
+  resolution ladder and **never mutating**. Also reachable over MCP
+  (`audit_memory` with `semantic: true`) and seeded into the live demo. Honest
+  scope: proven mechanism + working live demo + full offline unit coverage, not
+  yet a scored labelled-set benchmark.
 - **Strong retrieval**: hybrid dense + lexical (RRF) with a `qwen-plus` cross-encoder
   re-rank. Reranked-hybrid beats a strong dense baseline — MRR 0.883 → 0.911,
   Recall@3 90.0% → 96.7% — on a frozen labelled benchmark, gated in CI.

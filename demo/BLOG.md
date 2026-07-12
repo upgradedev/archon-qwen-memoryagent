@@ -37,7 +37,7 @@ flowchart TB
             H["GET /health · /docs · /pnl"]
             I["POST /ingest · /ingest/documents"]
             R["POST /recall"]
-            C["POST /consistency"]
+            C["POST /consistency · /consistency/semantic"]
         end
         subgraph PIPE["Ingestion pipeline — src/pipeline (supporting cast)"]
             direction LR
@@ -50,7 +50,7 @@ flowchart TB
         end
         subgraph MCPSURF["MCP surface — src/mcp/* + src/skills/*"]
             direction LR
-            MT["4 MCP tools<br/>recall · ingest · audit · count"]
+            MT["4 MCP tools<br/>recall · ingest · audit(+semantic) · count"]
             SK["SkillDispatcher (shared)<br/>+ qwen-plus function-calling skills"]
         end
         MA["★ MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()<br/>+ self-audit (contradictions · dangling refs)"]
@@ -114,6 +114,28 @@ write was actually correct — only which one a defensible policy prefers. It
 confidence and a one-line rationale, and lets the caller decide. That's the whole
 point: memory you can trust *because it tells you when it disagrees with itself*,
 instead of hiding it.
+
+### Contradictions in *meaning*, too
+
+The audit above compares metadata fields, so it is blind to memories that oppose
+each other in **meaning** while sharing no comparable key — *"vendor always pays
+on time"* vs *"vendor is chronically late"*. Neither carries a numeric attribute to
+compare, so the field-level audit groups nothing and reports OK; the disagreement
+lives entirely in the prose. A companion **semantic** audit (`POST
+/consistency/semantic`, `src/memory/semantic-consistency.ts`) closes that gap. It
+embeds each memory with the same `text-embedding-v4` recall path, keeps only
+same-subject pairs by cosine, then asks a judge whether they directly contradict —
+**qwen-plus** online (real semantic reasoning), a deterministic polarity/negation
+heuristic offline so it still runs in CI with no key. The online judge **fails
+closed**: any error or unparseable reply is treated as "no contradiction", never a
+manufactured one. It reuses the **same read-only resolution ladder** and, like the
+rule-based path, **never mutates memory** — it runs *alongside* the field-level
+engine, additive, neither replacing the other. It is exposed over HTTP, over MCP
+(the `audit_memory` tool takes `semantic: true`), and is seeded into the live demo
+so you can see the agent catch a meaning-level contradiction in its own memory.
+(Honest scope: the semantic detector is a *proven mechanism with a working live
+demo and full offline unit coverage*, not yet a scored labelled-set benchmark — see
+`BENCHMARK.md`.)
 
 ## It's measured, offline, and reproducible
 

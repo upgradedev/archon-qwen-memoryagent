@@ -225,7 +225,7 @@ flowchart TB
             H["GET /health · /docs · /pnl"]
             I["POST /ingest · /ingest/documents"]
             R["POST /recall"]
-            C["POST /consistency"]
+            C["POST /consistency · /consistency/semantic"]
         end
         subgraph PIPE["Ingestion pipeline — src/pipeline (supporting cast)"]
             direction LR
@@ -238,7 +238,7 @@ flowchart TB
         end
         subgraph MCPSURF["MCP surface — src/mcp/* + src/skills/*"]
             direction LR
-            MT["4 MCP tools<br/>recall · ingest · audit · count"]
+            MT["4 MCP tools<br/>recall · ingest · audit(+semantic) · count"]
             SK["SkillDispatcher (shared)<br/>+ qwen-plus function-calling skills"]
         end
         MA["★ MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()<br/>+ self-audit (contradictions · dangling refs)"]
@@ -324,6 +324,9 @@ repos/qwen-memoryagent/
 │   ├── agents/
 │   │   ├── narrator.ts          # QwenNarrator (qwen-plus RAG) + offline FakeNarrator
 │   │   └── memory-agent.ts      # MemoryAgent: ingestEvent · recallAnswer · auditConsistency · auditSemanticConsistency · consolidate · forget
+│   ├── pipeline/                # document-ingestion pipeline (supporting cast): extractor · classifier · event-linker · validator · pnl · vision
+│   ├── mcp/{server.ts,tools.ts}   # Model Context Protocol server — the four memory tools over stdio + Streamable HTTP
+│   ├── skills/                  # qwen-plus function-calling skills + shared SkillDispatcher (schemas = single source of truth)
 │   ├── db/{client.ts,schema.sql}  # pg pool + pgvector schema (vector(1024) + HNSW + FTS + lifecycle)
 │   ├── types.ts                 # PayrollEvent domain types
 │   └── server.ts                # Fastify HTTP backend (the Alibaba Cloud deploy target)
@@ -379,6 +382,8 @@ Once the backend is running, open **`http://localhost:9000/docs`** for the inter
 | `GET /openapi.json` | Machine-readable OpenAPI 3 spec. |
 | `GET /health` | Liveness; reports the live embedder/narrator model ids + dim. |
 | `GET /memory/count` | How many memories the agent holds. |
+| `GET /memory/list` | `?company=&kind=&limit=` → list stored memories (id, kind, content, refs) for the Explorer browse view. |
+| `POST /demo/seed` | Seed the built-in demo dataset (payroll triplet + a field-level and a meaning-level contradiction) through the Fake extractor — free, unmetered, idempotent — so an empty box has data to recall and self-audit. |
 | `POST /ingest` | `{ event }` → write memories for a fused financial event. |
 | `POST /ingest/documents` | `{ documents[] }` → run the ingestion **pipeline** (Extractor → Classifier → EventLinker → Validator → P&L) over raw documents and write the fused events + findings into memory. Returns the events, per-event P&L, validation, and the ids of every memory written. |
 | `GET /pnl` | `?company=&period=` → payroll-cost **P&L** aggregated over the pipeline-fed memories (employer cost, cash-out, off-bank cost gap, by company). |

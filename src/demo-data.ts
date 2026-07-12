@@ -53,6 +53,21 @@ export const DEMO_CONTRADICTION: Array<{ content: string; amount: number }> = [
   { content: `Purchase invoice INV-5521 at ${DEMO_COMPANY} (2026-05): a later entry records the same invoice at 8,900.`, amount: 8900 },
 ];
 export const DEMO_INVOICE_RECORD = "INV-5521";
+
+// Two write events that OPPOSE each other in MEANING while sharing no comparable
+// metadata field — the class of contradiction the rule-based audit is blind to.
+// The rule-based /consistency groups by a record + attribute; these two carry no
+// matching numeric attribute, only opposite prose ("on time" vs "chronically
+// late"). The meaning-aware POST /consistency/semantic catches them: it embeds
+// each memory, keeps the near-identical-subject pair by cosine, and asks the
+// judge (qwen-plus online, a deterministic polarity heuristic offline) whether
+// they contradict. Written as `insight` memories so the semantic beat can scope
+// to kind="insight" for a fast, deterministic single finding on the live box.
+export const DEMO_SEMANTIC: Array<{ content: string }> = [
+  { content: `Vendor ${DEMO_COMPANY} always pays its supplier invoices on time.` },
+  { content: `Vendor ${DEMO_COMPANY} is chronically late paying its supplier invoices.` },
+];
+
 export const DEMO_SALES: Array<{ content: string; metadata: Record<string, any> }> = [
   {
     content: "Sales invoice INV-SALES-101 issued to Chop Suey Chinese for EUR 28500.00 dated 2026-05-10.",

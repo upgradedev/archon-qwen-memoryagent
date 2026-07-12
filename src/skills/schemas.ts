@@ -54,6 +54,10 @@ export interface AuditArgs {
   company?: string;
   period?: string;
   kind?: MemoryKind;
+  // When true, run the MEANING-level semantic self-audit (POST /consistency/semantic)
+  // instead of the rule-based one — catches memories that oppose each other in
+  // meaning without sharing a comparable metadata field. Still read-only.
+  semantic?: boolean;
 }
 // memory_count takes an optional company scope.
 export interface CountArgs {
@@ -160,13 +164,22 @@ export const SKILLS: readonly SkillDefinition[] = [
       "Run the read-only self-audit over the agent's stored memory. Detects " +
       "cross-session contradictions (two write events disagree on a record's value) — " +
       "each with a resolution recommending which value to trust — and dangling " +
-      "references (a memory points at a record no memory stores). Never mutates memory.",
+      "references (a memory points at a record no memory stores). Set `semantic: true` " +
+      "to instead run the meaning-level audit, which flags memories that contradict in " +
+      "meaning without sharing a comparable field (e.g. 'pays on time' vs 'chronically " +
+      "late'). Both modes are read-only and never mutate memory.",
     parameters: {
       type: "object",
       properties: {
         company: { type: "string", description: "Optional company scope for the audit." },
         period: { type: "string", description: "Optional reporting-period scope for the audit." },
         kind: kindProperty,
+        semantic: {
+          type: "boolean",
+          description:
+            "When true, run the meaning-level semantic self-audit (opposite facts about the " +
+            "same subject) instead of the rule-based field-level one. Read-only either way.",
+        },
       },
       required: [],
       additionalProperties: false,
