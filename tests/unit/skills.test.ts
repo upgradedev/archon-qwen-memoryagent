@@ -96,6 +96,19 @@ test("dispatch audit_memory → returns a read-only consistency report", async (
   assert.ok(Array.isArray(report.contradictions));
 });
 
+test("dispatch audit_memory { semantic: true } → routes to the meaning-level audit", async () => {
+  const report = (await dispatcher.dispatch("audit_memory", { semantic: true })) as {
+    semanticContradictions?: unknown[];
+    contradictions?: unknown[];
+    ok: boolean;
+  };
+  // The semantic report shape (semanticContradictions[]) is distinct from the
+  // rule-based one (contradictions[]) — proves the `semantic` arg re-routes.
+  assert.ok(Array.isArray(report.semanticContradictions), "semantic audit returns semanticContradictions[]");
+  assert.equal(report.contradictions, undefined, "semantic report is not the rule-based report");
+  assert.equal(typeof report.ok, "boolean");
+});
+
 test("dispatch memory_count → the current memory size", async () => {
   const res = (await dispatcher.dispatch("memory_count", {})) as { count: number };
   assert.equal(res.count, 0);

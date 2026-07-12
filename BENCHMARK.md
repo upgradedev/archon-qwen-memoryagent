@@ -455,6 +455,50 @@ above plus winner-accuracy against the labelled policy (`bench:resolution --gate
 Because the recommender is pure and deterministic, these never flake; the rule
 breakdown is reported every run.
 
+### Meaning-level (semantic) self-audit — method; not yet benchmarked on a labelled set
+
+The rule-based audit above compares **shared metadata fields**, so it is blind to a
+whole class of real contradiction: two memories that oppose each other **in meaning**
+while sharing no comparable key — e.g. *"vendor always pays on time"* vs *"vendor is
+chronically late"*. Neither carries a numeric attribute to compare, so the rule-based
+path groups nothing and reports OK. The disagreement lives in the prose.
+
+`auditSemanticConsistency` (`src/memory/semantic-consistency.ts`, exposed as
+`POST /consistency/semantic`) closes that gap **additively** — it does not replace the
+rule-based path, it runs alongside it:
+
+1. **Subject gate** — embed each memory (the same `text-embedding-v4` recall path) and
+   keep only pairs whose cosine similarity clears a threshold (default 0.75, tuned for
+   real vectors): they are about the same subject. This both finds candidate pairs and
+   bounds the (paid) judge calls to plausibly-related memories.
+2. **Opposition judge** — for each near pair, ask a judge whether they *directly
+   contradict*. Online that is **qwen-plus** (real semantic reasoning); offline it is a
+   deterministic polarity/negation heuristic (`FakeJudge`) so the whole path runs in CI
+   with zero credentials — the same Fake seam as the rest of the suite. The online judge
+   **fails closed**: any error or unparseable response yields "no contradiction", never a
+   manufactured one (a hallucinated contradiction is a trust regression).
+
+Like the rule-based layer it is **read-only** and a **recommender**: every finding carries
+the SAME `resolution` shape produced by the SAME importance → source-authority → recency
+ladder. It **never mutates memory**.
+
+**What is measured today — and what is not (honest):**
+
+- **Shipped + offline-tested, not scored.** The engine has full unit coverage
+  (`tests/unit/semantic-consistency.test.ts`): the pure detector, the subject gate, the
+  fail-closed online judge, zero false positives on unrelated/agreeing pairs, and a test
+  that the **shipped demo fixture** (`DEMO_SEMANTIC` in `src/demo-data.ts` — the
+  "on time" vs "chronically late" pair seeded by `POST /demo/seed`) is actually detected
+  offline. So the *mechanism* is proven and the *demo is real*, live on the box.
+- **Not yet a labelled-precision/recall benchmark.** Unlike retrieval (MRR/nDCG/Recall)
+  and the rule-based audit (5/5 detect, 0 FP; 4/4 resolve), the meaning-level detector is
+  **not yet measured against a labelled contradiction/non-contradiction corpus**. That is
+  the honest next step: a `bench/semantic-consistency-dataset.ts` of opposed pairs plus a
+  hard control of merely-different / complementary / different-subject pairs, gated on
+  precision (false positives are the dangerous failure) — mirroring the rule-based gate.
+  Until then we claim it as a **method with a proven mechanism and a working live demo**,
+  not as a scored number.
+
 ## Memory lifecycle: consolidation + forgetting
 
 Retrieval quality decays if the store only ever appends — the same fact gets

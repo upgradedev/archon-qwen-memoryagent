@@ -20,6 +20,7 @@ import {
   type JudgeVerdict,
 } from "../../src/memory/semantic-consistency.js";
 import { FakeEmbedder } from "../../src/memory/embeddings.js";
+import { DEMO_SEMANTIC, DEMO_COMPANY } from "../../src/demo-data.js";
 import type { QwenChatClient } from "../../src/qwen/client.js";
 
 const S_A = "2026-05-01T09:00:00.000Z";
@@ -291,4 +292,34 @@ test("defaultSemanticJudge: picks the Fake offline (no DashScope key)", () => {
   } finally {
     if (prev !== undefined) process.env.DASHSCOPE_API_KEY = prev;
   }
+});
+
+// The SHIPPED demo fixture (src/demo-data.ts DEMO_SEMANTIC) must actually be
+// detectable offline, so POST /consistency/semantic on a seeded box (and the demo
+// video's semantic beat) has a real finding — not a hopeful curl. Uses the same
+// FakeEmbedder + FakeJudge the offline stack uses; the FakeEmbedder's bag-of-words
+// scale differs from real vectors, so a low subject-gate threshold is passed (the
+// live box uses real text-embedding-v4 vectors at the tuned 0.75 default).
+test("DEMO_SEMANTIC fixture: the shipped opposing pair is detected offline", async () => {
+  const now = new Date().toISOString();
+  const memories: AuditMemory[] = DEMO_SEMANTIC.map((s, i) => ({
+    id: `demo-sem-${i}`,
+    kind: "insight",
+    company: DEMO_COMPANY,
+    period: "2026-05",
+    sourceRef: null,
+    content: s.content,
+    metadata: {},
+    createdAt: now,
+    importance: null,
+  }));
+  const report = await auditSemanticConsistency(memories, new FakeEmbedder(), new FakeJudge(), {
+    similarityThreshold: 0.1,
+  });
+  assert.equal(report.ok, false, "the shipped demo pair must be flagged");
+  assert.equal(report.semanticContradictions.length, 1, "exactly one meaning-level contradiction");
+  assert.ok(
+    report.semanticContradictions[0]!.resolution,
+    "the finding carries a read-only resolution recommendation",
+  );
 });

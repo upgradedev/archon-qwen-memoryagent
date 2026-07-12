@@ -10,6 +10,8 @@ Session B is a fresh, separate client with only a question, typed into the Explo
 
 Now the differentiator: a memory that audits itself. Two separate sessions wrote one record with two different values. Mem0 and Zep would silently mutate — overwrite the old value. Archon never mutates. It detects the contradiction and recommends which to trust — with a rule, confidence and rationale.
 
+And it audits meaning, not just fields. One note says a vendor pays on time, another that it's chronically late — no shared number to compare — so a companion semantic audit embeds them, sees the same subject, and asks qwen-plus whether they contradict, with the same read-only recommendation. Every operation here — recall, ingest, audit, count — is also exposed over the Model Context Protocol, so any MCP client can drive this exact memory.
+
 And it's measured: five of five seeded contradictions detected, zero false positives, and a read-only recommender correct four of four. Retrieval too — Recall at three rises from ninety to ninety-six point seven percent, at a hundred percent answer correctness.
 
 It runs live on Alibaba Cloud — an ECS instance in Singapore beside a self-hosted pgvector container. Real Qwen, measured, open source under MIT — not a wrapper.

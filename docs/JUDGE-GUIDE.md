@@ -23,8 +23,9 @@ The one thing to watch for: **a memory agent that audits its own memory and reso
 
 ## The rest of the surface (optional, ~1 minute)
 
-- **`GET /docs`** — the interactive Swagger UI. Every route is documented; try `POST /recall` or `POST /consistency` straight from the browser. <https://memory.43.106.13.19.sslip.io/docs>
+- **`GET /docs`** — the interactive Swagger UI. Every route is documented; try `POST /recall`, `POST /consistency` or `POST /consistency/semantic` straight from the browser. <https://memory.43.106.13.19.sslip.io/docs>
 - **`GET /health`** — liveness + the live model ids. A real key is configured, so you should see `"narrator":"qwen-plus"` and `"embedder":"text-embedding-v4"` (not a fake). <https://memory.43.106.13.19.sslip.io/health>
+- **`POST /consistency/semantic`** — the *meaning-level* self-audit (below): catches memories that oppose each other in meaning with no shared field, judged by qwen-plus.
 
 ### Same three steps from a terminal (curl)
 
@@ -43,6 +44,23 @@ curl -s -X POST $BASE/consistency -H 'content-type: application/json' \
   -d '{"company":"Northwind Trading"}'
 #    → contradictions[].subject "INV-5521", values 8400 vs 8900,
 #      resolution.recommendedValue 8900 (rule: recency)
+```
+
+### 30 seconds more: the *meaning-level* self-audit (semantic)
+
+The audit above matches metadata fields. This one catches memories that oppose
+each other in **meaning** with no shared field — *"pays on time"* vs *"chronically
+late"* — judged live by **qwen-plus** (a deterministic polarity heuristic offline):
+
+```bash
+# The demo seed above also plants a meaning-level pair for "Northwind Trading".
+# Scope to kind=insight so the audit is fast and returns exactly the one finding.
+curl -s -X POST $BASE/consistency/semantic -H 'content-type: application/json' \
+  -d '{"company":"Northwind Trading","kind":"insight"}'
+#    → semanticContradictions[]: "always pays on time" vs "chronically late",
+#      each with a read-only resolution — the meaning-level contradiction the
+#      field-level audit is blind to. (Also callable over MCP: the `audit_memory`
+#      tool with `{"semantic": true}`.)
 ```
 
 ---

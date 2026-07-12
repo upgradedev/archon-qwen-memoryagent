@@ -14,6 +14,10 @@
 #                POST /ingest x2       -> two SEPARATE write events remember ONE record with a
 #                POST /consistency        DIFFERENT value; the agent DETECTS the contradiction
 #                                         and RECOMMENDS which value to trust (never mutates).
+#   SEMANTIC     POST /demo/seed       -> seeds two memories that OPPOSE in MEANING with no
+#                POST /consistency/semantic  shared field ("on time" vs "chronically late"); the
+#                                         LIVE qwen-plus judge flags the meaning-level contradiction
+#                                         the rule-based audit is blind to. Also an MCP tool arg.
 #
 # HARD-CHECKED end to end (structured jq gates, not string-matching), so a box that
 # is down, or that silently reverted to the offline Fakes (no DASHSCOPE key), or a
@@ -155,6 +159,38 @@ CONS_CONF=$(echo "$CONS" | jq -r '.contradictions[0].resolution.confidence')
 # seconds apart render the SAME day twice, which reads as a bug at the hero moment).
 CONS_OTHER=$(echo "$CONS" | jq -r '.contradictions[0] as $c | ($c.values|map(.value)|map(select(.!=$c.resolution.recommendedValue))|.[0])')
 
+# ================================================= SEMANTIC (meaning-level) AUDIT
+# The rule-based audit above compares metadata FIELDS. It is blind to two memories
+# that oppose each other in MEANING while sharing no comparable key ("vendor pays on
+# time" vs "vendor is chronically late"). The seeded demo (/demo/seed — idempotent,
+# free offline extractor) plants exactly that pair under "Northwind Trading" as
+# `insight` memories; POST /consistency/semantic embeds each, keeps same-subject
+# pairs by cosine, and asks the LIVE qwen-plus judge whether they contradict. Scoped
+# to kind=insight so it is fast and returns the single meaning-level finding. A box
+# on the offline Fakes (fake-polarity-judge) or without the seed FAILS the jq gate.
+SEM_COMPANY="Northwind Trading"
+curl -fsS -m 60 -X POST "$BASE/demo/seed" >/dev/null \
+  || fail "/demo/seed failed — cannot seed the meaning-level contradiction pair"
+SEM=$(curl -fsS -m 90 -X POST "$BASE/consistency/semantic" -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg c "$SEM_COMPANY" '{company:$c, kind:"insight"}')") \
+  || fail "/consistency/semantic (meaning-level self-audit) failed"
+echo "semantic: $SEM"
+echo "$SEM" | jq -e '
+  .ok==false
+  and (.semanticContradictions|length)>=1
+  and (.semanticContradictions[0].judge.model=="qwen-plus")
+  and (.semanticContradictions[0].resolution!=null)' >/dev/null \
+  || fail "/consistency/semantic did not flag the seeded meaning-level contradiction via the REAL qwen-plus judge (got: $(echo "$SEM" | jq -c '{ok, n:(.semanticContradictions|length), judge:.semanticContradictions[0].judge}'))"
+# The two opposing memories, earliest first (session ordering), for the transcript.
+SEM_A=$(echo "$SEM" | jq -r '.semanticContradictions[0].memories[0].content' | tr '\n' ' ' | tr -s ' ')
+SEM_B=$(echo "$SEM" | jq -r '.semanticContradictions[0].memories[1].content' | tr '\n' ' ' | tr -s ' ')
+SEM_SIM=$(echo "$SEM" | jq -r '.semanticContradictions[0] | ((.similarity*1000)|round)/1000')
+SEM_CONF=$(echo "$SEM" | jq -r '.semanticContradictions[0].judge.confidence')
+# POSITIONING guard — the on-screen semantic memories must be domain-neutral too.
+if printf '%s\n%s\n' "$SEM_A" "$SEM_B" | grep -iqE "$FORBIDDEN"; then
+  fail "a semantic-audit memory contains a forbidden positioning term (/$FORBIDDEN/) — universal financial terms only"
+fi
+
 # ---------------------------------------------------- build the transcript
 # Time prefix = screencast-local seconds (matches scripts/captions.txt + the VO).
 # Lines are the REAL captured values. Answers are ONE logical line each (newlines
@@ -222,19 +258,28 @@ t "94.5 → RESOLUTION (read-only recommender): trust $CONS_REC  [rule=$CONS_RUL
 t "98.5   Rationale: the more recent write ($CONS_REC) supersedes the earlier value ($CONS_OTHER)."
 t "102.5 >> DETECTED its own cross-session disagreement · RECOMMENDED which to trust · never mutated."
 t "106.5   Measured: 5/5 issues detected · 0 false positives · read-only recommender 4/4 correct"
+# --- SEMANTIC · meaning-level self-audit (the class the rule-based audit is blind to) ---
+t "110.0 \$ # ---- ⭐ MEANING-LEVEL self-audit · fields match nothing; the meaning opposes ----"
+t "112.0 \$ # Two memories OPPOSE in MEANING with NO comparable field — the prose is the only signal:"
+t "114.0   A: $SEM_A"
+t "116.0   B: $SEM_B"
+t "118.0 \$ curl -X POST $BASE/consistency/semantic -d '{\"company\":\"$SEM_COMPANY\", \"kind\":\"insight\"}'"
+t "120.5 → embed each → same subject by cosine ($SEM_SIM) → LIVE qwen-plus judge: CONTRADICT [confidence=$SEM_CONF]"
+t "123.5 >> Caught what the field-level audit CANNOT see · same read-only recommendation · never mutated."
+t "126.0 \$ # Every op — recall · ingest · audit · count — is also an MCP tool (audit takes semantic:true)."
 # --- MEASURED (retrieval) ---
-t "110.5 \$ # ---- MEASURED · labelled datasets (npm run bench) ----"
-t "112.5   Retrieval: reranked-hybrid beats dense — Recall@3 90.0% → 96.7% · MRR 0.883 → 0.911"
-t "116.5   Grounded answers: 100% correctness · 90.9% grounding (every euro traces to a memory)"
+t "129.0 \$ # ---- MEASURED · labelled datasets (npm run bench) ----"
+t "131.0   Retrieval: reranked-hybrid beats dense — Recall@3 90.0% → 96.7% · MRR 0.883 → 0.911"
+t "135.0   Grounded answers: 100% correctness · 90.9% grounding (every euro traces to a memory)"
 # --- CLOSE · deployment ---
-t "120.0 \$ # ---- LIVE · Alibaba Cloud ----"
-t "122.0   Live URL :  $BASE/           (Explorer UI · public · reachable now)"
-t "124.0   Compute  :  Alibaba Cloud ECS · ecs.e-c1m2.large · ap-southeast-1 (Singapore)"
-t "126.5   Memory   :  pgvector container on the ECS box · HNSW cosine · vector(1024)"
-t "129.0   Models   :  Qwen text-embedding-v4  +  qwen-plus  (Model Studio / DashScope)"
-t "131.5   Source   :  github.com/upgradedev/archon-qwen-memoryagent   ·   MIT"
-t "134.5 >> Self-auditing · persistent · queryable · across sessions."
-t "138.0 >> Real Qwen on Alibaba Cloud. Measured, not a wrapper."
+t "138.5 \$ # ---- LIVE · Alibaba Cloud ----"
+t "140.5   Live URL :  $BASE/           (Explorer UI · public · reachable now)"
+t "142.5   Compute  :  Alibaba Cloud ECS · ecs.e-c1m2.large · ap-southeast-1 (Singapore)"
+t "145.0   Memory   :  pgvector container on the ECS box · HNSW cosine · vector(1024)"
+t "147.5   Models   :  Qwen text-embedding-v4  +  qwen-plus  (Model Studio / DashScope)"
+t "150.0   Source   :  github.com/upgradedev/archon-qwen-memoryagent   ·   MIT"
+t "153.0 >> Self-auditing · persistent · queryable · across sessions."
+t "156.5 >> Real Qwen on Alibaba Cloud. Measured, not a wrapper."
 
 echo "== transcript written to $OUT =="
 cat "$OUT"

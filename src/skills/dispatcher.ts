@@ -19,6 +19,7 @@ import { defaultNarrator } from "../agents/narrator.js";
 import { PgVectorStore, type MemoryStore } from "../memory/store.js";
 import type { Citation } from "../agents/narrator.js";
 import type { ConsistencyReport } from "../memory/consistency.js";
+import type { SemanticConsistencyReport } from "../memory/semantic-consistency.js";
 import {
   SKILLS,
   type SkillName,
@@ -40,7 +41,7 @@ export interface IngestResult {
   written: number;
   id: string;
 }
-export type AuditResult = ConsistencyReport;
+export type AuditResult = ConsistencyReport | SemanticConsistencyReport;
 export interface CountResult {
   count: number;
 }
@@ -99,13 +100,14 @@ export class SkillDispatcher {
     return { written: 1, id };
   }
 
-  // audit_memory → the read-only self-audit (POST /consistency).
+  // audit_memory → the read-only self-audit. Rule-based (POST /consistency) by
+  // default; the meaning-level semantic audit (POST /consistency/semantic) when
+  // `semantic: true`. Both never mutate memory.
   private async audit(args: AuditArgs): Promise<AuditResult> {
-    return this.agent.auditConsistency({
-      company: args?.company,
-      period: args?.period,
-      kind: args?.kind,
-    });
+    const scope = { company: args?.company, period: args?.period, kind: args?.kind };
+    return args?.semantic
+      ? this.agent.auditSemanticConsistency(scope)
+      : this.agent.auditConsistency(scope);
   }
 
   // memory_count → how many memories the agent holds (GET /memory/count).

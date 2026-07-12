@@ -34,7 +34,7 @@ import { aggregatePnl } from "./pipeline/pnl.js";
 import type { RawDocument } from "./pipeline/models.js";
 import { Extractor } from "./pipeline/extractor.js";
 import { FakeExtractionClient } from "./pipeline/vision.js";
-import { DEMO_DOCUMENTS, DEMO_CONTRADICTION, DEMO_COMPANY, DEMO_INVOICE_RECORD, DEMO_SALES } from "./demo-data.js";
+import { DEMO_DOCUMENTS, DEMO_CONTRADICTION, DEMO_COMPANY, DEMO_INVOICE_RECORD, DEMO_SALES, DEMO_SEMANTIC } from "./demo-data.js";
 
 const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
 
@@ -472,8 +472,20 @@ export async function buildServer(deps: ServerDeps = {}) {
           metadata: s.metadata,
         });
       }
+      // Seed the MEANING-level contradiction (opposite prose, no shared attribute)
+      // so POST /consistency/semantic has a real finding to surface.
+      for (const s of DEMO_SEMANTIC) {
+        await agent.remember("insight", s.content, {
+          company: DEMO_COMPANY,
+          period: "2026-05",
+        });
+      }
       return {
-        seeded: out.memoryIds.length + DEMO_CONTRADICTION.length + DEMO_SALES.length,
+        seeded:
+          out.memoryIds.length +
+          DEMO_CONTRADICTION.length +
+          DEMO_SALES.length +
+          DEMO_SEMANTIC.length,
         company: DEMO_COMPANY,
         events: out.events.length,
       };
