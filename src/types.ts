@@ -31,7 +31,8 @@ export interface PayrollEvent {
   tax_withheld_total: number;
   employer_cost_total: number; // THE accurate number (gross + employer social-security)
   // One insight the platform surfaces: employer social-security contributions are
-  // invisible on the bank salary-transfer confirmation, yet are ~28% of the net figure.
+  // invisible on the bank salary-transfer confirmation, yet are ~35% of the net figure
+  // (the employer wedge). The bank line understates the full employer payroll cost by ~72%.
   cost_gap_amount: number; // the employer-contribution wedge not shown on the bank line
   cost_gap_pct: number; // cost_gap_amount / bank_net_total * 100  (58% in the demo event)
   off_bank_cost: number; // employer_cost_total - bank_net_total
