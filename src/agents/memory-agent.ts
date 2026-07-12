@@ -28,16 +28,26 @@ import {
   type AuditMemory,
   type ConsistencyReport,
 } from "../memory/consistency.js";
+import {
+  auditSemanticConsistency,
+  defaultSemanticJudge,
+  type SemanticJudge,
+  type SemanticAuditOptions,
+  type SemanticConsistencyReport,
+} from "../memory/semantic-consistency.js";
 import type { PayrollEvent } from "../types.js";
 
 export class MemoryAgent {
   private narrator: Narrator;
+  private judge: SemanticJudge;
   constructor(
     private embedder: Embedder,
     private store: MemoryStore,
-    narrator: Narrator = defaultNarrator()
+    narrator: Narrator = defaultNarrator(),
+    judge: SemanticJudge = defaultSemanticJudge()
   ) {
     this.narrator = narrator;
+    this.judge = judge;
   }
 
   // ── WRITE ────────────────────────────────────────────────────────────────
@@ -184,6 +194,22 @@ export class MemoryAgent {
   ): Promise<ConsistencyReport> {
     const memories = await this.store.listForAudit(scope);
     return auditConsistency(memories);
+  }
+
+  // ── SEMANTIC SELF-AUDIT ────────────────────────────────────────────────────
+  // The meaning-aware companion to auditConsistency: catches memories that
+  // OPPOSE each other in meaning while sharing no comparable metadata key (e.g.
+  // "vendor always pays on time" vs "vendor is chronically late") — the class of
+  // contradiction the rule-based audit is blind to. Embeds each memory (the same
+  // recall path), keeps same-subject pairs by cosine, and asks the judge (qwen-plus
+  // online, a deterministic polarity heuristic offline) whether they contradict.
+  // Read-only; each finding carries the SAME resolution recommendation shape.
+  async auditSemanticConsistency(
+    scope: { company?: string; period?: string; kind?: MemoryKind } = {},
+    opts: SemanticAuditOptions = {}
+  ): Promise<SemanticConsistencyReport> {
+    const memories = await this.store.listForAudit(scope);
+    return auditSemanticConsistency(memories, this.embedder, this.judge, opts);
   }
 
   // ── MEMORY LIFECYCLE ───────────────────────────────────────────────────────

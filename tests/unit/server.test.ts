@@ -228,7 +228,7 @@ test("GET /openapi.json returns 200 and documents the core routes", async () => 
   assert.equal(spec.openapi?.startsWith("3."), true);
   assert.equal(spec.info?.title, "Archon MemoryAgent API");
   // The onRoute capture must have picked up every registered handler.
-  for (const path of ["/health", "/recall", "/ingest", "/ingest/documents", "/pnl", "/memory/list", "/demo/seed", "/memory/count", "/consistency", "/consolidate", "/forget"]) {
+  for (const path of ["/health", "/recall", "/ingest", "/ingest/documents", "/pnl", "/memory/list", "/demo/seed", "/memory/count", "/consistency", "/consistency/semantic", "/consolidate", "/forget"]) {
     assert.ok(spec.paths?.[path], `spec should document ${path}`);
   }
   // The raw-spec meta-route is hidden from the rendered spec.
@@ -242,6 +242,54 @@ test("GET /docs serves the interactive Swagger UI", async () => {
   if (res.statusCode >= 300) {
     const follow = await app.inject({ method: "GET", url: res.headers.location as string });
     assert.equal(follow.statusCode, 200);
+  }
+});
+
+test("POST /consistency/semantic flags a meaning-only contradiction the rule-based audit misses", async () => {
+  // Seed two same-vendor memories opposed ONLY in prose (identical metadata) plus
+  // an unrelated one, then hit the semantic route with the offline Fakes.
+  const store = new InMemoryStore();
+  const seed = async (content: string) =>
+    store.remember({
+      kind: "insight",
+      company: "Acme",
+      period: "2026-05",
+      sourceRef: null,
+      content,
+      metadata: { vendor: "Northwind Trading" },
+      embedding: [1, 0, 0],
+      embedModel: "fake",
+    });
+  await seed("Vendor Northwind Trading reliably pays every invoice on time each month.");
+  await seed("Vendor Northwind Trading pays every invoice late; chronically late each month.");
+  await store.remember({
+    kind: "insight",
+    company: "Acme",
+    period: "2026-05",
+    sourceRef: null,
+    content: "Office electricity spend rose sharply after the summer heatwave.",
+    metadata: { vendor: "PowerCo" },
+    embedding: [0, 1, 0],
+    embedModel: "fake",
+  });
+
+  const local = await buildServer({ store });
+  await local.ready();
+  try {
+    const res = await local.inject({
+      method: "POST",
+      url: "/consistency/semantic",
+      payload: { company: "Acme", similarityThreshold: 0.3 },
+    });
+    assert.equal(res.statusCode, 200);
+    const report = res.json();
+    assert.equal(report.audited, 3);
+    assert.equal(report.semanticContradictions.length, 1);
+    assert.equal(report.semanticContradictions[0].type, "semantic-contradiction");
+    assert.ok(report.semanticContradictions[0].resolution.recommendedMemoryId);
+    assert.equal(report.ok, false);
+  } finally {
+    await local.close();
   }
 });
 

@@ -24,6 +24,7 @@ import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { defaultEmbedder, type Embedder } from "./memory/embeddings.js";
 import { defaultNarrator, type Narrator } from "./agents/narrator.js";
+import { defaultSemanticJudge, type SemanticJudge } from "./memory/semantic-consistency.js";
 import { PgVectorStore, type MemoryKind, type MemoryStore } from "./memory/store.js";
 import { MemoryAgent } from "./agents/memory-agent.js";
 import { UI_HTML } from "./ui.js";
@@ -101,6 +102,7 @@ export interface ServerDeps {
   store?: MemoryStore;
   embedder?: Embedder;
   narrator?: Narrator;
+  judge?: SemanticJudge;
 }
 
 export async function buildServer(deps: ServerDeps = {}) {
@@ -178,8 +180,9 @@ export async function buildServer(deps: ServerDeps = {}) {
 
   const embedder = deps.embedder ?? defaultEmbedder();
   const narrator = deps.narrator ?? defaultNarrator();
+  const judge = deps.judge ?? defaultSemanticJudge();
   const store = deps.store ?? new PgVectorStore();
-  const agent = new MemoryAgent(embedder, store, narrator);
+  const agent = new MemoryAgent(embedder, store, narrator, judge);
   // Per-IP tier (keyed by req.ip) + a global backstop tier (shared "global" key).
   const ingestBudget = makeDailyLimiter(INGEST_DAILY_LIMIT);
   const ingestBudgetGlobal = makeDailyLimiter(INGEST_DAILY_LIMIT_GLOBAL);
@@ -544,6 +547,56 @@ export async function buildServer(deps: ServerDeps = {}) {
     async (req) => {
       const { company, period, kind } = req.body ?? {};
       const report = await agent.auditConsistency({ company, period, kind });
+      return report;
+    },
+  );
+
+  // Semantic self-audit: catch memories that OPPOSE each other in MEANING while
+  // sharing no comparable metadata key (e.g. "vendor always pays on time" vs
+  // "vendor is chronically late") — the class the rule-based /consistency audit is
+  // blind to. Embeds each memory (same recall path), keeps same-subject pairs by
+  // cosine, and asks the judge (qwen-plus online, a deterministic polarity
+  // heuristic offline) whether they contradict. Read-only; each finding carries a
+  // resolution recommending which side to trust.
+  app.post<{
+    Body: {
+      company?: string;
+      period?: string;
+      kind?: MemoryKind;
+      similarityThreshold?: number;
+    };
+  }>(
+    "/consistency/semantic",
+    {
+      schema: {
+        summary: "Semantic self-audit of stored memories",
+        description:
+          "Read-only meaning-aware audit: flags memories that directly contradict each other in meaning " +
+          "(opposite facts about the same subject) without sharing a comparable metadata field — each with a " +
+          "resolution recommending which side to trust. Complements POST /consistency. Never mutates memory.",
+        tags: ["audit"],
+        body: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            company: { type: "string", description: "Optional company scope." },
+            period: { type: "string", description: "Optional period scope." },
+            kind: { type: "string", description: KIND_HINT },
+            similarityThreshold: {
+              type: "number",
+              description: "Override the subject-similarity gate (0..1).",
+            },
+          },
+        },
+        response: { 200: looseObject },
+      },
+    },
+    async (req) => {
+      const { company, period, kind, similarityThreshold } = req.body ?? {};
+      const report = await agent.auditSemanticConsistency(
+        { company, period, kind },
+        similarityThreshold != null ? { similarityThreshold } : {},
+      );
       return report;
     },
   );

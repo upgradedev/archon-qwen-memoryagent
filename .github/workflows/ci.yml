@@ -155,7 +155,7 @@ jobs:
           tests/unit/embeddings.test.ts tests/unit/narrator.test.ts
           tests/unit/memory.test.ts tests/unit/retrieval.test.ts
           tests/unit/metrics.test.ts tests/unit/consolidation.test.ts
-          tests/unit/consistency.test.ts tests/unit/rerank.test.ts
+          tests/unit/consistency.test.ts tests/unit/semantic-consistency.test.ts tests/unit/rerank.test.ts
           tests/unit/accuracy.test.ts tests/unit/server.test.ts
           tests/unit/skills.test.ts tests/unit/mcp.test.ts
           tests/unit/pnl.test.ts tests/unit/pipeline.test.ts
