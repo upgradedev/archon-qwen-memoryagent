@@ -36,7 +36,7 @@
 | `MemoryStore` (`PgVectorStore` + `InMemoryStore`) + pgvector schema (HNSW) | ✅ done |
 | `MemoryAgent` ingest/recallAnswer | ✅ done |
 | HTTP backend + Dockerfile + docker-compose | ✅ done |
-| Test pyramid: 17 unit (local ✓) + integration + e2e cross-session (CI/pgvector) | ✅ done |
+| Test pyramid: 140 unit (local ✓) + integration + e2e cross-session (CI/pgvector; 183 node:test total) | ✅ done |
 | FC deploy assets (`s.yaml`, `deploy-fc.sh`) | ✅ done (user-gated to run) |
 | CI green on GitHub | ⏳ verify after push |
 
