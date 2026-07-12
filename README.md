@@ -18,6 +18,22 @@
 
 > **Judges:** [`docs/JUDGE-GUIDE.md`](docs/JUDGE-GUIDE.md) is a 2-minute click path — see a cross-session contradiction recalled *and resolved* in ~60 seconds.
 
+## Three things that make this stand out
+
+1. **★ Read-only self-auditing memory (the innovation).** A cross-session agent accumulates facts from many separate writes — and nothing stops two of them from **contradicting**. The agent **audits its own memory** (`POST /consistency`, [`src/memory/consistency.ts`](./src/memory/consistency.ts)): it detects same-record contradictions + dangling references and **recommends which value to trust** (`{rule, confidence, rationale}` over a fixed importance → source-authority → recency ladder) — but it is a **pure function that never mutates memory**. That is the honest differentiator against the field: **Mem0** resolves conflicts by *silently mutating* memory at write time, **Zep/Graphiti** by *mutating* its temporal graph — ours is the read-only, deterministic, portable recommender. Measured: **5/5 contradictions/dangling-refs detected, 0 false positives** on the control set, and **4/4 resolutions correct** on the labelled policy. → [details](#-self-auditing-memory-the-headline) · [BENCHMARK.md](./BENCHMARK.md#head-to-head-vs-mem0-and-zep)
+
+2. **Recall measured head-to-head — beats the field-default retriever.** A frozen, labelled benchmark on **real `text-embedding-v4`** embeddings scores our `reranked-hybrid` retriever (dense + BM25 RRF fusion + a `qwen-plus` cross-encoder re-rank) against `naive-vector`, the single-vector cosine ANN that LangChain's `VectorStoreRetriever` and virtually every pgvector RAG demo ship **by default**:
+
+   | Metric (vs field-default dense) | naive-vector | **reranked-hybrid (ours)** |
+   |---|---:|---:|
+   | Recall@3 | 90.0% | **96.7%** |
+   | MRR | 0.883 | **0.911** |
+   | nDCG@5 | 0.903 | **0.938** |
+
+   Plus a **measured accuracy number on our own answers**: 100% gold recall@5, 100% correctness, **90.9% grounding** (we report the one honest grounding miss, not a suspicious 100%). All reproducible offline from committed fixtures, gated in CI. → [BENCHMARK.md](./BENCHMARK.md)
+
+3. **One memory core, exposed three ways — including a real MCP server.** The same injectable `MemoryAgent` is reachable over **REST**, a **Model Context Protocol server** ([`src/mcp/server.ts`](./src/mcp/server.ts), official `@modelcontextprotocol/sdk`, **stdio + Streamable HTTP**, four typed tools), and a **`qwen-plus` function-calling skills layer** ([`src/skills/`](./src/skills)) — all through one shared `SkillDispatcher`, so the protocol layer never duplicates the memory logic. → [MCP integration & custom skills](#mcp-integration--custom-skills)
+
 ## What it is
 
 Archon MemoryAgent gives a small business's financial-intelligence pipeline a **memory**.
