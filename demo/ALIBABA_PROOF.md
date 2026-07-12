@@ -4,12 +4,14 @@ This is the submission's **Proof of Alibaba Cloud Deployment**. It links the exa
 
 ## Alibaba Cloud services & APIs used — direct code links
 
+The **live deployed path** is **ECS + a self-hosted pgvector container** (docker-compose, one public URL), using the real Alibaba Cloud Qwen models. The Function Compute + managed ApsaraDB path is a provided serverless **alternative**, not the deployed topology.
+
 | Alibaba Cloud service | Code | What it does |
 |---|---|---|
-| **Model Studio / DashScope** (Qwen Cloud inference API) | [`src/qwen/client.ts`](../src/qwen/client.ts) | One OpenAI-compatible client to `dashscope-intl.aliyuncs.com/compatible-mode/v1`; calls **`text-embedding-v4`** (embeddings) and **`qwen-plus`** (RAG narration). |
-| **Function Compute** (serverless custom-container HTTP function) | [`deploy/s.yaml`](../deploy/s.yaml) · [`deploy/deploy-fc.sh`](../deploy/deploy-fc.sh) | Builds the container, pushes to Alibaba Container Registry, deploys the backend as an FC HTTP function. |
-| **ECS** (live deployment) | [`deploy/redeploy.sh`](../deploy/redeploy.sh) · [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) | docker-compose backend + a pgvector container on an ECS instance behind one public URL. |
-| **ApsaraDB RDS / AnalyticDB for PostgreSQL** (pgvector memory store) | [`src/db/schema.sql`](../src/db/schema.sql) · [`src/db/client.ts`](../src/db/client.ts) | pgvector schema (`vector(1024)` + HNSW cosine index). Because it is pg-wire, the identical code runs on a managed RDS instance or the ECS pgvector container. |
+| **Model Studio / DashScope** (Qwen Cloud inference API) — *live* | [`src/qwen/client.ts`](../src/qwen/client.ts) | One OpenAI-compatible client to `dashscope-intl.aliyuncs.com/compatible-mode/v1`; calls **`text-embedding-v4`** (embeddings) and **`qwen-plus`** (RAG narration). Verifiable on the live `GET /health`. |
+| **ECS** (live backend host) — *live* | [`deploy/redeploy.sh`](../deploy/redeploy.sh) · [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) | Runs the backend **plus a self-hosted `pgvector` container** via docker-compose on one ECS instance (`ap-southeast-1`) behind a single public URL. **This is the deployed live path.** |
+| **pgvector on PostgreSQL** (memory store) — *live* | [`src/db/schema.sql`](../src/db/schema.sql) · [`src/db/client.ts`](../src/db/client.ts) | pgvector schema (`vector(1024)` + HNSW cosine index), running in the self-hosted pgvector container on the ECS box. |
+| **Function Compute + ApsaraDB RDS / AnalyticDB for PostgreSQL** (serverless topology) — *alternative, not deployed* | [`deploy/s.yaml`](../deploy/s.yaml) · [`deploy/deploy-fc.sh`](../deploy/deploy-fc.sh) | A provided serverless portability path: build/push the container to Alibaba Container Registry, deploy as an FC HTTP function backed by a managed ApsaraDB RDS memory store. Because the store is pg-wire, it is a drop-in `DATABASE_URL` swap for the ECS pgvector container. Provided for portability; **not the deployed path for this submission.** |
 
 ## Runtime proof (the basis for the recording)
 
