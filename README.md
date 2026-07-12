@@ -6,8 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Alibaba%20Cloud-ff6a00?logo=alibabacloud&logoColor=white)](https://memory.43.106.13.19.sslip.io)
 ![Demo Video](https://img.shields.io/badge/Demo%20Video-pending%20upload-lightgrey?logo=youtube)
-[![Tests](https://img.shields.io/badge/Tests-140%20node%3Atest%20%2B%20Playwright-brightgreen)](tests)
-[![Coverage](https://img.shields.io/badge/Coverage-97.79%25-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/Tests-183%20node%3Atest-brightgreen)](tests)
+[![Coverage](https://img.shields.io/badge/Coverage-97.75%25-brightgreen)](tests)
 [![Project Story](https://img.shields.io/badge/Project%20Story-Devpost-003e54)](demo/PROJECT_STORY.md)
 <!-- USER: replace with YouTube URL before submit — make the Demo Video badge a link to the uploaded video -->
 
@@ -117,6 +117,8 @@ It is a *recommender, not ground truth*. It **never mutates memory**, and it is 
 - **Mem0** resolves conflicts by letting an LLM *silently mutate* memory at write time (ADD / UPDATE / DELETE).
 - **Zep / Graphiti** resolves by *mutating* its temporal graph (invalidating the stale edge by time).
 - **Ours never mutates.** It is a read-only, deterministic, domain-neutral pure function that surfaces the contradiction and hands back a *recommendation* — `rule + confidence + rationale` over a fixed importance → source-authority → recency ladder — for the agent or a human to accept or override.
+
+**Meaning-level contradictions, too** — `POST /consistency/semantic` ([`src/memory/semantic-consistency.ts`](./src/memory/semantic-consistency.ts)). The rule-based audit above compares metadata fields, so it is blind to memories that oppose each other in *meaning* while sharing no comparable key — e.g. *"vendor always pays on time"* vs *"vendor is chronically late"*. A companion **semantic** audit closes that gap: it embeds each memory (the same `text-embedding-v4` path recall uses), keeps only same-subject pairs by cosine, then asks a judge whether they contradict — **qwen-plus** online, a deterministic polarity/negation heuristic offline (so it runs in CI with no key). It reuses the **same read-only resolution ladder** and, like the rule-based path, **never mutates memory**. It runs *alongside* the rule-based engine — additive, neither replaces the other.
 
 The claim is not "we detect and they can't" (Zep does). It is **"we recommend without mutating, explainably and portably"** — a memory layer that stays honest about what it holds.
 
@@ -315,12 +317,13 @@ repos/qwen-memoryagent/
 │   │   ├── retrieval.ts         # BM25 + cosine + RRF + MMR + hybrid + rerank retrievers (pure)
 │   │   ├── rerank.ts            # cross-encoder re-rank: LlmReranker (qwen-plus) + offline FakeReranker
 │   │   ├── consistency.ts       # SELF-AUDIT: cross-session contradiction + dangling-ref DETECT + RESOLVE (pure)
+│   │   ├── semantic-consistency.ts # SELF-AUDIT (meaning): embedding-gated + judge (qwen-plus / offline polarity) — read-only
 │   │   ├── consolidation.ts     # consolidate (dedup) + forget planners (pure)
 │   │   ├── store.ts             # MemoryStore: PgVectorStore + InMemoryStore (hybrid + lifecycle + audit)
 │   │   └── memory.ts            # remember() / recall() — embed ↔ store orchestration
 │   ├── agents/
 │   │   ├── narrator.ts          # QwenNarrator (qwen-plus RAG) + offline FakeNarrator
-│   │   └── memory-agent.ts      # MemoryAgent: ingestEvent · recallAnswer · auditConsistency · consolidate · forget
+│   │   └── memory-agent.ts      # MemoryAgent: ingestEvent · recallAnswer · auditConsistency · auditSemanticConsistency · consolidate · forget
 │   ├── db/{client.ts,schema.sql}  # pg pool + pgvector schema (vector(1024) + HNSW + FTS + lifecycle)
 │   ├── types.ts                 # PayrollEvent domain types
 │   └── server.ts                # Fastify HTTP backend (the Alibaba Cloud deploy target)
@@ -354,7 +357,7 @@ npm run db:schema
 npm run memory:demo
 
 # 3. Run the HTTP backend
-npm start                       # /health · /ingest · /recall · /consistency · /consolidate · /forget
+npm start                       # /health · /ingest · /recall · /consistency · /consistency/semantic · /consolidate · /forget
 
 # 4. Reproduce the benchmarks (replay committed fixtures — no key, no spend)
 npm run bench                   # retrieval: Recall@k / MRR / nDCG (incl. re-rank + shuffled control)
@@ -381,6 +384,7 @@ Once the backend is running, open **`http://localhost:9000/docs`** for the inter
 | `GET /pnl` | `?company=&period=` → payroll-cost **P&L** aggregated over the pipeline-fed memories (employer cost, cash-out, off-bank cost gap, by company). |
 | `POST /recall` | `{ question, company?, kind?, limit?, hybrid? }` → grounded, cited answer (hybrid on by default) + a best-effort self-audit over the recalled memories. |
 | `POST /consistency` | `{ company?, period?, kind? }` → **self-audit**: cross-session contradictions (each with a `resolution` recommending which value to trust) + dangling references across stored memories (read-only, no schema change). |
+| `POST /consistency/semantic` | `{ company?, period?, kind?, similarityThreshold? }` → **meaning-level self-audit**: flags memories that contradict in *meaning* without sharing a comparable field (embedding-gated + a qwen-plus / offline-polarity judge), each with a `resolution`. Read-only; complements `POST /consistency`. |
 | `POST /consolidate` | `{ company?, threshold? }` → collapse near-duplicate memories. |
 | `POST /forget` | `{ company?, deleteSuperseded?, olderThanDays?, maxImportance? }` → prune memories. |
 
