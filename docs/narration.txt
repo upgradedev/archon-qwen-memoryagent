@@ -1,18 +1,18 @@
-An agent that forgets between sessions is useless for recurring financial back-office work. Archon gives it persistent, queryable memory — recalling facts and findings across sessions, live on Alibaba Cloud on real Qwen models.
+An agent that forgets between sessions is useless for recurring back-office work. Archon gives it persistent, queryable memory across sessions — live on Alibaba Cloud on real Qwen models.
 
-First, proof it's real: the health endpoint shows the embedder is Qwen text-embedding-v4 and the narrator qwen-plus, with genuine 1024-dimension vectors; a live badge counts the memories already persisted.
+First, proof it's real: the health endpoint shows Qwen text-embedding-v4 and qwen-plus, with genuine 1024-dimension vectors, and a live badge counts the memories persisted.
 
-Every fused financial event, validation finding and narrated insight is embedded with text-embedding-v4 and written to pgvector on Alibaba Cloud — durable, not in-process. Recall is hybrid: dense vectors and BM25 fused with reciprocal rank fusion, a cross-encoder rerank, and a grounded answer from qwen-plus.
+Every event, finding and insight is embedded with text-embedding-v4 and written to pgvector on Alibaba — durable, not in-process. Recall is hybrid: dense plus BM25 fused with reciprocal rank fusion, a cross-encoder rerank, then a grounded qwen-plus answer.
 
-Now, live in the Explorer. In Session A, an agent commits fused financial facts — invoices, cash positions, workforce cost as one example among many. Then the session ends; nothing stays in process.
+Now, live in the Explorer. In Session A an agent commits fused financial facts — invoices, cash positions, workforce cost. Then the session ends; nothing stays in process.
 
-Session B is a fresh, separate client with only a question, typed into the Explorer: what did it truly cost to employ the team, versus what left the bank? Qwen embeds the question, searches pgvector by cosine, and qwen-plus returns a grounded, cited answer — fifteen thousand eight hundred euros of true employer cost against ten thousand paid from the bank — written in one session, recalled by meaning in another. A second, different question returns another grounded answer from the same memory.
+Session B is a fresh client with only a question: what did it truly cost to employ the team, versus what left the bank? Qwen embeds it, searches pgvector by cosine, and qwen-plus returns a grounded, cited answer — fifteen thousand eight hundred euros of true cost against ten thousand from the bank — written in one session, recalled by meaning in another.
 
-Now the differentiator: a memory that audits itself. Two separate sessions wrote one record with two different values. Mem0 and Zep would silently mutate — overwrite the old value. Archon never mutates. It detects the contradiction and recommends which to trust — with a rule, confidence and rationale.
+Now the differentiator: a memory that audits itself. Two sessions wrote one record with two values. Mem0 and Zep would silently overwrite; Archon never mutates — it detects the contradiction and recommends which to trust, with a rule and rationale.
 
-And it audits meaning, not just fields. One note says a vendor pays on time, another that it's chronically late — no shared number to compare — so a companion semantic audit embeds them, sees the same subject, and asks qwen-plus whether they contradict, with the same read-only recommendation. Every operation here — recall, ingest, audit, count — is also exposed over the Model Context Protocol, so any MCP client can drive this exact memory.
+It even audits meaning, not just fields: notes that a vendor pays on time, then is chronically late, share no number to compare, so a semantic pass asks qwen-plus if they contradict. And every operation is also a Model Context Protocol tool for any MCP client.
 
-And it's measured: five of five seeded contradictions detected, zero false positives, and a read-only recommender correct four of four. Retrieval too — Recall at three rises from ninety to ninety-six point seven percent, at a hundred percent answer correctness.
+And it's measured: five of five contradictions detected, zero false positives, a recommender correct four of four; retrieval Recall at three rises from ninety to ninety-six point seven percent, at full answer correctness.
 
 It runs live on Alibaba Cloud — an ECS instance in Singapore beside a self-hosted pgvector container. Real Qwen, measured, open source under MIT — not a wrapper.
 
