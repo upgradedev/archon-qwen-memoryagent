@@ -455,7 +455,7 @@ above plus winner-accuracy against the labelled policy (`bench:resolution --gate
 Because the recommender is pure and deterministic, these never flake; the rule
 breakdown is reported every run.
 
-### Meaning-level (semantic) self-audit — method; not yet benchmarked on a labelled set
+### Meaning-level (semantic) self-audit — measured on a labelled set
 
 The rule-based audit above compares **shared metadata fields**, so it is blind to a
 whole class of real contradiction: two memories that oppose each other **in meaning**
@@ -482,22 +482,44 @@ Like the rule-based layer it is **read-only** and a **recommender**: every findi
 the SAME `resolution` shape produced by the SAME importance → source-authority → recency
 ladder. It **never mutates memory**.
 
-**What is measured today — and what is not (honest):**
+**Measured** on a labelled corpus (`bench/semantic-consistency-dataset.ts`,
+`npm run bench:semantic`) of 10 same-subject **opposed** pairs spanning every polarity
+cluster plus a hard control of agreeing / **negation-agreeing** / complementary /
+cross-cluster / different-subject pairs:
 
-- **Shipped + offline-tested, not scored.** The engine has full unit coverage
-  (`tests/unit/semantic-consistency.test.ts`): the pure detector, the subject gate, the
-  fail-closed online judge, zero false positives on unrelated/agreeing pairs, and a test
-  that the **shipped demo fixture** (`DEMO_SEMANTIC` in `src/demo-data.ts` — the
-  "on time" vs "chronically late" pair seeded by `POST /demo/seed`) is actually detected
-  offline. So the *mechanism* is proven and the *demo is real*, live on the box.
-- **Not yet a labelled-precision/recall benchmark.** Unlike retrieval (MRR/nDCG/Recall)
-  and the rule-based audit (5/5 detect, 0 FP; 4/4 resolve), the meaning-level detector is
-  **not yet measured against a labelled contradiction/non-contradiction corpus**. That is
-  the honest next step: a `bench/semantic-consistency-dataset.ts` of opposed pairs plus a
-  hard control of merely-different / complementary / different-subject pairs, gated on
-  precision (false positives are the dangerous failure) — mirroring the rule-based gate.
-  Until then we claim it as a **method with a proven mechanism and a working live demo**,
-  not as a scored number.
+> **9 / 10 contradictions detected with 0 false positives — 90% recall, 100%
+> precision, 0% false-positive rate.** On the same corpus the rule-based
+> field-level audit catches **0**, so the meaning-level self-audit
+> **surfaces 9 contradictions** a naive store — and any field-level audit — would serve as truth.
+
+**Method — the number isolates the offline judge.** Each memory carries an explicit
+per-subject **orthogonal embedding**, so the subject gate is deterministic (same-subject
+pairs land at cosine ≈ 0.995 and clear the gate; different-subject pairs are orthogonal and
+are rejected, never judged). That makes precision/recall/FP a clean measurement of the
+offline opposition **judge's** discrimination — the `FakeJudge` polarity/negation heuristic
+— free of bag-of-words embedder noise. The **live** path swaps in real `text-embedding-v4`
+vectors + the **qwen-plus** judge; this offline corpus measures exactly the credential-free
+CI path.
+
+**Precision is the load-bearing number** (identical stance to the rule-based audit): the
+control set exists to keep the audit **silent** on things that only *look* like conflicts.
+The sharpest trap is the **negation-agreement** case — *"not late"* AGREES with *"pays on
+time"* (both positive once negation is applied) and must **not** flag; the heuristic's
+`isNegated` handles it, and the benchmark proves 0 FP across the whole control.
+
+**The one miss is honest, not hidden.** The single undetected contradiction is **cue-free**
+— *"delivers every shipment ahead of schedule"* vs *"is consistently behind schedule"* — no
+lexical polarity cue the offline heuristic can see. That is precisely the case the **online
+qwen-plus judge** exists to close; we floor recall at the measured 90% (same philosophy as
+grounding's measured 90.9% above), never an aspirational 100%. Full unit coverage of the
+mechanism remains in `tests/unit/semantic-consistency.test.ts`, and the **shipped demo
+fixture** (`DEMO_SEMANTIC`, seeded by `POST /demo/seed`) is proven detectable offline.
+
+**What CI gates:** `npm run bench:semantic -- --gate` fails on any regression below **100%
+precision (0 FP)** or **90% recall** — the fifth benchmark gate alongside retrieval,
+grounded-answer accuracy, self-audit detection, and resolution. The headline numbers are
+pinned in `bench/golden.json` (`semantic` block) and re-verified by the readiness gate
+(`scripts/readiness.ts`, which asserts computed == golden == docs).
 
 ## Memory lifecycle: consolidation + forgetting
 

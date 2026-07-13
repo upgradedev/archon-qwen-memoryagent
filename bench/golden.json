@@ -8,5 +8,13 @@
     "ndcg5_reranked_hybrid": 0.938,
     "recall3_reranked_hybrid_pct": 96.7,
     "grounding_faithfulness_pct": 90.9
+  },
+  "_semantic_comment": "SSOT for the meaning-level (semantic) self-audit numbers, measured offline by `npm run bench:semantic` over bench/semantic-consistency-dataset.ts with the deterministic FakeJudge. `contradictions_surfaced` is the canonical Problem-Value number quoted verbatim in README.md + BENCHMARK.md; `rule_based_caught` is what a field-level audit / naive store serves as truth on the same corpus. The readiness gate (scripts/readiness.ts) recomputes these and asserts computed == golden == docs.",
+  "semantic": {
+    "recall_pct": 90.0,
+    "precision_pct": 100.0,
+    "fp_rate_pct": 0.0,
+    "contradictions_surfaced": 9,
+    "rule_based_caught": 0
   }
 }
