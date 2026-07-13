@@ -364,17 +364,31 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
     {
       id: "Pr3-semantic-in-diagrams",
       criterion: "Presentation",
-      title: "The semantic self-audit route appears in the architecture diagram + API table",
+      title: "The semantic self-audit route appears in ALL mermaid diagrams + the API table",
       weight: 5,
       cls: "automatable",
       async run() {
-        const mermaid = README.match(/```mermaid\r?\n([\s\S]*?)```/)?.[1] ?? "";
-        const inMermaid = mermaid.includes("/consistency/semantic");
+        // Every mermaid diagram across the judge-facing docs (README + the two
+        // that embed an architecture diagram) must carry the /consistency/semantic
+        // route — so the gate can never go green while one diagram omits it.
+        const mermaidDocs = ["README.md", "demo/BLOG.md", "demo/PROJECT_STORY.md"];
+        const missing: string[] = [];
+        let checked = 0;
+        for (const rel of mermaidDocs) {
+          if (!existsSync(join(ROOT, rel))) continue;
+          const text = rel === "README.md" ? README : readText(rel);
+          const blocks = [...text.matchAll(/```mermaid\r?\n([\s\S]*?)```/g)].map((m) => m[1] ?? "");
+          for (const b of blocks) {
+            checked++;
+            if (!b.includes("/consistency/semantic")) missing.push(rel);
+          }
+        }
         const inApiTable = /`POST \/consistency\/semantic`/.test(README);
-        const inMcp = /audit\(\+semantic\)|semantic/i.test(mermaid) || /audit_memory[\s\S]{0,400}semantic/i.test(README);
+        const inMcp = /audit\(\+semantic\)|semantic/i.test(README);
+        const ok = checked >= 3 && missing.length === 0 && inApiTable && inMcp;
         return {
-          ok: inMermaid && inApiTable && inMcp,
-          detail: `mermaid route=${inMermaid}; API-table row=${inApiTable}; MCP semantic mention=${inMcp}`,
+          ok,
+          detail: `mermaid diagrams with route: ${checked - missing.length}/${checked}${missing.length ? ` (missing: ${[...new Set(missing)].join(", ")})` : ""}; API-table row=${inApiTable}; MCP semantic mention=${inMcp}`,
         };
       },
     },
