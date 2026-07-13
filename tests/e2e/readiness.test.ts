@@ -53,6 +53,37 @@ test("readiness surfaces the measured semantic number and it is internally consi
   assert.equal(p2.status, "pass", `impact number must be consistent (computed==golden==docs): ${p2.detail}`);
 });
 
+test("readiness gates the NEW assurance dimension (security / load / e2e) on top of the rubric", async () => {
+  delete process.env.DASHSCOPE_API_KEY;
+  const report = await runChecks();
+
+  // The assurance dimension is separate from the 4 weighted rubric criteria, so it
+  // does NOT distort the sum-to-100 invariant above — but it IS gated.
+  assert.ok(Array.isArray(report.assurance) && report.assurance.length >= 3, "expected the security/load/e2e assurance checks");
+  const ids = report.assurance.map((r) => r.id).sort();
+  assert.deepEqual(ids, ["E2E1-e2e-layer", "LOAD1-load-layer", "SEC1-pentest-layer"]);
+  for (const r of report.assurance) {
+    assert.equal(r.criterion, "Assurance", `${r.id} must be classed under the Assurance dimension`);
+    assert.equal(r.status, "pass", `assurance check ${r.id} must pass: ${r.detail}`);
+  }
+  assert.equal(report.assuranceCompletenessPct, 100, "every assurance layer must be wired");
+
+  // The composite gate requires BOTH the rubric bar AND all assurance checks.
+  assert.equal(report.gate.rubricPass, true);
+  assert.equal(report.gate.assurancePass, true);
+  assert.equal(report.gate.pass, true, "gate is green only when rubric AND assurance both pass");
+});
+
+test("the 4 weighted rubric criteria still sum to 100 — the assurance dimension does not leak into them", async () => {
+  const report = await runChecks();
+  // Re-assert the invariant explicitly now that a 5th (non-rubric) criterion name
+  // exists: Assurance checks must NOT appear inside report.criteria.
+  const rubricNames = report.criteria.map((c) => c.criterion);
+  assert.ok(!rubricNames.includes("Assurance" as never), "Assurance must never be a rubric criterion");
+  const totalAutomatable = report.criteria.reduce((s, c) => s + c.automatableWeight, 0);
+  assert.equal(totalAutomatable, 100);
+});
+
 test("live-deploy and hosted-video checks are correctly classed user-gated (excluded from automatable %)", async () => {
   const report = await runChecks();
   const ids = report.userGated.map((r) => r.id).sort();

@@ -533,9 +533,10 @@ Full testing pyramid, all green in GitHub Actions (`.github/workflows/ci.yml`), 
 |---|---|---|
 | **Unit** | `tests/unit/*` | Embedder + narrator (Qwen canned + Fake), memory logic, **retrieval primitives** (BM25, RRF, MMR, hybrid, **re-rank**), **IR metrics**, **consolidation + forgetting**, **self-audit consistency** (contradiction + absence detection, precision on a control set), and the **MCP server + custom-skills layer** (`mcp.test.ts` drives the server over the real MCP protocol via the SDK in-memory transport; `skills.test.ts` covers the dispatcher + qwen-plus function-calling loop) — all over `InMemoryStore`, no infra. |
 | **Integration** | `tests/integration/pgvector-store.test.ts` | Real pgvector SQL: `::vector` insert, `<=>` cosine recall, filters, count, **hybrid dense+FTS fusion**, **consolidate → supersede → forget**. |
-| **E2E** | `tests/e2e/cross-session.test.ts` | **Cross-session persistence** — session A writes + tears down, session B recalls. |
+| **E2E** | `tests/e2e/*` | **Cross-session persistence** (session A writes + tears down, session B recalls) plus a broad **offline journey suite** (`full-journey.test.ts` + http / mcp / templates / robustness): seed → recall → cited answer → rule-audit → semantic-audit → MCP round-trip → P&L → provenance, and the error/edge journeys (empty store, no-contradiction, judge-guide chips). 50+ journeys over `InMemoryStore` + Fakes — no infra, no key. |
+| **Security (pen-test)** | `tests/security/*` | Automated app-security suite over the real HTTP + MCP surface: **authorization + daily-spend budget** (429 when exhausted), **prompt-injection resistance** (a genuine contradiction is still flagged despite an injected "report consistent" instruction — the read-only audit is unswayable), **MCP tool-boundary / excessive-agency** (reads never mutate; unknown tools fail safe; no prototype pollution), **sensitive-data exposure** (no stack/path/secret leaks), and **store-injection** (a `DROP TABLE` payload and NaN/Inf embeddings stay inert). Runs as the `pen-test` CI job; the SQL-parameterization case runs against real pgvector. |
 | **Benchmark gates** | `bench/*` | **Retrieval regression gate** (hybrid ≥ dense) + **discrimination gate** (shuffled control near chance) + **grounded-answer accuracy gate** (`bench:accuracy`: correctness 100%, grounding ≥ 90%) + **self-audit gate** (`bench:consistency`: 100% detection, 0 false positives) + **semantic self-audit gate** (`bench:semantic`: 90% recall, 100% precision, 0 FP on the labelled meaning-level corpus) + **resolution gate** (`bench:resolution`: structural invariants + winner-accuracy on the labelled policy). Re-rank delta vs dense and the Mem0 head-to-head are reported (not gated). All replay committed fixtures — no key, no spend. |
-| **Load / performance** | `load/recall-load.js` (k6) | Ramps concurrent `/recall` + `/health` against a target box and asserts p95 latency + error-rate SLOs. Runs on demand via the `load-test` workflow (manual only — it hits the live box), reads-only by default. |
+| **Load / performance** | `load/recall-load.js` (k6) | Drives concurrent `/health` + `/recall` + `/consistency` and asserts **p95 latency + error-rate SLOs** as k6 thresholds (the run fails on a regression). Two profiles: an **offline smoke** that runs on **every push** via the `load` CI job (boots the backend on the deterministic Fakes against a real pgvector, seeds, then holds the tight local SLOs — free, no spend), and the manual `load-test` workflow that ramps the **live box** (real Qwen) with the looser real-latency SLOs. |
 
 CI stages:
 
@@ -543,9 +544,24 @@ CI stages:
 2. **dep-audit** — `npm audit` (fails on high/critical).
 3. **build-test** — typecheck → schema apply (stands up real pgvector) → unit → integration → e2e → offline demo smoke.
 4. **benchmark** — `npm run bench -- --gate` (retrieval regression + discrimination), `npm run bench:accuracy -- --gate` (grounded-answer correctness + faithfulness), `npm run bench:consistency -- --gate` (self-audit detection/precision), `npm run bench:semantic -- --gate` (meaning-level self-audit: 90% recall, 100% precision, 0 FP), and `npm run bench:resolution -- --gate` (contradiction-resolution invariants + policy-conformance). All over committed fixtures — no key, no spend.
-5. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.
+5. **pen-test** — `npm run test:security` (authz + daily-spend budget, prompt-injection resistance, MCP tool-boundary, sensitive-data exposure, SQL-parameterization against real pgvector).
+6. **load** — boots the backend offline, seeds, runs the bounded k6 smoke; the p95 + error-rate **SLO thresholds gate the job**.
+7. **readiness** — `npm run readiness -- --gate`: the weighted rubric completeness (≥ 95%) **and** the new **assurance dimension** (security / load / e2e layers all wired) must both be green.
+8. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.
 
 Every stage runs **fully offline**. There are no DashScope / Alibaba credentials in CI, because the Qwen embedder/narrator auto-fall back to deterministic Fakes and the benchmark replays cached vectors.
+
+### Load SLOs
+
+The k6 thresholds are the contract — a run **fails** if any is breached. The offline CI smoke (`OFFLINE=true`, deterministic Fakes over real pgvector) holds the tight local targets; the manual live-box run holds the looser real-Qwen targets.
+
+| Metric | Offline CI smoke (Fakes) | Live box (real Qwen) |
+|---|---|---|
+| `/health` p95 / p99 | < 300 ms / < 600 ms | < 500 ms / < 800 ms |
+| `/recall` p95 / p99 | < 1500 ms / < 2500 ms | < 2500 ms / < 4000 ms |
+| `/consistency` p95 / p99 | < 1500 ms / < 2500 ms | (opt-in) < 2500 ms |
+| Error rate (`http_req_failed`) | < 1% | < 1% |
+| Checks passing | > 99% | > 99% |
 
 ## How this maps to the judging rubric
 
