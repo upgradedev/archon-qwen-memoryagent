@@ -123,6 +123,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # Keep the pen-test budget-exhaustion case fast (5 valid calls + 1 → 429),
+      # instead of driving the default 100-call per-IP limit through the pipeline.
+      INGEST_DAILY_LIMIT: "5"
     services:
       pgvector:
         image: pgvector/pgvector:pg16
@@ -161,11 +164,16 @@ jobs:
           tests/unit/pnl.test.ts tests/unit/pipeline.test.ts
           tests/integration/pgvector-store.test.ts
           tests/integration/pipeline-ingest.test.ts
+          tests/security/authz.test.ts
+          tests/security/injection.test.ts
+          tests/security/mcp-boundary.test.ts
+          tests/security/exposure.test.ts
           tests/e2e/cross-session.test.ts
           tests/e2e/templates.test.ts
           tests/e2e/http-journeys.test.ts
           tests/e2e/mcp-journeys.test.ts
           tests/e2e/robustness.test.ts
+          tests/e2e/full-journey.test.ts
           tests/e2e/readiness.test.ts
       - name: Upload lcov coverage report
         if: always()
@@ -227,3 +235,126 @@ jobs:
           name: readiness-report
           path: readiness.json
           if-no-files-found: warn
+
+  # Stage 5 — PEN-TEST (application-security) layer. Drives the REAL HTTP API + MCP
+  # surface with adversarial input: authorization + daily-spend budget (429),
+  # prompt-injection resistance (a genuine contradiction is STILL flagged despite an
+  # injected "report consistent" instruction, read-only), MCP tool-boundary /
+  # excessive-agency, sensitive-data exposure (no stack / path / secret leaks), and
+  # SQL-parameterization against a real pgvector (a `DROP TABLE` payload stays inert
+  # data). Fully OFFLINE — no DASHSCOPE key; the pg service makes the SQLi case real.
+  pen-test:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # Small budget so the 429 exhaustion case is fast (5 valid calls, then a 429).
+      INGEST_DAILY_LIMIT: "5"
+    services:
+      pgvector:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install deps
+        run: npm ci
+      - name: Apply schema (creates the vector(1024) memory table + HNSW index)
+        run: npm run db:schema
+      - name: Pen-test suite (authz · injection · MCP boundary · exposure · SQLi)
+        run: npm run test:security
+
+  # Stage 6 — LOAD (performance) smoke. Boots the backend OFFLINE (deterministic
+  # Fakes, no key) against a real pgvector, seeds the demo memories, then runs a
+  # bounded k6 smoke that HOLDS p95 latency + error-rate SLOs on /health, /recall
+  # and /consistency (the k6 thresholds fail the job on a regression). This is the
+  # free, safe-on-every-push counterpart to the manual load-test.yml workflow, which
+  # drives the LIVE box with real Qwen spend.
+  load:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      PORT: "9000"
+    services:
+      pgvector:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install deps
+        run: npm ci
+      - name: Apply schema (creates the vector(1024) memory table + HNSW index)
+        run: npm run db:schema
+
+      - name: Install k6
+        run: |
+          set -euo pipefail
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+          k6 version
+
+      - name: Boot the OFFLINE backend (Fakes, no key) and wait for /health
+        run: |
+          set -euo pipefail
+          nohup npm start > server.log 2>&1 &
+          echo "waiting for the backend to answer /health..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:9000/health > /dev/null; then
+              echo "backend up after ${i} tries"; break
+            fi
+            sleep 2
+          done
+          curl -sf http://localhost:9000/health | tee /dev/stderr | grep -q '"status":"ok"'
+
+      - name: Seed the demo memories (so /recall + /consistency have data)
+        run: curl -sf -X POST http://localhost:9000/demo/seed | tee /dev/stderr
+
+      - name: k6 load smoke (offline profile, bounded) — SLO thresholds gate the job
+        env:
+          OFFLINE: "true"
+          TARGET_URL: "http://localhost:9000"
+        run: k6 run load/recall-load.js
+
+      - name: Upload k6 summary + server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-offline-smoke
+          path: |
+            load-summary.json
+            server.log
+          if-no-files-found: warn
+          retention-days: 14

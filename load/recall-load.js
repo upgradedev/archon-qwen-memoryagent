@@ -20,14 +20,25 @@
 //   RUN_RAMP=true  k6 run load/recall-load.js       # add the 0→20→50→0 ramp
 //   WRITE_LOAD=true k6 run load/recall-load.js       # opt-in write load (spend!)
 //
+// ── Offline vs live profile ─────────────────────────────────────────────────
+// OFFLINE=true is the CI smoke profile: it targets a locally-booted server that
+// runs the deterministic Fakes (no DashScope key, no spend) against a real
+// pgvector, so every read path — /recall AND /consistency — can be exercised on
+// EVERY iteration with no LLM cost, and the SLOs are the tighter local ones. With
+// OFFLINE unset (the default) the script keeps its live-box behavior: read-weighted
+// toward /health, the looser real-Qwen latency SLOs, and no consistency load.
+//
 // ── Env knobs ──────────────────────────────────────────────────────────────
-//   TARGET_URL     base URL           (default https://memory.43.106.13.19.sslip.io)
-//   RUN_RAMP       'true' → run the ramping-vus scenario after the smoke
-//   WRITE_LOAD     'true' → include /ingest writes (default OFF)
-//   READ_RATIO     0..1, share of iterations that hit /recall (default 0.15;
-//                  the rest hit /health) — keeps LLM/DB pressure bounded
-//   RECALL_COMPANY company filter used for /recall queries
-//   WRITE_COMPANY  company stamped on /ingest writes when WRITE_LOAD=true
+//   TARGET_URL        base URL        (default https://memory.43.106.13.19.sslip.io)
+//   OFFLINE           'true' → CI Fake-path profile (tight SLOs, hit /consistency)
+//   RUN_RAMP          'true' → run the ramping-vus scenario after the smoke
+//   WRITE_LOAD        'true' → include /ingest writes (default OFF)
+//   READ_RATIO        0..1, share of iterations that hit /recall (default 0.15
+//                     live, 1.0 offline) — the rest hit /health
+//   CONSISTENCY_RATIO 0..1, share of iterations that hit /consistency (default 0
+//                     live, 1.0 offline) — the read-only self-audit path
+//   RECALL_COMPANY    company filter used for /recall + /consistency queries
+//   WRITE_COMPANY     company stamped on /ingest writes when WRITE_LOAD=true
 
 import http from "k6/http";
 import { check, sleep } from "k6";
@@ -35,10 +46,14 @@ import { Rate } from "k6/metrics";
 import { textSummary } from "https://jslib.k6.io/k6-summary/0.0.1/index.js";
 
 const BASE = (__ENV.TARGET_URL || "https://memory.43.106.13.19.sslip.io").replace(/\/+$/, "");
+const OFFLINE = (__ENV.OFFLINE || "").toLowerCase() === "true";
 const RUN_RAMP = (__ENV.RUN_RAMP || "").toLowerCase() === "true";
 const WRITE_LOAD = (__ENV.WRITE_LOAD || "").toLowerCase() === "true";
-const READ_RATIO = clamp01(parseFloat(__ENV.READ_RATIO || "0.15"), 0.15);
-const RECALL_COMPANY = __ENV.RECALL_COMPANY || "Northwind Trading Ltd";
+const READ_RATIO = clamp01(parseFloat(__ENV.READ_RATIO || (OFFLINE ? "1.0" : "0.15")), OFFLINE ? 1.0 : 0.15);
+const CONSISTENCY_RATIO = clamp01(parseFloat(__ENV.CONSISTENCY_RATIO || (OFFLINE ? "1.0" : "0")), OFFLINE ? 1.0 : 0);
+// Offline the seed company is DEMO_COMPANY ("Northwind Trading") — no "Ltd" — so
+// the recall + consistency queries actually hit the seeded memories.
+const RECALL_COMPANY = __ENV.RECALL_COMPANY || (OFFLINE ? "Northwind Trading" : "Northwind Trading Ltd");
 const WRITE_COMPANY = __ENV.WRITE_COMPANY || "k6-load-test";
 
 function clamp01(n, fallback) {
@@ -51,6 +66,10 @@ const JSON_HEADERS = { "Content-Type": "application/json" };
 // Custom rate: share of /recall responses that came back with a real hits array.
 // Lets us see grounding health independent of the pass/fail check aggregate.
 const recallGrounded = new Rate("recall_grounded");
+
+// Custom rate: share of /consistency responses that returned a well-formed audit
+// report (a `contradictions` array). Tracks read-only self-audit health.
+const auditWellFormed = new Rate("audit_well_formed");
 
 // Realistic, universal finance-intelligence questions (no country/authority terms).
 const QUESTIONS = [
@@ -91,17 +110,34 @@ if (RUN_RAMP) {
 
 // ── Thresholds (SLOs) ────────────────────────────────────────────────────────
 // Per-endpoint tagged thresholds are the real SLOs. /health is a trivial
-// in-process liveness handler; /recall does an embedding + a qwen-plus
-// completion + a pgvector search, so it is legitimately slower.
-const thresholds = {
-  http_req_failed: ["rate<0.01"], // <1% of all requests may fail
-  checks: ["rate>0.99"], // >99% of assertions must pass
-  "http_req_duration{endpoint:health}": ["p(95)<500", "p(99)<800"],
-  "http_req_duration{endpoint:recall}": ["p(95)<2500", "p(99)<4000"],
-  // Loose global ceiling; the tagged SLOs above are the meaningful ones.
-  http_req_duration: ["p(95)<2500"],
-  recall_grounded: ["rate>0.95"],
-};
+// in-process liveness handler; /recall does an embedding + a narrator completion +
+// a pgvector search, so it is legitimately slower. The offline (Fake-path) profile
+// removes the qwen-plus network latency, so its SLOs are much tighter — a
+// regression in the pure service/DB/RRF path is caught even without a live model.
+const thresholds = OFFLINE
+  ? {
+      http_req_failed: ["rate<0.01"], // <1% of all requests may fail
+      checks: ["rate>0.99"], // >99% of assertions must pass
+      "http_req_duration{endpoint:health}": ["p(95)<300", "p(99)<600"],
+      "http_req_duration{endpoint:recall}": ["p(95)<1500", "p(99)<2500"],
+      "http_req_duration{endpoint:consistency}": ["p(95)<1500", "p(99)<2500"],
+      http_req_duration: ["p(95)<1500"],
+      recall_grounded: ["rate>0.95"],
+      audit_well_formed: ["rate>0.95"],
+    }
+  : {
+      http_req_failed: ["rate<0.01"], // <1% of all requests may fail
+      checks: ["rate>0.99"], // >99% of assertions must pass
+      "http_req_duration{endpoint:health}": ["p(95)<500", "p(99)<800"],
+      "http_req_duration{endpoint:recall}": ["p(95)<2500", "p(99)<4000"],
+      // Loose global ceiling; the tagged SLOs above are the meaningful ones.
+      http_req_duration: ["p(95)<2500"],
+      recall_grounded: ["rate>0.95"],
+    };
+if (CONSISTENCY_RATIO > 0 && !OFFLINE) {
+  thresholds["http_req_duration{endpoint:consistency}"] = ["p(95)<2500"];
+  thresholds["audit_well_formed"] = ["rate>0.95"];
+}
 if (WRITE_LOAD) {
   // /ingest embeds every memory it writes, so it is the heaviest path; only add
   // its threshold when writes are actually exercised (avoids empty-sample noise).
@@ -121,6 +157,11 @@ export default function () {
   // A bounded share of iterations exercise the expensive read path.
   if (Math.random() < READ_RATIO) {
     recall();
+  }
+
+  // The read-only self-audit path (offline profile exercises it every iteration).
+  if (Math.random() < CONSISTENCY_RATIO) {
+    consistency();
   }
 
   // Writes are strictly opt-in and clearly isolable.
@@ -169,6 +210,28 @@ function recall() {
       "recall: reports modelId": () => typeof json?.modelId === "string",
     },
     { endpoint: "recall" }
+  );
+}
+
+// Read-only self-audit load. Hits POST /consistency (the cross-session
+// contradiction scan) — a pure DB read + in-process rule engine, no model call.
+function consistency() {
+  const body = JSON.stringify({ company: RECALL_COMPANY });
+  const res = http.post(`${BASE}/consistency`, body, {
+    headers: JSON_HEADERS,
+    tags: { endpoint: "consistency" },
+  });
+  const json = safeJson(res);
+  const wellFormed = Array.isArray(json?.contradictions);
+  auditWellFormed.add(wellFormed);
+  check(
+    res,
+    {
+      "consistency: 200": (r) => r.status === 200,
+      "consistency: contradictions is array": () => Array.isArray(json?.contradictions),
+      "consistency: reports ok flag": () => typeof json?.ok === "boolean",
+    },
+    { endpoint: "consistency" }
   );
 }
 
