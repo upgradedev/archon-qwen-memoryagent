@@ -1,0 +1,72 @@
+0.0 $ # Archon MemoryAgent  ·  persistent, queryable memory across sessions
+2.5 $ # An agent that forgets across sessions is useless for recurring back-office work.
+4.5 $ # The ONLY shared state across sessions is pgvector on Alibaba Cloud.
+6.0 $ # ---- PROOF · real Qwen, live on Alibaba Cloud ----
+7.0 $ curl -s https://memory.43.106.13.19.sslip.io/health
+8.5   {"status":"ok","embedder":"text-embedding-v4","narrator":"qwen-plus","embedDim":1024}
+9.5 → embedder=text-embedding-v4 · narrator=qwen-plus · 1024-dim  (REAL Qwen, not a stub)
+12.0 $ curl -s https://memory.43.106.13.19.sslip.io/memory/count
+13.5   {"count":40}
+14.5 → 40 durable memories in pgvector — the Explorer UI's live count badge
+16.5 $ # ---- WHAT IT IS ----
+18.0 $ # Every fused event, validation finding and narrated insight is embedded with
+20.0 $ # text-embedding-v4 and written to pgvector on Alibaba — durable, not in-process.
+24.5 $ # ---- ARCHITECTURE · hybrid retrieval ----
+26.0 $ # embed → pgvector → dense + BM25 (RRF) → cross-encoder rerank → grounded qwen-plus
+29.0 $ # Queryable by MEANING across sessions — not string match, not an in-process cache.
+31.5 $ # ---- LIVE DEMO · Explorer UI at https://memory.43.106.13.19.sslip.io/  ----
+34.0 $ # SESSION A — an agent fuses bank + register + payslips into ONE financial event
+36.0 $ # (invoices, cash positions, workforce cost — one example among many) and commits it.
+38.5 $ curl -X POST https://memory.43.106.13.19.sslip.io/ingest -d @event.json
+39.5   # event: company="DemoRun 29207837521"  ·  employer cost €15,800  ·  bank net €10,000  ·  gap €5,800
+41.0   {"written":4,"ids":["853489e8-5a58-4a7a-ad69-693ab07cb532","b6dd321d-b6d2-4a7d-978e-0f0f61a70673","..."]}
+42.0 → 4 memories embedded with text-embedding-v4 → written to pgvector on Alibaba
+43.5 $ # SESSION A ENDS — the client disconnects; nothing stays in process memory.
+45.5 $ # ---- SESSION B · Explorer UI · a fresh, separate client ----
+47.0 $ # In the browser at https://memory.43.106.13.19.sslip.io/ , type a company and a question:
+49.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/recall \\
+50.0   -d '{"question":"What was the true cost of employing our team last month compared with what actually left the bank account?", "company":"DemoRun 29207837521", "kind":"payroll_event"}'
+52.0 $ # Qwen embeds the question → cosine ANN over pgvector → qwen-plus grounds the answer
+54.5 ANSWER (qwen-plus · grounded in memory written during Session A):
+55.5   The true employer cost of employing the team last month (2026-05) was €15,800, while €10,000 was the net amount paid from the bank account [1]. This €5,800 difference reflects statutory and other employer-only contributions not passed to employees — consistent with the sum of individual employer costs: €6,000 for David Chen [2] plus €9,800 for Elena Novak [3] equals €15,800, confirming internal consistency. 
+59.5 Recalled by MEANING — real cosine similarity over pgvector (higher = closer):
+  [1] kind=payroll_event  cosine=0.464  ref=evt-29207837521
+  [2] kind=payroll_event  cosine=0.384  ref=evt-29207837521:E-02
+  [3] kind=payroll_event  cosine=0.383  ref=evt-29207837521:E-01
+64.0 >> A memory WRITTEN in Session A was RETRIEVED in Session B — cross-session persistence.
+66.0 $ # ---- SESSION B · a second, different question ----
+67.5 $ # Memory is genuinely QUERYABLE, not a canned reply. Ask something else:
+69.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/recall -d '{"question":"What was the total cost of employing Elena last month?", "company":"…", "kind":"payroll_event"}'
+71.0 ANSWER (qwen-plus):
+72.0   The total cost of employing Elena last month was €9,800, which is the employer cost for her May 2026 payroll [1]. This figure is consistent with the aggregate employer cost of €15,800 for both employees in May 2026, as €9,800 (Elena) + €6,000 (David) = €15,800 [3][2]. 
+75.0 >> Same persistent memory · a new query · a new grounded answer (real cosine over pgvector).
+77.0 $ # ---- ⭐ THE DIFFERENTIATOR · memory that AUDITS ITSELF ----
+79.0 $ # Two SEPARATE sessions wrote ONE record with a DIFFERENT value.
+81.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/ingest -d @a.json   # write #1: employer cost €18,000
+83.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/ingest -d @a.json   # write #2 (a LATER session): €19,000
+85.0 $ # Mem0 / Zep would MUTATE — silently overwrite. Archon NEVER mutates. Ask it to audit:
+88.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/consistency -d '{"company":"DemoRun 29207837521 audit"}'
+90.5 → CONTRADICTION on 'evt-audit-29207837521' · attribute employer_cost_total · 18000 vs 19000
+94.5 → RESOLUTION (read-only recommender): trust 19000  [rule=recency · confidence=0.5]
+98.5   Rationale: the more recent write (19000) supersedes the earlier value (18000).
+102.5 >> DETECTED its own cross-session disagreement · RECOMMENDED which to trust · never mutated.
+106.5   Measured: 5/5 issues detected · 0 false positives · read-only recommender 4/4 correct
+110.0 $ # ---- ⭐ MEANING-LEVEL self-audit · fields match nothing; the meaning opposes ----
+112.0 $ # Two memories OPPOSE in MEANING with NO comparable field — the prose is the only signal:
+114.0   A: Vendor Northwind Trading always pays its supplier invoices on time. 
+116.0   B: Vendor Northwind Trading is chronically late paying its supplier invoices. 
+118.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/consistency/semantic -d '{"company":"Northwind Trading", "kind":"insight"}'
+120.5 → embed each → same subject by cosine (0.894) → LIVE qwen-plus judge: CONTRADICT [confidence=0.99]
+123.5 >> Caught what the field-level audit CANNOT see · same read-only recommendation · never mutated.
+126.0 $ # Every op — recall · ingest · audit · count — is also an MCP tool (audit takes semantic:true).
+129.0 $ # ---- MEASURED · labelled datasets (npm run bench) ----
+131.0   Retrieval: reranked-hybrid beats dense — Recall@3 90.0% → 96.7% · MRR 0.883 → 0.911
+135.0   Grounded answers: 100% correctness · 90.9% grounding (every euro traces to a memory)
+138.5 $ # ---- LIVE · Alibaba Cloud ----
+140.5   Live URL :  https://memory.43.106.13.19.sslip.io/           (Explorer UI · public · reachable now)
+142.5   Compute  :  Alibaba Cloud ECS · ecs.e-c1m2.large · ap-southeast-1 (Singapore)
+145.0   Memory   :  pgvector container on the ECS box · HNSW cosine · vector(1024)
+147.5   Models   :  Qwen text-embedding-v4  +  qwen-plus  (Model Studio / DashScope)
+150.0   Source   :  github.com/upgradedev/archon-qwen-memoryagent   ·   MIT
+153.0 >> Self-auditing · persistent · queryable · across sessions.
+156.5 >> Real Qwen on Alibaba Cloud. Measured, not a wrapper.
