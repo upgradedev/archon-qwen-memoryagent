@@ -166,6 +166,7 @@ jobs:
           tests/e2e/http-journeys.test.ts
           tests/e2e/mcp-journeys.test.ts
           tests/e2e/robustness.test.ts
+          tests/e2e/readiness.test.ts
       - name: Upload lcov coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -193,7 +194,36 @@ jobs:
         run: npm run bench -- --gate
       - name: Self-auditing memory-consistency gate (100% detection, 0 false positives)
         run: npm run bench:consistency -- --gate
+      - name: Meaning-level semantic self-audit gate (90% recall, 100% precision, 0 FP)
+        run: npm run bench:semantic -- --gate
       - name: Contradiction-resolution gate (structural invariants + policy-conformance)
         run: npm run bench:resolution -- --gate
       - name: Grounded-answer accuracy gate (replays committed qwen-plus answers; correctness + grounding)
         run: npm run bench:accuracy -- --gate
+
+  # Stage 4 — submission READINESS GATE. Encodes the four judging criteria
+  # (Technical 30 · Innovation 30 · Problem 25 · Presentation 15) as machine
+  # checks that EXECUTE the code they audit (MCP tools, skill dispatch, RRF,
+  # re-rank, both self-audits, the semantic benchmark) + docs-consistency + the
+  # measured Problem-value number. Fails the build if automatable completeness
+  # < 95%. Fully OFFLINE (no key, no DB, no network). Emits readiness.json.
+  readiness:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install deps
+        run: npm ci
+      - name: Readiness gate (weighted completeness ≥ 95% on the automatable path)
+        run: npm run readiness -- --gate
+      - name: Upload readiness.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: readiness-report
+          path: readiness.json
+          if-no-files-found: warn
