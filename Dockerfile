@@ -1,29 +1,42 @@
-# Archon MemoryAgent HTTP backend — the service that runs ON ALIBABA CLOUD
-# (Function Compute custom container, or ECS / Container Service).
-#
-# Function Compute listens on the container's CAPort; we expose 9000 (PORT).
-# Build for linux/amd64 when pushing from an ARM machine:
-#   docker build --platform linux/amd64 -t archon-qwen-memoryagent .
-
-FROM node:20-slim
+# Reproducible multi-stage production image. TypeScript and tests exist only in
+# the build stage; the runtime executes compiled JavaScript as an unprivileged
+# user and never invokes npx or downloads packages at startup.
+FROM node:24.18.0-bookworm-slim AS build
 
 WORKDIR /app
-
-# Install dependencies first for layer caching. tsx is a runtime dependency so
-# the container runs the TypeScript entrypoint directly (no separate build step).
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev || npm install --omit=dev
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
 
 COPY tsconfig.json ./
 COPY src ./src
-# scripts/apply-schema.ts is the entrypoint for `npm run db:schema`
-# (redeploy.sh runs it via `compose run --rm backend npm run db:schema`).
-# It reads ../src/db/schema.sql (already copied above).
 COPY scripts ./scripts
+RUN npm run build
 
-ENV NODE_ENV=production
-ENV PORT=9000
+FROM node:24.18.0-bookworm-slim AS runtime
+
+ENV NODE_ENV=production \
+    PORT=9000
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts \
+    && npm cache clean --force
+
+COPY --from=build /app/dist/src ./dist/src
+COPY --from=build /app/dist/scripts ./dist/scripts
+# Non-TypeScript runtime assets referenced relative to the compiled modules.
+COPY src/ui.html ./dist/src/ui.html
+COPY src/db/schema.sql ./dist/src/db/schema.sql
+COPY package.json ./dist/package.json
+
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 9000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:9000/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
 
-# HTTP server on 0.0.0.0:$PORT (Function Compute CAPort).
-CMD ["npx", "tsx", "src/server.ts"]
+# Function Compute has no external schema-migration job inside the private VPC.
+# Its manifest sets APPLY_SCHEMA_ON_START=true; ECS keeps schema-first deployment
+# in redeploy.sh and leaves this false. Only compiled runtime files are invoked.
+CMD ["sh", "-c", "if [ \"${APPLY_SCHEMA_ON_START:-false}\" = \"true\" ]; then node dist/scripts/apply-schema.js; fi; exec node dist/src/server.js"]

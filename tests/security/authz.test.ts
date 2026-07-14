@@ -24,14 +24,265 @@ function offlineServer(store: MemoryStore): Promise<FastifyInstance> {
   return buildServer({ store, embedder: new FakeEmbedder(), narrator: new FakeNarrator(), judge: new FakeJudge() });
 }
 
-const minimalDoc = {
-  doc_id: "sec-doc-1",
-  filename: "reg.txt",
-  source_kind: "text",
-  company: "PenTest Co",
+const minimalDocs = [
+  {
+    doc_id: "sec-doc-register",
+    filename: "reg.txt",
+    source_kind: "text",
+    company: "PenTest Co",
+    period: "2026-05",
+    content: JSON.stringify({ doc_type: "payroll_register", gross_pay_total: 1000, employer_cost_total: 1200, employee_count: 1 }),
+  },
+  {
+    doc_id: "sec-doc-bank",
+    filename: "bank.txt",
+    source_kind: "text",
+    company: "PenTest Co",
+    period: "2026-05",
+    content: JSON.stringify({ doc_type: "bank_confirmation", net_pay_total: 800 }),
+  },
+] as const;
+
+const JUDGE_KEY = "test-judge-key-at-least-16";
+const OTHER_KEY = "other-judge-key-at-least-16"; // gitleaks:allow — deterministic non-secret test fixture
+const EVENT = {
+  event_id: "evt-secure-1",
+  company: "Acme",
   period: "2026-05",
-  content: JSON.stringify({ doc_type: "payroll_register", gross_pay_total: 1000, employer_cost_total: 1200, employee_count: 1 }),
+  employee_count: 0,
+  bank_net_total: 800,
+  gross_total: 1000,
+  employer_social_security_total: 200,
+  employee_social_security_total: 80,
+  tax_withheld_total: 120,
+  employer_cost_total: 1200,
+  cost_gap_amount: 200,
+  cost_gap_pct: 25,
+  off_bank_cost: 400,
+  employees: [],
+  linked_docs: [],
 };
+
+describe("AuthZ: production mutations are authenticated and tenant-derived", () => {
+  test("missing/invalid credentials cannot write; valid credentials write only their mapped tenant", async () => {
+    const store = new InMemoryStore();
+    const app = await buildServer({
+      store,
+      embedder: new FakeEmbedder(),
+      narrator: new FakeNarrator(),
+      judge: new FakeJudge(),
+      auth: {
+        required: true,
+        apiKeys: { "tenant-a": JUDGE_KEY, "tenant-b": OTHER_KEY },
+      },
+    });
+    await app.ready();
+    try {
+      const anonymous = await app.inject({ method: "POST", url: "/ingest", payload: { event: EVENT } });
+      const invalid = await app.inject({
+        method: "POST", url: "/ingest", headers: { authorization: "Bearer wrong-secret-value" }, payload: { event: EVENT },
+      });
+      assert.equal(anonymous.statusCode, 401);
+      assert.equal(invalid.statusCode, 401);
+      assert.equal(await store.count(undefined, "tenant-a"), 0);
+
+      const allowed = await app.inject({
+        method: "POST", url: "/ingest", headers: { authorization: `Bearer ${JUDGE_KEY}` }, payload: { event: EVENT },
+      });
+      assert.equal(allowed.statusCode, 200);
+      assert.equal(await store.count("Acme", "tenant-a"), 2);
+      assert.equal(await store.count("Acme", "tenant-b"), 0);
+      assert.equal(await store.count("Acme"), 0, "private writes never leak into the public tenant");
+
+      const tenantARead = await app.inject({ method: "GET", url: "/memory/count", headers: { "x-api-key": JUDGE_KEY } });
+      const tenantBRead = await app.inject({ method: "GET", url: "/memory/count", headers: { "x-api-key": OTHER_KEY } });
+      assert.equal(tenantARead.json().count, 2);
+      assert.equal(tenantBRead.json().count, 0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("protected lifecycle routes reject anonymous calls and default to a non-mutating preview", async () => {
+    const store = new InMemoryStore();
+    for (const suffix of ["a", "b"]) {
+      await store.remember({
+        tenantId: "tenant-a", kind: "insight", company: "Acme", period: "2026-05",
+        content: "same duplicate fact", sourceRef: suffix, metadata: null,
+        embedding: [1, 0, 0], embedModel: "fake", importance: 0.5,
+      });
+    }
+    const app = await buildServer({
+      store,
+      embedder: new FakeEmbedder(), narrator: new FakeNarrator(), judge: new FakeJudge(),
+      auth: { required: true, apiKeys: { "tenant-a": JUDGE_KEY } },
+    });
+    await app.ready();
+    try {
+      const denied = await app.inject({ method: "POST", url: "/consolidate", payload: {} });
+      assert.equal(denied.statusCode, 401);
+      const preview = await app.inject({
+        method: "POST", url: "/consolidate", headers: { "x-api-key": JUDGE_KEY }, payload: { threshold: 0.99 },
+      });
+      assert.equal(preview.statusCode, 200);
+      assert.equal(preview.json().dryRun, true);
+      assert.equal((await store.listForAudit({ tenantId: "tenant-a" })).length, 2);
+
+      // JSON types are security-significant: string "true" must never be
+      // coerced into the destructive confirmation flag by Fastify/Ajv.
+      const coercedConsolidate = await app.inject({
+        method: "POST", url: "/consolidate", headers: { "x-api-key": JUDGE_KEY },
+        payload: { threshold: "0.99", confirm: "true" },
+      });
+      const coercedForget = await app.inject({
+        method: "POST", url: "/forget", headers: { "x-api-key": JUDGE_KEY },
+        payload: { deleteSuperseded: "true", confirm: "true" },
+      });
+      assert.equal(coercedConsolidate.statusCode, 400);
+      assert.equal(coercedForget.statusCode, 400);
+      assert.equal((await store.listForAudit({ tenantId: "tenant-a" })).length, 2);
+
+      const applied = await app.inject({
+        method: "POST", url: "/consolidate", headers: { "x-api-key": JUDGE_KEY },
+        payload: { threshold: 0.99, confirm: true },
+      });
+      assert.equal(applied.statusCode, 200);
+      assert.equal(applied.json().superseded, 1);
+      assert.equal((await store.listForAudit({ tenantId: "tenant-a" })).length, 1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("feedback is tenant-scoped, idempotent, and turns a correction into the active high-importance memory", async () => {
+    const store = new InMemoryStore();
+    const wrongId = await store.remember({
+      tenantId: "tenant-a", kind: "insight", company: "Acme", period: "2026-05",
+      content: "Acme payroll cost was EUR 100.", metadata: { employer_cost_total: 100, staleField: "wrong" },
+      embedding: [1, 0, 0], embedModel: "fake", importance: 0.2,
+    });
+    const app = await buildServer({
+      store,
+      embedder: new FakeEmbedder(), narrator: new FakeNarrator(), judge: new FakeJudge(),
+      auth: { required: true, apiKeys: { "tenant-a": JUDGE_KEY, "tenant-b": OTHER_KEY } },
+    });
+    await app.ready();
+    const payload = {
+      memoryId: wrongId,
+      outcome: "incorrect",
+      correctedFact: "Acme payroll cost was EUR 1,200.",
+      feedbackId: "review-2026-05-001",
+    };
+    try {
+      const crossTenant = await app.inject({
+        method: "POST", url: "/feedback", headers: { "x-api-key": OTHER_KEY }, payload,
+      });
+      assert.equal(crossTenant.statusCode, 404);
+
+      const corrected = await app.inject({
+        method: "POST", url: "/feedback", headers: { "x-api-key": JUDGE_KEY }, payload,
+      });
+      assert.equal(corrected.statusCode, 200);
+      assert.equal(corrected.json().outcome, "incorrect");
+      assert.ok(corrected.json().correctedMemoryId);
+      assert.equal(corrected.json().after.supersededBy, corrected.json().correctedMemoryId);
+
+      const retry = await app.inject({
+        method: "POST", url: "/feedback", headers: { "x-api-key": JUDGE_KEY }, payload,
+      });
+      assert.deepEqual(retry.json(), corrected.json(), "same feedbackId returns the original result");
+
+      const mismatch = await app.inject({
+        method: "POST", url: "/feedback", headers: { "x-api-key": JUDGE_KEY },
+        payload: { ...payload, correctedFact: "Acme payroll cost was EUR 9,999." },
+      });
+      assert.equal(mismatch.statusCode, 409, "a feedback id cannot be reused for a different correction");
+      assert.match(mismatch.json().error, /different request/i);
+      const active = await store.listForAudit({ tenantId: "tenant-a", company: "Acme" });
+      assert.equal(active.length, 1);
+      assert.match(active[0]!.content, /1,200/);
+      const target = await store.getMemoryForFeedback(corrected.json().correctedMemoryId, "tenant-a");
+      assert.equal(target?.importance, 0.95);
+      assert.equal(target?.metadata?.employer_cost_total, undefined, "wrong structured values must not survive correction");
+      assert.deepEqual(
+        Object.keys(target?.metadata ?? {}).sort(),
+        ["correctedFrom", "feedbackId"],
+        "corrected metadata carries provenance only",
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("correct feedback protects future recall without spending Qwen quota or embedding", async () => {
+    const store = new InMemoryStore();
+    const memoryId = await store.remember({
+      tenantId: "tenant-a", kind: "insight", company: "Acme", period: "2026-05",
+      content: "Acme payroll cost was EUR 1,200.", embedding: [1, 0, 0], embedModel: "fake", importance: 0.2,
+    });
+    class CountingEmbedder extends FakeEmbedder {
+      calls = 0;
+      override async embed(text: string): Promise<number[]> {
+        this.calls += 1;
+        return super.embed(text);
+      }
+    }
+    const embedder = new CountingEmbedder();
+    const app = await buildServer({
+      store, embedder, narrator: new FakeNarrator(), judge: new FakeJudge(),
+      auth: { required: true, apiKeys: { "tenant-a": JUDGE_KEY } },
+      quotaBackend: {
+        async consume() {
+          throw new Error("correct feedback must not reserve Qwen quota");
+        },
+        async consumeMany() {
+          throw new Error("correct feedback must not reserve Qwen quota");
+        },
+      },
+    });
+    await app.ready();
+    const payload = {
+      memoryId,
+      outcome: "correct",
+      // Extraneous correction text is ignored for a correct outcome.
+      correctedFact: "this must not be embedded or persisted",
+      feedbackId: "review-correct-001",
+    };
+    try {
+      const first = await app.inject({
+        method: "POST", url: "/feedback", headers: { "x-api-key": JUDGE_KEY }, payload,
+      });
+      assert.equal(first.statusCode, 200);
+      assert.equal(first.json().outcome, "correct");
+      assert.equal(first.json().correctedMemoryId, null);
+      assert.equal(embedder.calls, 0);
+      assert.equal((await store.getMemoryForFeedback(memoryId, "tenant-a"))?.importance, 0.95);
+
+      const retry = await app.inject({
+        method: "POST", url: "/feedback", headers: { authorization: `Bearer ${JUDGE_KEY}` }, payload,
+      });
+      assert.deepEqual(retry.json(), first.json());
+      assert.equal(embedder.calls, 0, "idempotent retry must not invoke the embedder");
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("AuthZ: exact company scoping rejects substring/wildcard overreach", () => {
+  test("company filters are exact inside a tenant", async () => {
+    const store = new InMemoryStore();
+    for (const company of ["Acme", "Acme Holdings"]) {
+      await store.remember({
+        tenantId: "tenant-a", kind: "insight", company, content: `${company} fact`,
+        embedding: [1, 0, 0], embedModel: "fake",
+      });
+    }
+    assert.equal((await store.listForAudit({ tenantId: "tenant-a", company: "Acme" })).length, 1);
+    assert.equal((await store.listForAudit({ tenantId: "tenant-a", company: "%" })).length, 0);
+    assert.equal((await store.recall([1, 0, 0], { tenantId: "tenant-a", company: "acme" })).length, 0);
+  });
+});
 
 // ── Input-contract enforcement — a malformed WRITE is rejected, not half-applied ─
 describe("AuthZ: mutating routes enforce their input contract (no silent partial writes)", () => {
@@ -90,10 +341,10 @@ describe("AuthZ: the metered ingest route authorizes consumption via a daily bud
     await app.ready();
     try {
       for (let i = 0; i < INGEST_DAILY_LIMIT; i++) {
-        const ok = await app.inject({ method: "POST", url: "/ingest/documents", payload: { documents: [minimalDoc] } });
+        const ok = await app.inject({ method: "POST", url: "/ingest/documents", payload: { documents: minimalDocs } });
         assert.equal(ok.statusCode, 200, `call ${i + 1} within budget must be 200`);
       }
-      const blocked = await app.inject({ method: "POST", url: "/ingest/documents", payload: { documents: [minimalDoc] } });
+      const blocked = await app.inject({ method: "POST", url: "/ingest/documents", payload: { documents: minimalDocs } });
       assert.equal(blocked.statusCode, 429, "the call past the budget must be rejected");
       assert.match(blocked.json().error, /limit/i);
       // The abuse control does NOT close the free read paths — recall stays open.

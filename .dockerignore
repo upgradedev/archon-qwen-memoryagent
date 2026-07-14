@@ -1,0 +1,17 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+dist
+coverage
+web/node_modules
+web/dist
+demo
+docs
+bench
+tests
+*.log
+*.mp4
+*.mp3

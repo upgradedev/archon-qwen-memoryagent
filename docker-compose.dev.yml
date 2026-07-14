@@ -1,0 +1,6 @@
+# Optional host-side PostgreSQL access for npm scripts and integration tests:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
+services:
+  db:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"

@@ -6,7 +6,7 @@
 // wiring layer that registers these two functions as the MCP `tools/list` and
 // `tools/call` handlers.
 
-import type { SkillDispatcher } from "../skills/dispatcher.js";
+import { publicSkillError, type SkillDispatcher } from "../skills/dispatcher.js";
 import { SKILLS } from "../skills/schemas.js";
 
 // The MCP `Tool` shape (name + description + JSON-Schema inputSchema). Declared
@@ -15,7 +15,7 @@ import { SKILLS } from "../skills/schemas.js";
 export interface McpTool {
   name: string;
   description: string;
-  inputSchema: { type: "object"; properties: Record<string, unknown>; required?: string[] };
+  inputSchema: { type: "object"; properties: Record<string, unknown>; required?: string[]; additionalProperties?: boolean };
 }
 
 // The MCP `CallToolResult` shape (text content blocks + optional error flag).
@@ -37,6 +37,7 @@ export function mcpTools(): McpTool[] {
       type: "object",
       properties: s.parameters.properties,
       required: s.parameters.required,
+      additionalProperties: s.parameters.additionalProperties,
     },
   }));
 }
@@ -54,7 +55,7 @@ export async function callTool(
     const result = await dispatcher.dispatch(name, args);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = publicSkillError(err);
     return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
   }
 }

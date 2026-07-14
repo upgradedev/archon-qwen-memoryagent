@@ -22,12 +22,12 @@ on:
         required: false
         default: "https://memory.43.106.13.19.sslip.io"
       write_load:
-        description: "Include /ingest WRITE load (real spend + writes to the live DB). Default false."
+        description: "Include /ingest WRITE smoke (real spend/writes). Set run_ramp=false when enabled."
         required: false
         default: "false"
         type: boolean
       run_ramp:
-        description: "Run the 0->20->50->0 ramp scenario after the smoke. Default true."
+        description: "Run the production-safe 0->1->2->0 iterations/s ramp after the smoke. Default true."
         required: false
         default: "true"
         type: boolean

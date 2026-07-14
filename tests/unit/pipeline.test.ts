@@ -7,10 +7,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { Extractor, safeFloat } from "../../src/pipeline/extractor.js";
+import { Extractor, ExtractionOutputError, safeFloat } from "../../src/pipeline/extractor.js";
 import { FakeExtractionClient, QwenExtractionClient, qwenExtractionClientFrom } from "../../src/pipeline/vision.js";
 import { ClassifierAgent, classifyDocType } from "../../src/pipeline/classifier.js";
-import { EventLinkerAgent, linkEvents } from "../../src/pipeline/event-linker.js";
+import { EventLinkError, linkEvents } from "../../src/pipeline/event-linker.js";
 import { ValidatorAgent, validateEvent } from "../../src/pipeline/validator.js";
 import { runPipeline, ingestPipeline } from "../../src/pipeline/pipeline.js";
 import type { RawDocument } from "../../src/pipeline/models.js";
@@ -18,6 +18,7 @@ import { FakeEmbedder } from "../../src/memory/embeddings.js";
 import { FakeNarrator } from "../../src/agents/narrator.js";
 import { InMemoryStore } from "../../src/memory/store.js";
 import { MemoryAgent } from "../../src/agents/memory-agent.js";
+import type { PayrollEvent } from "../../src/types.js";
 
 // ── Fixture: a valid payroll triplet whose numbers pass R1–R4 ─────────────────
 function triplet(company = "ByteCraft", period = "2026-05"): RawDocument[] {
@@ -95,6 +96,11 @@ test("safeFloat: null / undefined / NaN fall back to the default", () => {
   assert.equal(safeFloat(undefined, 5), 5);
   assert.equal(safeFloat("not a number"), 0);
   assert.equal(safeFloat("€1,234.50"), 1234.5); // strips currency symbols
+  assert.equal(safeFloat("EUR 1.234,50"), 1234.5);
+  assert.equal(safeFloat("1 234,50 €"), 1234.5);
+  assert.equal(safeFloat("(1,234.50)"), -1234.5);
+  assert.equal(safeFloat("0.123"), 0.123);
+  assert.equal(safeFloat(".123"), 0.123);
   assert.equal(safeFloat(42), 42);
 });
 
@@ -121,23 +127,88 @@ test("Extractor: derives employer_cost when only gross + employer SS present", a
 test("Extractor: derives payslip employer_cost when omitted (gross + employer SS)", async () => {
   const ex = new Extractor(new FakeExtractionClient());
   const raw: RawDocument = {
-    doc_id: "d", filename: "p.png", source_kind: "image",
-    content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-9", name: "Q", gross: 2000, employer_social_security: 400 } }),
+    doc_id: "d", filename: "p.png", source_kind: "image", company: "X", period: "2026-01",
+    content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-9", name: "Q", gross: 2000, net: 1600, employer_social_security: 400 } }),
   };
   const doc = await ex.extract(raw);
   assert.equal(doc.payslip?.employer_cost, 2400);
 });
 
-test("Extractor: tolerates prose-wrapped / fenced JSON and null fields", async () => {
-  // A canned client returning messy output — exercises parseJsonLoose + null-safety.
+test("Extractor: accepts a whole fenced JSON object and null fields", async () => {
   const canned = {
-    chat: { completions: { create: async () => ({ choices: [{ message: { content: "Here you go:\n```json\n{\"doc_type\":\"bank_confirmation\",\"net_pay_total\":null,\"payment_date\":\"2026-05-10\"}\n```" } }] }) } },
+    chat: { completions: { create: async () => ({ choices: [{ message: { content: "```json\n{\"doc_type\":\"bank_confirmation\",\"company\":\"X\",\"period\":\"2026-05\",\"net_pay_total\":1000,\"employer_social_security_total\":null,\"payment_date\":\"2026-05-10\"}\n```" } }] }) } },
   };
   const ex = new Extractor(qwenExtractionClientFrom(canned as never));
-  const doc = await ex.extract({ doc_id: "d", filename: "b.pdf", source_kind: "text", content: "" });
+  const doc = await ex.extract({ doc_id: "d", filename: "b.pdf", source_kind: "text", content: "bank confirmation" });
   assert.equal(doc.doc_type, "bank_confirmation");
-  assert.equal(doc.net_pay_total, null); // null stays null, no crash
+  assert.equal(doc.net_pay_total, 1000);
+  assert.equal(doc.employer_social_security_total, null); // optional null stays null
   assert.equal(doc.payment_date, "2026-05-10");
+});
+
+test("Extractor: rejects prose, unknown fields, invalid periods and negative totals", async () => {
+  const ex = new Extractor(new FakeExtractionClient());
+  const base = { doc_id: "d", filename: "r.pdf", source_kind: "text" as const, company: "X", period: "2026-01" };
+  await assert.rejects(
+    () => ex.extract({ ...base, content: 'Here is {"doc_type":"payroll_register"}' }),
+    ExtractionOutputError,
+  );
+  await assert.rejects(
+    () => ex.extract({ ...base, content: '{"doc_type":"payroll_register","ignore_previous":true}' }),
+    ExtractionOutputError,
+  );
+  await assert.rejects(
+    () => ex.extract({ ...base, period: "2026-13", content: '{"doc_type":"payroll_register"}' }),
+    ExtractionOutputError,
+  );
+  await assert.rejects(
+    () => ex.extract({ ...base, content: '{"doc_type":"payroll_register","gross_pay_total":-1}' }),
+    ExtractionOutputError,
+  );
+  await assert.rejects(
+    () => ex.extract({ ...base, content: '{"doc_type":"payroll_register","gross_pay_total":"not-money"}' }),
+    /gross_pay_total must be numeric/,
+  );
+  await assert.rejects(
+    () => ex.extract({ ...base, content: '{"doc_type":"payroll_register"}' }),
+    /requires gross_pay_total or employer_cost_total/,
+  );
+  await assert.rejects(
+    () => ex.extract({ ...base, content: '{"doc_type":"bank_confirmation"}' }),
+    /requires net_pay_total/,
+  );
+  await assert.rejects(
+    () => ex.extract({ ...base, content: '{"doc_type":"payroll_register","ignore_previous":true}' }),
+    /unknown field 'ignore_previous'/,
+    "specific schema errors must survive the JSON parser",
+  );
+});
+
+test("Extractor: refuses unscoped or incomplete payslip evidence instead of fabricating zeros", async () => {
+  const ex = new Extractor(new FakeExtractionClient());
+  const base = { doc_id: "d", filename: "p.pdf", source_kind: "text" as const };
+  await assert.rejects(
+    () => ex.extract({ ...base, content: '{"doc_type":"payslip"}' }),
+    /company is required/,
+  );
+  await assert.rejects(
+    () => ex.extract({
+      ...base,
+      company: "X",
+      period: "2026-01",
+      content: '{"doc_type":"payslip","employee":{"employee_id":"E1","gross":100,"employer_social_security":20}}',
+    }),
+    /employee.net is required/,
+  );
+  await assert.rejects(
+    () => ex.extract({
+      ...base,
+      company: "X",
+      period: "2026-01",
+      content: '{"doc_type":"payslip","employee":{"gross":100,"net":80,"employer_social_security":20}}',
+    }),
+    /employee.employee_id is required/,
+  );
 });
 
 test("QwenExtractionClient: routes an image doc to the vision model with an image part", async () => {
@@ -155,9 +226,30 @@ test("QwenExtractionClient: routes an image doc to the vision model with an imag
     },
   };
   const client = new QwenExtractionClient(canned as never, "qwen-vl-max", "qwen-plus");
-  await client.extract({ doc_id: "d", filename: "p.png", source_kind: "image", content: "data:image/png;base64,AAAA" });
+  await client.extract({ doc_id: "d", filename: "p.png", source_kind: "image", content: "data:image/png;base64,iVBORw0KGgo=" });
   assert.equal(seen.model, "qwen-vl-max");
   assert.equal(seen.hasImage, true);
+});
+
+test("QwenExtractionClient: rejects MIME-spoofed image bytes before any model call", async () => {
+  let calls = 0;
+  const client = new QwenExtractionClient({
+    chat: { completions: { async create() {
+      calls++;
+      return { choices: [{ message: { content: "{}" } }] };
+    } } },
+  }, "qwen-vl-max", "qwen-plus");
+  await assert.rejects(
+    () => client.extract({
+      doc_id: "d",
+      filename: "spoof.png",
+      source_kind: "image",
+      // JPEG signature declared as PNG.
+      content: "data:image/png;base64,/9j/AA==",
+    }),
+    /do not match the declared PNG type/,
+  );
+  assert.equal(calls, 0);
 });
 
 test("QwenExtractionClient: routes a text doc to the text model, no image part", async () => {
@@ -208,24 +300,95 @@ test("linkEvents: fuses the triplet into one accurate PayrollEvent", async () =>
   assert.equal(event.linked_docs.length, 4);
 });
 
-test("linkEvents: falls back to payslip sums when the register is missing", () => {
-  const events = linkEvents([
+test("linkEvents: bank-only or register-missing evidence is rejected instead of zero-filled", () => {
+  assert.throws(() => linkEvents([
     { doc_id: "b", doc_type: "bank_confirmation", company: "X", period: "2026-01", net_pay_total: 5000, model_id: "m" },
     { doc_id: "p1", doc_type: "payslip", company: "X", period: "2026-01", model_id: "m", payslip: { employee_id: "E1", name: "A", gross: 3000, employee_social_security: 0, tax: 0, net: 2600, employer_social_security: 400, employer_cost: 3400 } },
     { doc_id: "p2", doc_type: "payslip", company: "X", period: "2026-01", model_id: "m", payslip: { employee_id: "E2", name: "B", gross: 3000, employee_social_security: 0, tax: 0, net: 2400, employer_social_security: 400, employer_cost: 3400 } },
-  ]);
-  const [e] = events;
-  assert.equal(e!.gross_total, 6000); // sum of payslip gross
-  assert.equal(e!.employer_cost_total, 6800); // gross + employer SS
-  assert.equal(e!.employee_count, 2);
+  ]), /requires both a payroll register and bank confirmation/);
 });
 
 test("linkEvents: groups separate companies/periods into separate events", () => {
   const events = linkEvents([
     { doc_id: "a", doc_type: "payroll_register", company: "A", period: "2026-01", gross_pay_total: 100, employer_cost_total: 120, employee_count: 1, model_id: "m" },
+    { doc_id: "a-bank", doc_type: "bank_confirmation", company: "A", period: "2026-01", net_pay_total: 80, employee_count: 1, model_id: "m" },
     { doc_id: "b", doc_type: "payroll_register", company: "B", period: "2026-01", gross_pay_total: 200, employer_cost_total: 250, employee_count: 1, model_id: "m" },
+    { doc_id: "b-bank", doc_type: "bank_confirmation", company: "B", period: "2026-01", net_pay_total: 160, employee_count: 1, model_id: "m" },
   ]);
   assert.equal(events.length, 2);
+});
+
+test("linkEvents: canonicalizes harmless company variants and tolerates one-cent duplicate drift", () => {
+  const events = linkEvents([
+    { doc_id: "r1", doc_type: "payroll_register", company: "ＡCME", period: "2026-01", gross_pay_total: 100, employer_cost_total: 120, employee_count: 1, model_id: "m" },
+    { doc_id: "r2", doc_type: "payroll_register", company: " acme  ", period: "2026-01", gross_pay_total: 100.009, employer_cost_total: 120.009, employee_count: 1, model_id: "m" },
+    { doc_id: "b", doc_type: "bank_confirmation", company: "AcMe", period: "2026-01", net_pay_total: 80, employee_count: 1, model_id: "m" },
+  ]);
+  assert.equal(events.length, 1);
+  assert.equal(events[0]!.linked_docs.length, 3);
+  assert.match(events[0]!.event_id, /^evt-acme-monthly-consolidated-[a-f0-9]{12}-2026-01$/);
+});
+
+test("linkEvents: Unicode companies receive distinct stable event ids", () => {
+  const docs = [
+    { doc_id: "a", doc_type: "payroll_register" as const, company: "Άλφα", period: "2026-01", gross_pay_total: 100, employer_cost_total: 120, model_id: "m" },
+    { doc_id: "a-bank", doc_type: "bank_confirmation" as const, company: "Άλφα", period: "2026-01", net_pay_total: 80, model_id: "m" },
+    { doc_id: "b", doc_type: "payroll_register" as const, company: "Βήτα", period: "2026-01", gross_pay_total: 100, employer_cost_total: 120, model_id: "m" },
+    { doc_id: "b-bank", doc_type: "bank_confirmation" as const, company: "Βήτα", period: "2026-01", net_pay_total: 80, model_id: "m" },
+  ];
+  const first = linkEvents(docs);
+  const second = linkEvents([...docs].reverse());
+  assert.equal(new Set(first.map((e) => e.event_id)).size, 2);
+  assert.deepEqual(
+    first.map((e) => e.event_id).sort(),
+    second.map((e) => e.event_id).sort(),
+    "ids must be deterministic independent of document order",
+  );
+  assert.ok(first.every((e) => !e.event_id.includes("unknown")));
+});
+
+test("linkEvents: conflicting reuse of a document id is rejected", () => {
+  assert.throws(() => linkEvents([
+    { doc_id: "same", doc_type: "payroll_register", company: "A", period: "2026-01", gross_pay_total: 100, model_id: "m" },
+    { doc_id: "same", doc_type: "payroll_register", company: "B", period: "2026-01", gross_pay_total: 200, model_id: "m" },
+  ]), EventLinkError);
+});
+
+test("linkEvents: two payroll runs in the same company-month remain distinct", () => {
+  const events = linkEvents([
+    { doc_id: "r-a", doc_type: "payroll_register", company: "A", period: "2026-01", event_ref: "run-1", gross_pay_total: 100, employer_cost_total: 120, model_id: "m" },
+    { doc_id: "b-a", doc_type: "bank_confirmation", company: "A", period: "2026-01", event_ref: "run-1", net_pay_total: 80, model_id: "m" },
+    { doc_id: "r-b", doc_type: "payroll_register", company: " a ", period: "2026-01", event_ref: "RUN-2", gross_pay_total: 200, employer_cost_total: 240, model_id: "m" },
+    { doc_id: "b-b", doc_type: "bank_confirmation", company: "A", period: "2026-01", event_ref: "run-2", net_pay_total: 160, model_id: "m" },
+  ]);
+  assert.equal(events.length, 2);
+  assert.equal(new Set(events.map((event) => event.event_id)).size, 2);
+  assert.deepEqual(events.map((event) => event.event_ref).sort(), ["RUN-2", "run-1"]);
+});
+
+test("linkEvents: rejects conflicting duplicate source documents", () => {
+  assert.throws(() => linkEvents([
+    { doc_id: "r1", doc_type: "payroll_register", company: "A", period: "2026-01", gross_pay_total: 100, employer_cost_total: 120, model_id: "m" },
+    { doc_id: "r2", doc_type: "payroll_register", company: "A", period: "2026-01", gross_pay_total: 100, employer_cost_total: 140, model_id: "m" },
+  ]), /Conflicting employer_cost_total/);
+});
+
+test("linkEvents: deduplicates identical employee payslips instead of double-counting", () => {
+  const payslip = { employee_id: "E1", name: "A", gross: 100, employee_social_security: 10, tax: 10, net: 80, employer_social_security: 20, employer_cost: 120 };
+  const [event] = linkEvents([
+    { doc_id: "r", doc_type: "payroll_register", company: "A", period: "2026-01", gross_pay_total: 100, employer_cost_total: 120, employee_count: 1, model_id: "m" },
+    { doc_id: "b", doc_type: "bank_confirmation", company: "A", period: "2026-01", net_pay_total: 80, employee_count: 1, model_id: "m" },
+    { doc_id: "p1", doc_type: "payslip", company: "A", period: "2026-01", payslip, model_id: "m" },
+    { doc_id: "p2", doc_type: "payslip", company: "A", period: "2026-01", payslip: { ...payslip }, model_id: "m" },
+  ]);
+  assert.equal(event!.employees.length, 1);
+  assert.equal(event!.gross_total, 100);
+});
+
+test("linkEvents: a register without bank evidence is rejected", () => {
+  assert.throws(() => linkEvents([
+    { doc_id: "r", doc_type: "payroll_register", company: "A", period: "2026-01", gross_pay_total: 100, employer_cost_total: 120, model_id: "m" },
+  ]), /requires both a payroll register and bank confirmation/);
 });
 
 // ── ValidatorAgent (R1–R4) ────────────────────────────────────────────────────
@@ -252,16 +415,59 @@ test("validateEvent: R1 flags a bank vs payslip mismatch beyond 2%", () => {
   assert.equal(r1.severity, "error");
 });
 
-test("validateEvent: R3 flags a payment date after the period end", () => {
-  const r = validateEvent({
+test("validateEvent: R3 applies the configured grace policy, not a universal deadline", () => {
+  const event: PayrollEvent = {
     event_id: "e", company: "X", period: "2026-02", employee_count: 1, bank_net_total: 100,
     gross_total: 100, employer_social_security_total: 20, employee_social_security_total: 0,
     tax_withheld_total: 0, employer_cost_total: 120, cost_gap_amount: 20, cost_gap_pct: 20, off_bank_cost: 20,
     employees: [{ employee_id: "E1", name: "A", gross: 100, employee_social_security: 0, tax: 0, net: 100, employer_social_security: 20, employer_cost: 120 }],
     linked_docs: [],
-  }, "2026-03-05"); // March payment for a February period
-  const r3 = r.find((x) => x.rule.startsWith("R3"))!;
-  assert.equal(r3.passed, false);
+  };
+  const withinDefaultGrace = validateEvent(event, "2026-03-07")
+    .find((x) => x.rule.startsWith("R3"))!;
+  const outsideDefaultGrace = validateEvent(event, "2026-03-08")
+    .find((x) => x.rule.startsWith("R3"))!;
+  const strictPolicy = validateEvent(event, "2026-03-01", undefined, { paymentGraceDays: 0 })
+    .find((x) => x.rule.startsWith("R3"))!;
+  assert.equal(withinDefaultGrace.status, "passed");
+  assert.equal(outsideDefaultGrace.status, "failed");
+  assert.equal(strictPolicy.status, "failed");
+  assert.match(outsideDefaultGrace.message, /not a legal deadline/);
+});
+
+test("validateEvent: R2 anomaly band is configurable and explicitly heuristic", () => {
+  const event: PayrollEvent = {
+    event_id: "e", company: "X", period: "2026-02", employee_count: 1, bank_net_total: 100,
+    gross_total: 100, employer_social_security_total: 20, employee_social_security_total: 0,
+    tax_withheld_total: 0, employer_cost_total: 120, cost_gap_amount: 20, cost_gap_pct: 20,
+    off_bank_cost: 20, employees: [], linked_docs: [],
+  };
+  const defaultR2 = validateEvent(event).find((x) => x.rule.startsWith("R2"))!;
+  const configuredR2 = validateEvent(event, null, undefined, {
+    employerCostNetRatioMin: 1.1,
+    employerCostNetRatioMax: 1.3,
+  }).find((x) => x.rule.startsWith("R2"))!;
+  assert.equal(defaultR2.status, "failed");
+  assert.equal(configuredR2.status, "passed");
+  assert.match(configuredR2.message, /not legal or accounting truth/);
+});
+
+test("validateEvent: invalid months and dates fail instead of normalizing", () => {
+  const badPeriod = validateEvent({
+    event_id: "e", company: "X", period: "2026-13", employee_count: 0, bank_net_total: 0,
+    gross_total: 0, employer_social_security_total: 0, employee_social_security_total: 0,
+    tax_withheld_total: 0, employer_cost_total: 0, cost_gap_amount: 0, cost_gap_pct: 0,
+    off_bank_cost: 0, employees: [], linked_docs: [],
+  }, "2026-13-01").find((x) => x.rule.startsWith("R3"))!;
+  assert.equal(badPeriod.status, "failed");
+
+  const badDate = validateEvent({
+    event_id: "e", company: "X", period: "2026-02", employee_count: 1, bank_net_total: 100,
+    gross_total: 100, employer_social_security_total: 20, employee_social_security_total: 0,
+    tax_withheld_total: 0, employer_cost_total: 120, cost_gap_amount: 20, cost_gap_pct: 20,
+    off_bank_cost: 20, employees: [], linked_docs: [],
+  }, "2026-02-31").find((x) => x.rule.startsWith("R3"))!;
+  assert.equal(badDate.status, "failed");
 });
 
 test("ValidatorAgent: skips rules gracefully on an incomplete event", () => {
@@ -272,7 +478,25 @@ test("ValidatorAgent: skips rules gracefully on an incomplete event", () => {
     employees: [], linked_docs: [],
   });
   assert.equal(results.length, 4);
-  assert.ok(results.every((r) => r.passed)); // all skipped → pass/info
+  assert.ok(results.every((r) => r.status === "not_evaluated"));
+  assert.ok(results.every((r) => !r.passed), "missing evidence must never count as a pass");
+});
+
+test("runPipeline: missing source evidence is reported as not_evaluated", async () => {
+  const out = await runPipeline([
+    {
+      doc_id: "r", filename: "r.json", source_kind: "text", company: "A", period: "2026-01",
+      content: JSON.stringify({ doc_type: "payroll_register", gross_pay_total: 100, employer_cost_total: 112, employee_count: 1 }),
+    },
+    {
+      doc_id: "b", filename: "b.json", source_kind: "text", company: "A", period: "2026-01",
+      content: JSON.stringify({ doc_type: "bank_confirmation", net_pay_total: 80, employee_count: 1 }),
+    },
+  ], { extractor: new Extractor(new FakeExtractionClient()) });
+  const byRule = Object.fromEntries(out.events[0]!.validation.map((v) => [v.rule.split(":")[0], v]));
+  assert.equal(byRule.R1.status, "not_evaluated", "no payslips");
+  assert.equal(byRule.R2.status, "passed", "register + bank support the configured heuristic");
+  assert.equal(byRule.R4.status, "not_evaluated", "no payslips to compare with the declared count");
 });
 
 // ── Orchestrator: runPipeline + ingestPipeline (memory-feed) ──────────────────
@@ -300,4 +524,32 @@ test("ingestPipeline: writes the fused event + validation findings into memory",
   // At least one validation memory was written (a recallable cross-doc check).
   const audit = await store.listForAudit({ company: "ByteCraft", kind: "validation" });
   assert.ok(audit.length >= 1);
+});
+
+test("ingestPipeline: event + validations are atomic and retries are idempotent", async () => {
+  const deps = { extractor: new Extractor(new FakeExtractionClient()) };
+  const store = new InMemoryStore();
+  const agent = new MemoryAgent(new FakeEmbedder(), store, new FakeNarrator());
+  const first = await ingestPipeline(agent, triplet(), deps);
+  const countAfterFirst = await store.count();
+  const retry = await ingestPipeline(agent, triplet(), deps);
+  assert.equal(await store.count(), countAfterFirst, "retry must not duplicate any fact");
+  assert.deepEqual(retry.memoryIds, first.memoryIds, "stable idempotency keys return original ids");
+
+  const failingStore = new InMemoryStore();
+  const failingAgent = new MemoryAgent(new FakeEmbedder(), failingStore, new FakeNarrator());
+  const preview = await runPipeline(triplet(), deps);
+  const eventId = preview.events[0]!.event.event_id;
+  await failingAgent.remember("validation", "conflicting prior producer content", {
+    company: "ByteCraft",
+    period: "2026-05",
+    idempotencyKey: `event:${eventId}:validation:R1`,
+  });
+  const before = await failingStore.count();
+  await assert.rejects(() => ingestPipeline(failingAgent, triplet(), deps), /idempotency key/);
+  assert.equal(
+    await failingStore.count(),
+    before,
+    "a validation conflict must roll back the staged event summary, insight, and employee facts",
+  );
 });

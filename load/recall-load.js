@@ -17,7 +17,7 @@
 // ── Run ────────────────────────────────────────────────────────────────────
 //   k6 run load/recall-load.js                     # smoke, read-only, live box
 //   TARGET_URL=http://host:9000 k6 run load/recall-load.js
-//   RUN_RAMP=true  k6 run load/recall-load.js       # add the 0→20→50→0 ramp
+//   RUN_RAMP=true  k6 run load/recall-load.js       # add the rate-bounded live ramp
 //   WRITE_LOAD=true k6 run load/recall-load.js       # opt-in write load (spend!)
 //
 // ── Offline vs live profile ─────────────────────────────────────────────────
@@ -56,6 +56,21 @@ const CONSISTENCY_RATIO = clamp01(parseFloat(__ENV.CONSISTENCY_RATIO || (OFFLINE
 const RECALL_COMPANY = __ENV.RECALL_COMPANY || (OFFLINE ? "Northwind Trading" : "Northwind Trading Ltd");
 const WRITE_COMPANY = __ENV.WRITE_COMPANY || "k6-load-test";
 
+// The public service deliberately enforces 300 HTTP requests/minute per client
+// and 200 recall requests/day per subject. Keep the live ramp inside both
+// production safety controls. Writes remain available in the one-VU smoke, but
+// never in the ramp: at load-test rates they would exhaust the write quota and
+// pollute the judge dataset. Offline CI is isolated and uses explicitly raised
+// test limits, so these live-only guards do not apply there.
+if (!OFFLINE && RUN_RAMP) {
+  if (WRITE_LOAD) {
+    throw new Error("WRITE_LOAD cannot be combined with the live ramp; rerun with RUN_RAMP=false");
+  }
+  if (READ_RATIO + CONSISTENCY_RATIO > 0.4) {
+    throw new Error("live ramp READ_RATIO + CONSISTENCY_RATIO must be <= 0.4");
+  }
+}
+
 function clamp01(n, fallback) {
   if (!Number.isFinite(n)) return fallback;
   return Math.min(1, Math.max(0, n));
@@ -82,8 +97,10 @@ const QUESTIONS = [
 
 // ── Scenarios ───────────────────────────────────────────────────────────────
 // smoke: 1 VU for ~30s — a fast, cheap sanity pass that always runs.
-// ramp:  0→20→50→0 over ~3.5 min — opt-in (RUN_RAMP=true), starts AFTER the
-//        smoke so the two never overlap and the summary stays interpretable.
+// ramp:  0→1→2→0 iterations/s over ~3.5 min — opt-in (RUN_RAMP=true), starts
+//        AFTER the smoke. Arrival-rate control, rather than a fixed VU count,
+//        bounds one runner IP below the live 300-request/minute HTTP cap while
+//        maxVUs still permits concurrency when real Qwen calls are slow.
 const scenarios = {
   smoke: {
     executor: "constant-vus",
@@ -94,16 +111,19 @@ const scenarios = {
 };
 if (RUN_RAMP) {
   scenarios.ramp = {
-    executor: "ramping-vus",
-    startVUs: 0,
+    executor: "ramping-arrival-rate",
+    startRate: 0,
+    timeUnit: "1s",
     startTime: "32s", // begin just after the 30s smoke finishes
+    preAllocatedVUs: 5,
+    maxVUs: 50,
     stages: [
-      { duration: "45s", target: 20 },
-      { duration: "60s", target: 50 },
-      { duration: "60s", target: 50 },
+      { duration: "45s", target: 1 },
+      { duration: "60s", target: 2 },
+      { duration: "60s", target: 2 },
       { duration: "45s", target: 0 },
     ],
-    gracefulRampDown: "10s",
+    gracefulStop: "10s",
     tags: { scenario: "ramp" },
   };
 }

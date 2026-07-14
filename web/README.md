@@ -2,7 +2,8 @@
 
 A minimal single-page dashboard for the **Archon MemoryAgent**: an agent with
 persistent, queryable, cross-session memory that **audits itself** for
-contradictions. Vite + React + TypeScript, dark theme, zero backend required.
+contradictions. Vite + React + TypeScript, dark theme, live-first with an explicit
+offline demo mode.
 
 ## Three panels
 
@@ -18,28 +19,25 @@ contradictions. Vite + React + TypeScript, dark theme, zero backend required.
 3. **Status bar.** `GET /health` (live embedder / narrator model ids + embedding
    dimension) and `GET /memory/count` (current memory size).
 
-## Demo default + Live toggle
+## Live default + explicit Demo toggle
 
-- **Demo mode is the default.** The dashboard renders fully with canned data and
+- **Live mode is the default.** It calls the HTTPS judge deployment (or
+  `VITE_API_URL`) and labels the result as live only after a successful response.
+- **Demo mode is explicit.** The dashboard can render with canned data and
   **zero backend** — a ByteCraft Studios recall with citations, and the
   €18,000-vs-€19,000 cross-session contradiction that the audit resolves to
   €19,000 by recency. Health shows `text-embedding-v4` + `qwen-plus`, dim 1024.
-- **Flip the "Live" toggle** to call the real API at `VITE_API_URL`
-  (default `http://43.106.13.19:9000`). Every call has a 5-second timeout
-  (`AbortController`). On **any** error or timeout the UI falls back to the demo
-  data with a small "live API unavailable — showing demo" notice. It never goes
-  blank or broken.
+- The default API is `https://memory.43.106.13.19.sslip.io`. Every call has a
+  5-second timeout (`AbortController`). On an error the panel may retain a canned
+  result, but it displays a prominent **DEMO FALLBACK** notice and never represents
+  that data as a successful live response.
 
-### Mixed-content / CORS note
+### HTTPS / CORS note
 
-The OSS static-hosting endpoint is **HTTP** and the MemoryAgent API is **HTTP**,
-so there is **no mixed-content block** when the Live toggle calls the API from the
-hosted page. Separately, the API server does not currently send CORS headers, so
-a cross-origin browser call may be **refused by CORS** even though the same
-request succeeds from `curl`. That is exactly why the graceful demo fallback is
-the product's normal path, not just an error case: Live *attempts* real calls and
-degrades cleanly. (For guaranteed Live success from a browser, the API would need
-to send `Access-Control-Allow-Origin`.)
+The API is HTTPS. Cross-origin access must be explicitly allowed by the backend's
+`CORS_ORIGIN` allowlist; the production configuration should list only the static
+dashboard origin and the same-origin backend UI. Do not use an HTTP API URL from
+an HTTPS page and do not configure wildcard credentialed CORS.
 
 ## Develop
 

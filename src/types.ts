@@ -23,6 +23,7 @@ export interface PayrollEvent {
   event_id: string;
   company: string;
   period: string; // YYYY-MM
+  event_ref?: string; // payroll run/batch identity within the period
   employee_count: number;
   bank_net_total: number; // from bank_confirmation
   gross_total: number; // from payroll_register

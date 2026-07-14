@@ -14,7 +14,7 @@
 
 import { createQwenClient, hasQwenCreds } from "../qwen/client.js";
 import { DEFAULT_NARRATOR_MODEL } from "../agents/narrator.js";
-import { SkillDispatcher } from "./dispatcher.js";
+import { SkillDispatcher, publicSkillError, skillInputError } from "./dispatcher.js";
 
 // ── Minimal tool-calling chat shapes (the seam tests inject a fake into) ──────
 export interface SkillToolDef {
@@ -119,8 +119,17 @@ export async function runSkillLoop(
     // result back as a `tool` message the model reads on the next turn.
     messages.push({ role: "assistant", content: message?.content ?? null, tool_calls: toolCalls });
     for (const call of toolCalls) {
-      const args = parseArgs(call.function.arguments);
-      const result = await dispatcher.dispatch(call.function.name, args);
+      let args: Record<string, unknown> = {};
+      let result: unknown;
+      try {
+        args = parseArgs(call.function.arguments);
+        result = await dispatcher.dispatch(call.function.name, args);
+      } catch (err) {
+        // Tool arguments are model-produced, untrusted input. Keep malformed
+        // calls inside the function-calling protocol as a structured result so
+        // Qwen can repair the call on its next turn; never crash the whole loop.
+        result = { error: publicSkillError(err) };
+      }
       invocations.push({ name: call.function.name, args, result });
       messages.push({
         role: "tool",
@@ -140,15 +149,25 @@ export async function runSkillLoop(
   };
 }
 
-// Tolerant parse of the model's stringified tool arguments (empty → {}).
+// Strict parse of the model's stringified tool arguments. An empty string is the
+// normal representation of an argument-less call; any non-empty malformed or
+// non-object value is rejected and fed back to the model as a structured error.
 function parseArgs(raw: string): Record<string, unknown> {
   if (!raw || !raw.trim()) return {};
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    parsed = JSON.parse(raw);
   } catch {
-    return {};
+    throw skillInputError("tool arguments must be valid JSON");
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw skillInputError("tool arguments must be a JSON object");
+  }
+  const proto = Object.getPrototypeOf(parsed);
+  if (proto !== Object.prototype && proto !== null) {
+    throw skillInputError("tool arguments must be a plain JSON object");
+  }
+  return parsed as Record<string, unknown>;
 }
 
 // Build a tool-calling client over the environment: the real OpenAI-compatible

@@ -1,18 +1,13 @@
-// Live API client with a hard timeout and graceful demo fallback.
-//
-// The dashboard defaults to DEMO mode. When the "Live" toggle is on, these call
-// the real MemoryAgent HTTP API. Because the static host is HTTP and the API is
-// HTTP, there is no mixed-content block — but a cross-origin browser call can
-// still be refused (the API does not send CORS headers) or time out. Every call
-// is wrapped in an AbortController timeout and returns a discriminated result so
-// the UI can fall back to canned data with a clear notice, never blank/broken.
+// Live API client with a hard timeout and an explicitly-labelled demo fallback.
+// The production default is the HTTPS judge endpoint. A static deployment can
+// override it with VITE_API_URL; failed live calls are never represented as live.
 
 import type { Health, MemoryCount, RecallResponse, ConsistencyReport } from "./types";
 import { DEMO_HEALTH, DEMO_COUNT, DEMO_RECALL, DEMO_CONSISTENCY } from "./demo";
 
 export const API_URL: string =
   (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ??
-  "http://43.106.13.19:9000";
+  "https://memory.43.106.13.19.sslip.io";
 
 const TIMEOUT_MS = 5000;
 
@@ -40,9 +35,9 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 function fallbackReason(err: unknown): string {
   if (err instanceof DOMException && err.name === "AbortError") {
-    return "live API timed out — showing demo";
+    return "DEMO FALLBACK — live API timed out; the data below is canned";
   }
-  return "live API unavailable — showing demo";
+  return "DEMO FALLBACK — live API unavailable; the data below is canned";
 }
 
 async function withFallback<T>(fn: () => Promise<T>, demo: T): Promise<LiveResult<T>> {

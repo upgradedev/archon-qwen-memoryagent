@@ -22,10 +22,16 @@ export function getPool(): Pool {
   }
   pool = new Pool({
     connectionString,
-    max: Number(process.env.PGPOOL_MAX ?? 5),
+    max: pgPoolMax(),
     application_name: "archon-qwen-memoryagent",
   });
   return pool;
+}
+
+export function pgPoolMax(raw: string | undefined = process.env.PGPOOL_MAX): number {
+  const value = Number(raw ?? 5);
+  if (!Number.isFinite(value)) return 5;
+  return Math.max(1, Math.min(Math.floor(value), 50));
 }
 
 export async function query<T extends QueryResultRow = QueryResultRow>(

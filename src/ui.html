@@ -225,6 +225,10 @@
             <label for="company">Company (optional filter)</label>
             <input id="company" placeholder="e.g. Northwind Trading" autocomplete="off" />
           </div>
+          <div class="grow">
+            <label for="judgeToken">Judge token (protected audit/lifecycle)</label>
+            <input id="judgeToken" type="password" placeholder="Paste the private reviewer token" autocomplete="off" />
+          </div>
         </div>
         <div>
           <label for="question">Question</label>
@@ -234,6 +238,7 @@
         <div class="row">
           <button id="askBtn" type="submit" data-tour="recall">Recall</button>
           <button id="auditBtn" class="secondary" type="button" data-tour="audit">Run self-audit</button>
+          <button id="semanticBtn" class="secondary" type="button">Run semantic audit</button>
           <button id="demoBtn" class="secondary" type="button" data-tour="demo">Run demo</button>
           <span id="status"></span>
         </div>
@@ -285,12 +290,27 @@
       (kids || []).forEach((c) => n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
       return n;
     };
-    const money = (n) => (typeof n === 'number' ? '€' + n.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—');
+    const money = (n, currency) => {
+      if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
+      const value = n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+      if (!currency || currency === 'UNSPECIFIED') return value + ' currency units';
+      try {
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency', currency, maximumFractionDigits: 2,
+        }).format(n);
+      } catch (_) {
+        return currency + ' ' + value;
+      }
+    };
 
     async function api(method, path, body) {
+      const headers = {};
+      if (body) headers['content-type'] = 'application/json';
+      const token = $('judgeToken') && $('judgeToken').value.trim();
+      if (token) headers.authorization = 'Bearer ' + token;
       const res = await fetch(path, {
         method,
-        headers: body ? { 'content-type': 'application/json' } : undefined,
+        headers,
         body: body ? JSON.stringify(body) : undefined,
       });
       const text = await res.text();
@@ -379,26 +399,88 @@
       });
     }
 
+    function renderSemanticAudit(wrap, report, context) {
+      wrap.appendChild(el('div', { class: 'section-label', text: 'Semantic self-audit — ' + context }));
+      const findings = (report && report.semanticContradictions) || [];
+      const status = (report && report.status) || 'inconclusive';
+      wrap.appendChild(el('div', {
+        class: status === 'complete' ? 'audit-ok' : 'audit-flag',
+        text: 'Audit status: ' + status + ' · memories ' + ((report && report.audited) || 0) +
+          ' · compared pairs ' + ((report && report.compared) || 0),
+      }));
+      if (!findings.length) {
+        wrap.appendChild(el('div', { class: 'audit-ok', text: '✓ No meaning-level contradiction was found in the bounded scope.' }));
+        return;
+      }
+      findings.forEach((finding) => {
+        const box = el('div', { class: 'audit-flag' });
+        const memories = finding.memories || [];
+        box.appendChild(el('div', { class: 'subj', text: 'Meaning-level contradiction · similarity ' +
+          (typeof finding.similarity === 'number' ? finding.similarity.toFixed(2) : '—') }));
+        memories.forEach((memory, index) => {
+          box.appendChild(el('div', { class: 'content', text: (index + 1) + '. ' + (memory.content || '') }));
+        });
+        if (finding.judge) {
+          box.appendChild(el('div', { class: 'resolution', text: 'Qwen judge · ' +
+            Math.round((finding.judge.confidence || 0) * 100) + '% · ' + (finding.judge.reason || '') }));
+        }
+        if (finding.resolution) {
+          box.appendChild(el('div', { class: 'resolution', text: 'Recommendation · ' +
+            (finding.resolution.rule || 'policy') + ' · ' + (finding.resolution.rationale || '') }));
+        }
+        wrap.appendChild(box);
+      });
+    }
+
     async function loadPnl() {
       try {
         const p = await api('GET', '/pnl');
         const box = $('pnl'); box.innerHTML = '';
         if (!p.events) { box.appendChild(el('div', { class: 'empty', text: 'Run the demo to compute a P&L.' })); return; }
-        
-        // Render 3 top-level P&L KPIs
-        const netProfitColor = p.net_profit >= 0 ? 'var(--green-hi)' : 'var(--red)';
+
+        const mixed = p.currency_status === 'mixed';
+        const totalMoney = (n) => mixed ? 'See currency breakdown' : money(n, p.currency);
+        if (mixed) {
+          box.appendChild(el('div', {
+            class: 'empty',
+            text: 'Mixed currencies detected. Monetary totals are intentionally kept separate and are never cross-summed.'
+          }));
+          const currencyTable = el('table', { style: 'width: 100%; margin-top: 12px; margin-bottom: 20px;' }, [
+            el('tr', {}, [
+              el('th', { text: 'Currency', style: 'text-align: left;' }),
+              el('th', { text: 'Revenue', class: 'num' }),
+              el('th', { text: 'Payroll', class: 'num' }),
+              el('th', { text: 'Purchases', class: 'num' }),
+              el('th', { text: 'Net profit', class: 'num' })
+            ])
+          ]);
+          (p.by_currency || []).forEach((c) => {
+            currencyTable.appendChild(el('tr', {}, [
+              el('td', { text: c.currency }),
+              el('td', { class: 'num', text: money(c.revenue_total, c.currency) }),
+              el('td', { class: 'num', text: money(c.employer_cost_total, c.currency) }),
+              el('td', { class: 'num', text: money(c.purchases_total, c.currency) }),
+              el('td', { class: 'num', text: money(c.net_profit, c.currency) })
+            ]));
+          });
+          box.appendChild(currencyTable);
+        }
+
+        // Render 3 top-level P&L KPIs. Mixed-currency reports deliberately have
+        // no synthetic grand total; the table above is the authoritative view.
+        const netProfitColor = typeof p.net_profit === 'number' && p.net_profit < 0 ? 'var(--red)' : 'var(--green-hi)';
         const kpis = el('div', { class: 'kpis' }, [
           el('div', { class: 'kpi' }, [
             el('div', { class: 'k', text: 'Total Revenue (Sales)' }), 
-            el('div', { class: 'v', style: 'color: var(--green-hi);', text: money(p.revenue_total) })
+            el('div', { class: 'v', style: 'color: var(--green-hi);', text: totalMoney(p.revenue_total) })
           ]),
           el('div', { class: 'kpi' }, [
             el('div', { class: 'k', text: 'Total Operating Expenses' }), 
-            el('div', { class: 'v', style: 'color: var(--amber);', text: money(p.total_expenses) })
+            el('div', { class: 'v', style: 'color: var(--amber);', text: totalMoney(p.total_expenses) })
           ]),
           el('div', { class: 'kpi' }, [
             el('div', { class: 'k', text: 'Net Profit / Loss' }), 
-            el('div', { class: 'v', style: 'color: ' + netProfitColor + ';', text: money(p.net_profit) })
+            el('div', { class: 'v', style: 'color: ' + netProfitColor + ';', text: totalMoney(p.net_profit) })
           ]),
         ]);
         box.appendChild(kpis);
@@ -419,7 +501,7 @@
               el('td', { text: s.customer }),
               el('td', { text: s.invoice_number }),
               el('td', { text: s.date }),
-              el('td', { class: 'num', text: money(s.amount) })
+              el('td', { class: 'num', text: money(s.amount, s.currency) })
             ]));
           });
         } else {
@@ -429,7 +511,7 @@
         }
         revTable.appendChild(el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
           el('td', { text: 'Total Operating Revenue', colspan: 3 }),
-          el('td', { class: 'num', text: money(p.revenue_total) })
+          el('td', { class: 'num', text: totalMoney(p.revenue_total) })
         ]));
         box.appendChild(revTable);
 
@@ -442,15 +524,15 @@
           ]),
           el('tr', {}, [
             el('td', { text: 'Gross Salaries (Payroll Expense)' }),
-            el('td', { class: 'num', text: money(p.gross_total) })
+            el('td', { class: 'num', text: totalMoney(p.gross_total) })
           ]),
           el('tr', {}, [
             el('td', { text: 'Employer Social Security Contributions' }),
-            el('td', { class: 'num', text: money(p.employer_social_security_total) })
+            el('td', { class: 'num', text: totalMoney(p.employer_social_security_total) })
           ]),
           el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
             el('td', { text: 'Total Payroll Expenses' }),
-            el('td', { class: 'num', text: money(p.employer_cost_total) })
+            el('td', { class: 'num', text: totalMoney(p.employer_cost_total) })
           ])
         ]);
         box.appendChild(payTable);
@@ -471,7 +553,7 @@
               el('td', { text: c.vendor }),
               el('td', { text: c.invoice_number }),
               el('td', { text: c.date }),
-              el('td', { class: 'num', text: money(c.amount) })
+              el('td', { class: 'num', text: money(c.amount, c.currency) })
             ]));
           });
         } else {
@@ -481,7 +563,7 @@
         }
         purTable.appendChild(el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
           el('td', { text: 'Total Vendor Purchases', colspan: 3 }),
-          el('td', { class: 'num', text: money(p.purchases_total) })
+          el('td', { class: 'num', text: totalMoney(p.purchases_total) })
         ]));
         box.appendChild(purTable);
 
@@ -494,19 +576,19 @@
           ]),
           el('tr', {}, [
             el('td', { text: 'Total Operating Expenses (Payroll + Purchases)' }),
-            el('td', { class: 'num', text: money(p.total_expenses) })
+            el('td', { class: 'num', text: totalMoney(p.total_expenses) })
           ]),
           el('tr', {}, [
             el('td', { text: 'Net Cash Outflow (Paid Outflow)' }),
-            el('td', { class: 'num', text: money(p.net_cash_outflow) })
+            el('td', { class: 'num', text: totalMoney(p.net_cash_outflow) })
           ]),
           el('tr', {}, [
             el('td', { text: 'Accrued Taxes & Outstanding Contributions' }),
-            el('td', { class: 'num', text: money(p.off_bank_cost) })
+            el('td', { class: 'num', text: totalMoney(p.off_bank_cost) })
           ]),
           el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
             el('td', { text: 'Net Operating Profit Margin' }),
-            el('td', { class: 'num', text: (p.net_profit_margin_pct || 0).toFixed(1) + '%' })
+            el('td', { class: 'num', text: mixed ? 'See currency breakdown' : (p.net_profit_margin_pct || 0).toFixed(1) + '%' })
           ])
         ]);
         box.appendChild(summaryTable);
@@ -593,6 +675,25 @@
         renderAudit(wrap, report, 'full scan' + (company ? ' · ' + company : ''));
         $('status').textContent = '';
       } catch (e) { $('status').className = 'err'; $('status').textContent = 'Audit failed: ' + e.message; }
+    });
+
+    // ── Meaning-level audit (authenticated because it spends Qwen calls) ──────
+    $('semanticBtn').addEventListener('click', async () => {
+      const company = $('company').value.trim();
+      if (!$('judgeToken').value.trim()) {
+        $('status').className = 'err';
+        $('status').textContent = 'Paste the private judge token to run the Qwen semantic audit.';
+        return;
+      }
+      const btn = $('semanticBtn'); btn.disabled = true; statusBusy('Running semantic audit…');
+      try {
+        const report = await api('POST', '/consistency/semantic', company ? { company } : {});
+        const wrap = $('result'); wrap.innerHTML = '';
+        renderSemanticAudit(wrap, report, 'bounded Qwen scan' + (company ? ' · ' + company : ''));
+        $('status').textContent = '';
+      } catch (e) {
+        $('status').className = 'err'; $('status').textContent = 'Semantic audit failed: ' + e.message;
+      } finally { btn.disabled = false; refreshStatus(); }
     });
 
     // ── Run demo (POST /demo/seed → auto recall) ───────────────────────────────

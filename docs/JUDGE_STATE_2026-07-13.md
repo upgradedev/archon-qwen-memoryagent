@@ -1,86 +1,38 @@
-# Judge-State Snapshot — 2026-07-13
+# Historical judge-state filename — superseded 2026-07-15
 
-> **Purpose.** A durable record of where the Archon MemoryAgent entry stands against the
-> Qwen Cloud Hackathon judging bar after the 2026-07-12/13 judgment-review pass (merged
-> PRs #48–#52). It captures the current judged score, the discrepancies those PRs closed,
-> and the ranked, still-open path to exceed the target — so the next session resumes
-> without re-deriving any of it.
->
-> **Out of scope (already done / user-owned).** The **demo video** is re-rendered and
-> committed (semantic + MCP beats, live `qwen-plus`), and the **blog / Devpost project
-> story** is drafted and ready to submit. Both are excluded from the forward path below;
-> the remaining video/Devpost actions are user steps (upload + form), not engineering.
+This file keeps its dated name so old links do not break. Its former July 13 snapshot is superseded; it contained pre-hardening test counts, an obsolete claim that semantic audit lacked a labelled benchmark, and deployment assumptions that should not be used as evidence.
 
-## 1. Challenge + target
+The canonical current sources are:
 
-| Item | Value |
+- [`CLAIM_EVIDENCE_MATRIX.md`](./CLAIM_EVIDENCE_MATRIX.md) for every judge-facing claim and caveat;
+- [`JUDGE-GUIDE.md`](./JUDGE-GUIDE.md) for the public and authenticated click paths;
+- [`architecture.svg`](./architecture.svg) / [`architecture.png`](./architecture.png) for the submission diagram; and
+- [`../demo/FINAL_MEDIA_CHECKLIST.md`](../demo/FINAL_MEDIA_CHECKLIST.md) for the remaining human-owned work.
+
+## Current verified engineering evidence
+
+| Evidence | Verified result |
 |---|---|
-| Challenge | Global AI Hackathon Series with Qwen Cloud — **Track 1: MemoryAgent** |
-| Deadline | **2026-07-20, 2 PM PDT** |
-| Rubric | **Technical Depth & Engineering 30% · Innovation & AI Creativity 30% · Problem Value & Impact 25% · Presentation & Documentation 15%** |
-| Target bar to exceed | **> 9.5 / 10** |
-| Current judged score | **~8.6 / 10** (lifted by merged PRs #48–#52) |
+| Full Node test/coverage surface | **300 total · 285 pass · 0 fail · 15 intentional real-DB skips** |
+| Coverage | **91.96% statements · 84.96% branches · 91.25% functions · 91.96% lines** |
+| Field-level self-audit | **5/5 injected problems detected · 0 false positives** |
+| Resolution policy | **4/4 winners and 4/4 rules correct** on the labelled policy set |
+| Meaning-level self-audit | **90% recall · 100% precision · 0 false positives** on the committed offline labelled set |
+| Reranked hybrid retrieval | **MRR 0.911 · nDCG@5 0.938 · Recall@3 96.7%** |
+| Grounded-answer evaluation | **100% correctness · 90.9% grounding/faithfulness** |
 
-## 2. Current judge score — per criterion
+The semantic figures measure the deterministic offline judge, not live-Qwen accuracy. The 15 skipped tests are the real-PostgreSQL slices when no integration database is supplied; they are not failures.
 
-| Criterion (weight) | Score | Basis |
-|---|---|---|
-| **Technical Depth & Engineering (30%)** | **9** | Real Qwen `text-embedding-v4` embeddings + `qwen-plus` narration on Alibaba Cloud ECS with a self-hosted `pgvector` container; read-only self-auditing consistency engine (rule-based + semantic); 183 `node:test` tests at 97.75% coverage; CI + docs-consistency fitness functions. |
-| **Innovation & AI Creativity (30%)** | **8.5–9** | Read-only, deterministic contradiction recommender (never mutates memory) vs Mem0/Zep silent mutation, now extended with a **NEW semantic contradiction detector** for meaning-level opposition the rule-based audit is blind to. Ceiling on this axis is capped until the semantic detector is *measured* (see §4). |
-| **Problem Value & Impact (25%)** | **7.5–8** | Cross-session financial-intelligence memory with self-audit for missing/inconsistent data. Weakest axis: the impact is demonstrated but not yet quantified with a hard number (cost/hours saved or catch-rate vs a silent-mutation baseline). |
-| **Presentation & Documentation (15%)** | strong | README foregrounds self-audit + benchmark + MCP; JUDGE-GUIDE 2-minute click path; mermaid architecture guarded by CI; demo video re-rendered. Remaining action = user uploads video + submits Devpost form. |
+## Current trust and scope contract
 
-## 3. Discrepancies fixed this session (merged PRs)
+- Production mutations, feedback, lifecycle operations, and `/consistency/semantic` require a judge credential and are tenant-scoped by the server-owned credential mapping.
+- The fixed `/demo/seed` and public-tenant read path need no login. Qwen-spending public seed/recall calls remain bounded by per-IP plus global quotas.
+- Streamable HTTP MCP is always authenticated/fail-closed; stdio is the local trusted transport.
+- There are exactly four MCP/custom-skill operations and six `MemoryKind` values: `document`, `payroll_event`, `validation`, `insight`, `invoice`, and `action`.
+- The shipped financial scope is payroll evidence plus strict purchase/sales invoice ingestion and currency-separated P&L. Orders, receipts, general bank statements, EBITDA, and sales targets are not shipped claims.
 
-All five confirmed merged to `main` (verified via `gh pr list --state merged`):
+## Submission state rule
 
-| PR | Title | What it resolved |
-|---|---|---|
-| **#48** | Judge-credibility polish | Aligned `demo/ALIBABA_PROOF.md`, removed the stale `~28%` gap figure, made the Demo Video badge honest (`pending upload`, not a false live claim). |
-| **#49** | README score boost | README now foregrounds the read-only self-audit, the head-to-head benchmark, and the MCP server for judges. |
-| **#50** | Semantic self-audit detector | Added `src/memory/semantic-consistency.ts` — meaning-level contradiction detection (opposite facts sharing no comparable metadata key). Read-only, offline-testable; closes the self-flagged Innovation limitation. |
-| **#51** | Judgment-review harmony | Resolved the "semantic engine missing" critique; exposed the semantic audit over MCP (`audit_memory` tool, `semantic: true` flag) and over REST (`POST /consistency/semantic`); re-rendered the demo video. |
-| **#52** | Re-rendered demo video | Semantic + MCP beats, live `qwen-plus`, A/V/caption sync-gate green. |
+Do not freeze a live-deployment assertion in this dated file. A release is current only after `/ready` returns `200`, `/health` reports real Qwen model ids, and `/openapi.json` contains the protected invoice, feedback, semantic, and lifecycle routes. The final public video and screenshots must be recorded only after that smoke test.
 
-## 4. Path to exceed the target (> 9.5) — ranked
-
-Excludes the demo video and the blog/Devpost story (done / user-owned). Ranked by expected axis lift.
-
-1. **[CODE / buildable] Measure the semantic detector on a labelled fixture — a `bench:semantic` gate.**
-   This project's brand is *"measured, not vibes."* The semantic detector currently ships
-   **method-only**: it has unit tests (`tests/unit/semantic-consistency.test.ts`) but **no
-   labelled precision/recall benchmark** — `bench/` has `bench:consistency` and
-   `bench:resolution` datasets for the *rule-based* audit, but no semantic labelled fixture
-   and no `bench:semantic` script (verified). A small labelled contradiction/agreement set
-   + a benchmark gate reporting **precision / recall / F1** turns the headline Innovation
-   feature from *asserted* → *measured*, directly lifting the **Innovation (30%)** axis.
-   **This is the single biggest CODE lever.**
-
-2. **[CODE / analysis] Quantify the Problem-Value impact with a real number.**
-   Produce a hard figure — cost/hours saved, or contradiction-catch-rate vs a
-   silent-mutation baseline — to lift the **Problem Value & Impact (25%)** axis, currently
-   the weakest. Reuse the existing benchmark harness (`bench/consistency-run.ts`,
-   `bench/resolution-run.ts`) as the measurement scaffold.
-
-3. **[USER-only creds/deploy] Publish the demo video + submit the Devpost form.**
-   Video is re-rendered and committed; the remaining steps (YouTube upload, make the README
-   badge a link, complete the Devpost submission) require user credentials.
-
-> **Note — ECS `/consistency/semantic` is already live (DONE, not pending).** A probe of the
-> production endpoint (`POST https://memory.43.106.13.19.sslip.io/consistency/semantic`)
-> returned a valid semantic-audit schema (`{"audited":…,"compared":…,"semanticContradictions":[…],"ok":true}`),
-> which a stale pre-#50/#51 image could not — so the deployed container already carries the
-> semantic route. No ECS redeploy is needed for the endpoint to be reachable.
-
-## 5. Verified-harmonized (no action needed)
-
-- **Semantic audit is threaded through the docs + benchmark surface** — README foregrounds
-  it, the mermaid architecture and JUDGE-GUIDE reference it, and it sits alongside the
-  rule-based consistency benchmark story.
-- **MCP exposes the semantic audit** — the `audit_memory` MCP tool carries a `semantic: true`
-  flag (`src/skills/schemas.ts`), dispatched through the shared `SkillDispatcher` so the MCP
-  layer never duplicates memory logic.
-- **Honest badges** — the Demo Video badge reads `pending upload` rather than claiming a live
-  video; Tests (183) and Coverage (97.75%) badges match the repo state.
-- **`ALIBABA_PROOF` aligned** — the proof recording and model-id claims are consistent with
-  the deployed ECS instance; the stale `~28%` gap figure is removed.
+Deadline: **2026-07-20 at 2:00 PM PDT**. A draft video or blog is not a completed rule/bonus item until it is publicly hosted and its URL is entered in Devpost.

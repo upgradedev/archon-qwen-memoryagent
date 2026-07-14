@@ -71,7 +71,8 @@ test("memory written in session A is recalled by a fresh session B", { skip: !HA
   for (const c of citations) assert.ok(answer.includes(c.marker), `answer missing marker ${c.marker}`);
   const grounded = citations.map((c) => c.content).join(" ");
   assert.ok(
-    grounded.includes("€22,800") || grounded.includes("€63,800"),
+    grounded.includes("22,800 currency units") || grounded.includes("63,800 currency units"),
     "recalled cross-session memory must carry the employer-cost figures"
   );
+  assert.doesNotMatch(grounded, /€/, "currency-less payroll input must not invent EUR");
 });

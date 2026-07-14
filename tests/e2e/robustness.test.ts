@@ -109,10 +109,18 @@ describe("security and robustness journeys", () => {
   });
 
   test("ROBUSTNESS: an oversized request body is rejected (413), and the server stays alive", async () => {
-    const app = await buildServer({ store: new InMemoryStore(), embedder: new FakeEmbedder(), narrator: new FakeNarrator() });
+    const app = await buildServer({
+      store: new InMemoryStore(),
+      embedder: new FakeEmbedder(),
+      narrator: new FakeNarrator(),
+      // Exercise the same aggregate-body invariant with a small injected cap;
+      // production deliberately uses 10 MiB so one valid 8M-char vision input
+      // fits. Keeping the fixture small makes this resilience test cheap.
+      bodyLimitBytes: 1_048_576,
+    });
     await app.ready();
 
-    // ~1.2 MB of content — over Fastify's default 1 MB bodyLimit → 413, not OOM.
+    // ~1.2 MB of content — over this server's injected 1 MiB cap → 413, not OOM.
     const huge = "x".repeat(1_200_000);
     const res = await app.inject({
       method: "POST",

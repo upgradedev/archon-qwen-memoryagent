@@ -30,8 +30,31 @@ export function hasQwenCreds(): boolean {
 // automatic retry budget for transient network / 5xx blips. Both overridable via
 // env for tuning. Without these, a single DashScope stall would hang /recall on
 // the live box until the client gave up — a real judging-window failure mode.
-export const QWEN_REQUEST_TIMEOUT_MS = Number(process.env.QWEN_TIMEOUT_MS || 20_000);
-export const QWEN_MAX_RETRIES = Number(process.env.QWEN_MAX_RETRIES || 2);
+export const QWEN_REQUEST_TIMEOUT_MS = boundedIntegerConfig(
+  process.env.QWEN_TIMEOUT_MS,
+  20_000,
+  1_000,
+  120_000,
+);
+export const QWEN_MAX_RETRIES = boundedIntegerConfig(
+  process.env.QWEN_MAX_RETRIES,
+  2,
+  0,
+  5,
+);
+
+export function boundedIntegerConfig(
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (raw == null || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value)
+    ? Math.min(max, Math.max(min, Math.trunc(value)))
+    : fallback;
+}
 
 export function createQwenClient(
   apiKey: string = process.env.DASHSCOPE_API_KEY ?? "",
@@ -68,10 +91,18 @@ export interface ChatCreateArgs {
   messages: ChatMessage[];
   temperature?: number;
   max_tokens?: number;
+  response_format?: { type: "json_object" };
+}
+export interface ChatRequestOptions {
+  signal?: AbortSignal;
 }
 export interface ChatResponse {
   choices: Array<{ message: { content: string | null } }>;
 }
 export interface QwenChatClient {
-  chat: { completions: { create(args: ChatCreateArgs): Promise<ChatResponse> } };
+  chat: {
+    completions: {
+      create(args: ChatCreateArgs, options?: ChatRequestOptions): Promise<ChatResponse>;
+    };
+  };
 }

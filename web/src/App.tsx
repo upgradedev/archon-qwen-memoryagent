@@ -7,8 +7,9 @@ import { AskPanel } from "./components/AskPanel";
 import { AuditPanel } from "./components/AuditPanel";
 
 export default function App() {
-  // DEMO is the default. Live attempts real calls and falls back gracefully.
-  const [live, setLive] = useState(false);
+  // Judge-facing builds are live-first. Demo mode remains an explicit offline
+  // choice, and a failed live request is visibly labelled by each panel.
+  const [live, setLive] = useState(true);
   const [health, setHealth] = useState<Health>(DEMO_HEALTH);
   const [count, setCount] = useState<MemoryCount>(DEMO_COUNT);
   const [statusLive, setStatusLive] = useState(false);
@@ -71,8 +72,8 @@ export default function App() {
       <p className="footer">
         {live ? (
           <>
-            Live mode — calling <code>{API_URL}</code>. On any error or timeout the
-            dashboard falls back to demo data.
+            Live mode — calling <code>{API_URL}</code>. Any fallback is prominently
+            labelled as canned demo data.
           </>
         ) : (
           <>

@@ -1,11 +1,11 @@
 // PEN-TEST — Sensitive-data exposure & error leakage (OWASP API8 Security
 // Misconfiguration / LLM02 Sensitive Information Disclosure / CWE-209 error
 // leakage). The invariant: no route leaks server internals. A server-side fault
-// returns the typed `{ error }` envelope with NO stack trace, NO source path, and
-// NO connection string; validation errors are equally opaque; and /health exposes
-// only the model ids + embedding dimension — never a key, secret, token, or
-// password. Fully OFFLINE (Fakes, no DB, no DASHSCOPE key — we never set one, so
-// the deterministic Fakes stay selected and no real credential is ever in scope).
+// returns an opaque typed envelope with correlation ids and NO exception message,
+// stack trace, source path, connection string, or provider payload. Validation
+// errors remain useful 4xx responses; /health exposes only model ids + embedding
+// dimension — never a key, secret, token, or password. Fully OFFLINE (Fakes, no
+// DB, no DASHSCOPE key — no real credential is ever in scope).
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -24,7 +24,11 @@ function offlineServer(store: MemoryStore): Promise<FastifyInstance> {
 // A store whose every method rejects — simulates the memory layer being
 // unreachable, the path that flows through the generic error handler.
 function unreachableStore(): MemoryStore {
-  const boom = async () => { throw new Error("memory store unreachable"); };
+  const boom = async () => {
+    throw new Error(
+      "memory store unreachable at C:\\srv\\secret.ts:73 postgres://admin:password@db/private?api_key=sk-not-a-real-key",
+    );
+  };
   return new Proxy({}, { get: () => boom }) as unknown as MemoryStore;
 }
 
@@ -35,7 +39,7 @@ const SECRETISH = /(sk-[A-Za-z0-9]{8,}|"?(?:api[_-]?key|secret|password|token)"?
 const CONN_STRING = /postgres(?:ql)?:\/\/[^\s"]+/i;
 
 describe("Exposure: a server-side fault returns a graceful envelope, no internals", () => {
-  test("GET /memory/count on an unreachable store → 503 { error }, no stack / path / conn-string", async () => {
+  test("GET /memory/count on an unreachable store → generic correlated 503 with no internals", async () => {
     const app = await offlineServer(unreachableStore());
     await app.ready();
     const res = await app.inject({ method: "GET", url: "/memory/count" });
@@ -43,12 +47,17 @@ describe("Exposure: a server-side fault returns a graceful envelope, no internal
 
     assert.equal(res.statusCode, 503, "an internal fault maps to a 503, not a 200 or a hang");
     const body = res.json();
-    assert.equal(typeof body.error, "string", "the fault must be a typed { error } envelope");
+    assert.equal(body.error, "service temporarily unavailable");
+    assert.equal(typeof body.requestId, "string", "the response must carry a request correlation id");
+    assert.match(body.errorId, /^[0-9a-f-]{36}$/i, "the response must carry an opaque error id");
     assert.equal(body.stack, undefined, "the envelope must not carry a stack property");
-    // The raw payload must not leak a V8 stack, a source path, or a DB URL.
+    // The raw payload must not leak even the exception message, much less its
+    // V8 stack, source path, connection string, or fake credential sentinel.
+    assert.doesNotMatch(res.payload, /memory store unreachable/i, "response leaked the exception message");
     assert.doesNotMatch(res.payload, STACK_FRAME, "response leaked a stack frame");
     assert.doesNotMatch(res.payload, SOURCE_PATH, "response leaked a source path");
     assert.doesNotMatch(res.payload, CONN_STRING, "response leaked a connection string");
+    assert.doesNotMatch(res.payload, SECRETISH, "response leaked credential-shaped data");
   });
 
   test("POST /recall on an unreachable store → error envelope, still no internals", async () => {
@@ -57,8 +66,13 @@ describe("Exposure: a server-side fault returns a graceful envelope, no internal
     const res = await app.inject({ method: "POST", url: "/recall", payload: { question: "hello" } });
     await app.close();
     assert.ok(res.statusCode >= 500, "an embedder/store outage during recall surfaces as a 5xx, not a 200");
+    assert.equal(res.json().error, "service temporarily unavailable");
+    assert.equal(typeof res.json().requestId, "string");
+    assert.match(res.json().errorId, /^[0-9a-f-]{36}$/i);
+    assert.doesNotMatch(res.payload, /memory store unreachable/i);
     assert.doesNotMatch(res.payload, STACK_FRAME);
     assert.doesNotMatch(res.payload, SOURCE_PATH);
+    assert.doesNotMatch(res.payload, CONN_STRING);
   });
 });
 

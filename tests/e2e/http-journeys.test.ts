@@ -22,7 +22,7 @@ import type { PayrollEvent } from "../../src/types.js";
 
 const NO_MEMORY = "No relevant memories found in the agent's persistent memory.";
 
-// A fused event with unambiguous, assertable figures. €63,800 is the true
+// A fused event with unambiguous, assertable figures. 63,800 is the true
 // employer cost carried in the event-summary memory; Elena Novak is a per-employee
 // memory whose name is a strong lexical anchor for retrieval.
 const ACME: PayrollEvent = {
@@ -95,7 +95,8 @@ describe("ingest → recall journeys", () => {
     assert.notEqual(body.answer, NO_MEMORY);
     for (const c of body.citations) assert.ok(body.answer.includes(c.marker), `answer missing ${c.marker}`);
     const grounded = body.citations.map((c: { content: string }) => c.content).join(" ");
-    assert.ok(grounded.includes("€63,800"), "recalled memory must carry the true employer-cost figure");
+    assert.ok(grounded.includes("63,800 currency units"), "recalled memory must carry the true employer-cost figure");
+    assert.doesNotMatch(grounded, /€/, "currency-less payroll input must not invent EUR");
   });
 
   test("UNHAPPY: recall against an empty store returns the no-memory fallback (200, zero citations)", async () => {
@@ -204,13 +205,14 @@ describe("retrieval and re-ranking journeys", () => {
     assert.equal(body.citations.length, body.hits.length, "one citation per recalled hit");
   });
 
-  test("UNHAPPY: an oversized (but valid) query is handled gracefully — a 200, never a crash", async () => {
-    // A large-but-under-1MB question. This must NOT hit the body-size limit; it
-    // exercises the recall path's robustness to a huge query string.
+  test("UNHAPPY: an oversized query is rejected at the bounded API boundary", async () => {
+    // The body itself is under Fastify's global body limit, but a question this
+    // large would amplify embedding/reranking cost. The route-level schema must
+    // reject it before any model call.
     const huge = "what did it cost to employ the team? ".repeat(2000); // ~74 KB
     const res = await app.inject({ method: "POST", url: "/recall", payload: { question: huge } });
-    assert.equal(res.statusCode, 200, "a large valid query must degrade to a normal answer, not error");
-    assert.equal(typeof res.json().answer, "string");
+    assert.equal(res.statusCode, 400);
+    assert.equal(typeof res.json().error, "string");
   });
 
   test("UNHAPPY: a whitespace-only question is rejected as empty (400)", async () => {
@@ -224,36 +226,34 @@ describe("retrieval and re-ranking journeys", () => {
 
 // ── Consolidation (dedupe / merge) ─────────────────────────────────────────────
 describe("consolidation journeys", () => {
-  test("HAPPY: re-ingesting the same event, then consolidating, collapses the duplicates", async () => {
+  test("HAPPY: retrying the same event is idempotent and consolidation dry-run is safe", async () => {
     const store = new InMemoryStore();
     const app = await offlineServer(store);
     await app.ready();
 
     // Ingest the identical event twice — a real re-run — so each memory now has a
     // byte-identical twin (cosine 1.0 under the fake embedder).
-    await app.inject({ method: "POST", url: "/ingest", payload: { event: ACME } });
-    await app.inject({ method: "POST", url: "/ingest", payload: { event: ACME } });
+    const first = await app.inject({ method: "POST", url: "/ingest", payload: { event: ACME } });
+    const retry = await app.inject({ method: "POST", url: "/ingest", payload: { event: ACME } });
+    assert.deepEqual(retry.json().ids, first.json().ids, "retry returns the original durable memory ids");
 
     const before = await app.inject({ method: "GET", url: "/memory/list?limit=100" });
-    assert.equal(before.json().count, 8, "two ingests of a 4-memory event = 8 rows");
+    assert.equal(before.json().count, 4, "a retried 4-memory event remains exactly 4 rows");
 
     const consolidated = await app.inject({ method: "POST", url: "/consolidate", payload: {} });
     assert.equal(consolidated.statusCode, 200);
     const plan = consolidated.json();
-    assert.ok(plan.clusters >= 1, "duplicate clusters should be found");
-    assert.ok(plan.superseded >= 1, "duplicates should be superseded");
+    assert.equal(plan.dryRun, true, "lifecycle routes preview unless confirm=true");
+    assert.equal(plan.superseded, 0, "a preview never mutates memory");
 
     // The browse view (active memories only) no longer shows the duplicates.
     const after = await app.inject({ method: "GET", url: "/memory/list?limit=100" });
-    assert.ok(
-      after.json().count < before.json().count,
-      "consolidation must reduce the count of active memories",
-    );
+    assert.equal(after.json().count, before.json().count, "dry-run leaves active memories untouched");
 
     // Idempotent: a second pass finds nothing left to merge.
-    const again = await app.inject({ method: "POST", url: "/consolidate", payload: {} });
+    const again = await app.inject({ method: "POST", url: "/consolidate", payload: { confirm: true } });
     await app.close();
-    assert.equal(again.json().superseded, 0, "re-consolidating an already-clean store is a no-op");
+    assert.equal(again.json().superseded, 0, "idempotent ingest leaves no duplicate to consolidate");
   });
 
   test("UNHAPPY: consolidating a store with nothing to merge is a clean no-op (0 clusters, 0 superseded)", async () => {

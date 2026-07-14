@@ -104,17 +104,21 @@ export const SKILLS: readonly SkillDefinition[] = [
       properties: {
         company: {
           type: "string",
+          minLength: 1,
+          maxLength: 256,
           description: "Optional company scope to pre-filter the memory recall.",
         },
         question: {
           type: "string",
+          minLength: 1,
+          maxLength: 4000,
           description: "The natural-language question to answer from memory.",
         },
         kind: kindProperty,
         limit: {
           type: "integer",
           minimum: 1,
-          maximum: 50,
+          maximum: 20,
           description: "Optional cap on the number of memories recalled (default 5).",
         },
       },
@@ -133,19 +137,26 @@ export const SKILLS: readonly SkillDefinition[] = [
       properties: {
         company: {
           type: "string",
+          minLength: 1,
+          maxLength: 256,
           description: "Company the fact belongs to (defaults to a global scope if omitted).",
         },
         content: {
           type: "string",
+          minLength: 1,
+          maxLength: 8000,
           description: "The recallable natural-language fact to remember.",
         },
         kind: kindProperty,
         period: {
           type: "string",
+          pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$",
           description: "Optional reporting period the fact belongs to, e.g. 2026-05.",
         },
         sourceRef: {
           type: "string",
+          minLength: 1,
+          maxLength: 256,
           description: "Optional id of the originating record this fact came from.",
         },
         metadata: {
@@ -171,8 +182,8 @@ export const SKILLS: readonly SkillDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        company: { type: "string", description: "Optional company scope for the audit." },
-        period: { type: "string", description: "Optional reporting-period scope for the audit." },
+        company: { type: "string", minLength: 1, maxLength: 256, description: "Optional company scope for the audit." },
+        period: { type: "string", pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", description: "Optional reporting-period scope for the audit." },
         kind: kindProperty,
         semantic: {
           type: "boolean",
@@ -192,7 +203,7 @@ export const SKILLS: readonly SkillDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        company: { type: "string", description: "Optional company scope for the count." },
+        company: { type: "string", minLength: 1, maxLength: 256, description: "Optional company scope for the count." },
       },
       required: [],
       additionalProperties: false,
