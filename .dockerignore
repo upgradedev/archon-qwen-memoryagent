@@ -10,7 +10,6 @@ web/node_modules
 web/dist
 demo
 docs
-bench
 tests
 *.log
 *.mp4
