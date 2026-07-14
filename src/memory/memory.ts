@@ -25,6 +25,24 @@ export async function remember(
   return store.remember({ ...input, embedding, embedModel: embedder.modelId });
 }
 
+// Embed a logical batch before opening the store transaction, then persist all
+// rows atomically. Stable idempotency keys make a retried producer operation
+// return the original ids instead of duplicating durable memories.
+export async function rememberMany(
+  embedder: Embedder,
+  store: MemoryStore,
+  inputs: MemoryInput[],
+): Promise<string[]> {
+  const stored = await Promise.all(
+    inputs.map(async (input) => ({
+      ...input,
+      embedding: await embedder.embed(input.content),
+      embedModel: embedder.modelId,
+    })),
+  );
+  return store.rememberMany(stored);
+}
+
 // Recall the top-k memories most semantically similar to `queryText`, optionally
 // pre-filtered by kind/company. The question is embedded with the SAME model the
 // memories were written with, then ranked by cosine distance in the store.

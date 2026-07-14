@@ -13,7 +13,7 @@ import { FakeEmbedder } from "../../src/memory/embeddings.js";
 import { FakeNarrator } from "../../src/agents/narrator.js";
 import { InMemoryStore } from "../../src/memory/store.js";
 import { MemoryAgent } from "../../src/agents/memory-agent.js";
-import { SkillDispatcher } from "../../src/skills/dispatcher.js";
+import { SkillDispatcher, defaultSkillDispatcher } from "../../src/skills/dispatcher.js";
 import { SKILLS, MEMORY_KINDS, getSkill } from "../../src/skills/schemas.js";
 import {
   runSkillLoop,
@@ -120,6 +120,41 @@ test("dispatch rejects an unknown skill and missing required args", async () => 
   await assert.rejects(() => dispatcher.dispatch("ingest_memory", { content: "x" }), /kind/);
 });
 
+test("dispatch strictly validates runtime argument types, bounds, and unknown keys", async () => {
+  const invalidCalls: Array<[string, unknown, RegExp]> = [
+    ["memory_count", [], /JSON object/],
+    ["memory_count", { company: "Acme", deleteEverything: true }, /unknown argument/],
+    ["recall_memory", { question: "q", limit: "5" }, /integer/],
+    ["recall_memory", { question: "q", limit: 21 }, /1 to 20/],
+    ["recall_memory", { question: "q", kind: "root" }, /kind is invalid/],
+    ["audit_memory", { semantic: "true" }, /boolean/],
+    ["audit_memory", { period: "2026-13" }, /YYYY-MM/],
+    ["ingest_memory", { kind: "insight", content: "x", metadata: { value: Infinity } }, /finite/],
+  ];
+  for (const [name, args, pattern] of invalidCalls) {
+    await assert.rejects(() => dispatcher.dispatch(name, args), pattern);
+  }
+  assert.equal((await dispatcher.dispatch("memory_count", {}) as { count: number }).count, 0);
+});
+
+test("default dispatcher is usable offline outside production and production requires DATABASE_URL", async () => {
+  const previousDb = process.env.DATABASE_URL;
+  const previousNodeEnv = process.env.NODE_ENV;
+  delete process.env.DATABASE_URL;
+  process.env.NODE_ENV = "test";
+  try {
+    const offline = defaultSkillDispatcher();
+    assert.deepEqual(await offline.dispatch("memory_count", {}), { count: 0 });
+    process.env.NODE_ENV = "production";
+    assert.throws(() => defaultSkillDispatcher(), /DATABASE_URL is required/);
+  } finally {
+    if (previousDb === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousDb;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
 test("skillTools projects the catalogue as OpenAI-compatible function tools", () => {
   const tools = skillTools(dispatcher);
   assert.equal(tools.length, SKILLS.length);
@@ -197,6 +232,32 @@ test("runSkillLoop: returns the model's answer directly when it calls no skill",
   assert.equal(out.turns, 1);
   assert.equal(out.invocations.length, 0);
   assert.equal(out.answer, "No memory lookup needed.");
+});
+
+test("runSkillLoop feeds malformed model arguments back as a structured tool error", async () => {
+  let calls = 0;
+  const client: ToolCallingChatClient = {
+    chat: {
+      completions: {
+        create: async (args): Promise<ToolChatResponse> => {
+          calls++;
+          if (calls === 1) {
+            return { choices: [{ message: { content: null, tool_calls: [{
+              id: "bad", type: "function", function: { name: "memory_count", arguments: "{not-json" },
+            }] } }] };
+          }
+          const result = args.messages.find((message) => message.role === "tool")?.content ?? "";
+          assert.match(result, /valid JSON/);
+          return { choices: [{ message: { content: "I repaired the malformed tool call." } }] };
+        },
+      },
+    },
+  };
+  const out = await runSkillLoop(client, dispatcher, "count", {});
+  assert.equal(out.turns, 2);
+  assert.deepEqual(out.invocations[0]?.args, {});
+  assert.deepEqual(out.invocations[0]?.result, { error: "tool arguments must be valid JSON" });
+  assert.match(out.answer, /repaired/);
 });
 
 test("runSkillLoop: stops at the turn budget if the model keeps calling skills", async () => {

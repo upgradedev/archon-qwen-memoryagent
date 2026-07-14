@@ -87,6 +87,16 @@ test("distinct records sharing an attribute name do NOT collapse (no false posit
   assert.equal(report.contradictions.length, 0, "different subjects must never contradict");
 });
 
+test("the same record id never collides across company or period scope", () => {
+  const base = mem("a", "INV-1", S_A, { total: 100 });
+  const report = auditConsistency([
+    base,
+    { ...mem("b", "INV-1", S_B, { total: 200 }), company: "OtherCo" },
+    { ...mem("c", "INV-1", S_B, { total: 300 }), period: "2026-06" },
+  ]);
+  assert.equal(report.contradictions.length, 0);
+});
+
 test("per-record sourceRef keeps two employees in one event distinct", () => {
   // Real ingest shape: sourceRef = evt:employee, both carry `net`.
   const report = auditConsistency([
@@ -112,6 +122,14 @@ test("flags a dangling reference (absence) and not present references", () => {
   assert.equal(report.absences.length, 1);
   assert.equal(report.absences[0]!.subject, "MISSING-9");
   assert.equal(report.absences[0]!.referencedBy[0]!.memoryId, "a");
+});
+
+test("a reference is only satisfied inside the same company and period", () => {
+  const reference = mem("a", "RECON-1", S_A, { refs: ["INV-1"] });
+  const otherTenant = { ...mem("b", "INV-1", S_A, { total: 100 }), company: "OtherCo" };
+  const report = auditConsistency([reference, otherTenant]);
+  assert.equal(report.absences.length, 1);
+  assert.equal(report.absences[0]!.subject, "INV-1");
 });
 
 test("memories with no record key are counted but never flagged", () => {

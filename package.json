@@ -13,6 +13,7 @@
   },
   "scripts": {
     "db:schema": "tsx scripts/apply-schema.ts",
+    "db:schema:compiled": "node dist/scripts/apply-schema.js",
     "memory:demo": "tsx scripts/demo-memory.ts",
     "bench:embed": "tsx bench/embed.ts",
     "bench:rerank": "tsx bench/rerank.ts",
@@ -26,6 +27,7 @@
     "bench": "tsx bench/run.ts",
     "readiness": "tsx scripts/readiness.ts",
     "start": "tsx src/server.ts",
+    "start:compiled": "node dist/src/server.js",
     "mcp": "tsx src/mcp/server.ts",
     "load": "k6 run load/recall-load.js",
     "typecheck": "tsc --noEmit",
@@ -41,18 +43,19 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.1.0",
+    "@fastify/rate-limit": "^11.1.0",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "fastify": "^5.1.0",
     "openai": "^4.77.0",
-    "pg": "^8.13.1",
-    "tsx": "^4.19.2"
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
     "@types/pg": "^8.11.10",
     "c8": "^10.1.3",
+    "tsx": "^4.19.2",
     "typescript": "^5.5.3"
   }
 }

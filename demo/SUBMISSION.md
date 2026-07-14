@@ -19,10 +19,10 @@ value to trust **without ever mutating** what it holds.
 
 ### What it does
 
-- **Cross-session recall**: memories are embedded with `text-embedding-v4` and stored
-  in **pgvector**; a fresh process recalls prior facts by meaning and grounds a
-  `qwen-plus` answer in them. A cross-session e2e test proves session B recalls what
-  session A wrote and tore down.
+- **Cross-session recall for limited context**: memories are embedded with
+  `text-embedding-v4` and stored in **pgvector**; a fresh process retrieves a bounded,
+  relevant slice (maximum 20) and grounds a `qwen-plus` answer in cited memories. A
+  cross-session e2e test proves session B recalls what session A wrote and tore down.
 - **Self-auditing memory (the headline)**: `POST /consistency` is a pure,
   domain-neutral engine that flags cross-session contradictions and dangling
   references, then **recommends** which value to trust over a fixed
@@ -33,16 +33,24 @@ value to trust **without ever mutating** what it holds.
   time"* vs *"chronically late"*): it embeds each memory, keeps same-subject pairs
   by cosine, then asks a judge — **qwen-plus** online, a deterministic polarity
   heuristic offline — whether they contradict, reusing the same read-only
-  resolution ladder and **never mutating**. Also reachable over MCP
+  resolution ladder and **never mutating**. The HTTP route is authenticated and
+  quota-bounded; the same operation is reachable over authenticated HTTP MCP
   (`audit_memory` with `semantic: true`) and seeded into the live demo. Honest
-  scope: proven mechanism + working live demo + full offline unit coverage, not
-  yet a scored labelled-set benchmark.
+  scope: proven mechanism + working live demo + a labelled offline regression set;
+  its 90%/100% figures describe the deterministic offline judge, not live-Qwen accuracy.
+- **Feedback and forgetting**: authenticated feedback protects a correct memory or
+  atomically supersedes an incorrect one. Consolidation and retention endpoints are
+  tenant-scoped, preview by default, and require `confirm=true` before mutation.
 - **Strong retrieval**: hybrid dense + lexical (RRF) with a `qwen-plus` cross-encoder
   re-rank. Reranked-hybrid beats a strong dense baseline — MRR 0.883 → 0.911,
   Recall@3 90.0% → 96.7% — on a frozen labelled benchmark, gated in CI.
 - **Honest positioning**: a run head-to-head vs Mem0 (retrieval parity; no
   contradiction API) with Zep cited — the differentiator is *recommend without
   mutating, explainably and portably*.
+
+The public judge path provides a fixed, idempotent seed plus public-tenant recall
+and field audit with bounded quotas. Mutations, semantic audit, and lifecycle use
+the reviewer credential supplied privately in the Devpost testing instructions.
 
 ### Qwen Cloud usage
 

@@ -15,6 +15,8 @@ import { MemoryAgent } from "../../src/agents/memory-agent.js";
 import { FakeNarrator } from "../../src/agents/narrator.js";
 import { auditConsistency } from "../../src/memory/consistency.js";
 import { closePool } from "../../src/db/client.js";
+import { consumeTwoTierQuota, PgDailyQuotaBackend } from "../../src/server/quota.js";
+import { randomUUID } from "node:crypto";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const embedder = new FakeEmbedder();
@@ -177,4 +179,63 @@ test("PgVectorStore consolidate supersedes duplicates and recall hides them", { 
   const { forgotten } = await agent.forget({ deleteSuperseded: true }, "Acme");
   assert.equal(forgotten, 2);
   assert.equal(await store.count("Acme"), 1);
+});
+
+test("PgDailyQuotaBackend atomically enforces one shared limit under concurrency", { skip: !HAS_DB }, async () => {
+  const quota = new PgDailyQuotaBackend(() => new Date("2026-07-14T12:00:00Z"));
+  const subject = `integration-${randomUUID()}`;
+  const results = await Promise.all(
+    Array.from({ length: 10 }, () => quota.consume("recall:subject", subject, 3)),
+  );
+  assert.equal(results.filter((result) => result.ok).length, 3);
+  assert.equal(results.filter((result) => !result.ok).length, 7);
+});
+
+test("PgDailyQuotaBackend rolls back subject charge when the global tier is full", { skip: !HAS_DB }, async () => {
+  const quota = new PgDailyQuotaBackend(() => new Date("2026-07-14T12:00:00Z"));
+  const nonce = randomUUID();
+  const bucket = `atomic-${nonce.slice(0, 8)}`;
+  const subject = `subject-${nonce}`;
+  assert.equal((await quota.consume(`${bucket}:global`, "global", 1)).ok, true);
+  assert.equal((await consumeTwoTierQuota(quota, bucket, subject, 1, 1)).ok, false);
+  assert.equal(
+    (await quota.consume(`${bucket}:subject`, subject, 1)).ok,
+    true,
+    "global rejection must roll back the subject increment",
+  );
+});
+
+test("PgVectorStore applies incorrect feedback atomically and idempotently", { skip: !HAS_DB }, async () => {
+  await store.clear();
+  const agent = new MemoryAgent(embedder, store, new FakeNarrator());
+  const memoryId = await agent.remember("insight", "Payroll cost was EUR 100.", {
+    company: "Feedback Co",
+    period: "2026-05",
+    importance: 0.2,
+  });
+  const feedbackId = `feedback-${randomUUID()}`;
+  const first = await agent.applyFeedback(
+    memoryId,
+    "incorrect",
+    "Payroll cost was EUR 1,200.",
+    { feedbackId },
+  );
+  const retry = await agent.applyFeedback(
+    memoryId,
+    "incorrect",
+    "Payroll cost was EUR 1,200.",
+    { feedbackId },
+  );
+  assert.deepEqual(retry, first);
+  const active = await store.listForAudit({ company: "Feedback Co" });
+  assert.equal(active.length, 1);
+  assert.match(active[0]!.content, /1,200/);
+  const corrected = await store.getMemoryForFeedback(first.correctedMemoryId!, "_public");
+  assert.equal(corrected?.importance, 0.95);
+  await assert.rejects(
+    agent.applyFeedback(memoryId, "incorrect", "Payroll cost was EUR 9,999.", { feedbackId }),
+    /different request/i,
+  );
+  await store.clear();
+  assert.equal(await store.getFeedback(feedbackId, "_public"), null, "clear removes feedback provenance before memories");
 });

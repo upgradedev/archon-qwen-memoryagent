@@ -75,6 +75,7 @@ export const DEMO_SALES: Array<{ content: string; metadata: Record<string, any> 
       invoice_number: "INV-SALES-101",
       customer: "Chop Suey Chinese",
       total: 28500,
+      currency: "EUR",
       invoice_date: "2026-05-10",
       type: "sales"
     }
@@ -85,6 +86,7 @@ export const DEMO_SALES: Array<{ content: string; metadata: Record<string, any> 
       invoice_number: "INV-SALES-102",
       customer: "Alfreds Futterkiste",
       total: 14200,
+      currency: "EUR",
       invoice_date: "2026-05-20",
       type: "sales"
     }

@@ -10,7 +10,7 @@ The first: **AI agents are brilliant and amnesiac.** Give an agent a hard proble
 
 The second is the one almost nobody talks about: **once an agent remembers a lot of things, some of them will disagree.** Memory accumulates from many separate write events, from different sources, at different times. Sooner or later two of those memories describe the *same fact* with *different values*. A naive memory just stores both, returns whichever ranked higher, and stays silent about the conflict.
 
-Financial intelligence made this concrete. A business's financial truth is scattered across invoices, orders, receipts, bank transfers, and workforce-cost records. The same event is often recorded more than once — and the numbers don't always match. We didn't want a memory that confidently hands back a number while hiding that it disagreed with itself. We wanted a memory that is **honest about what it holds**.
+Financial intelligence made this concrete. The shipped demo fuses a payroll register, bank confirmation, and payslips, and also accepts strict purchase/sales invoice records. The same event can be written more than once — and the values do not always match. We did not want a memory that confidently hands back a number while hiding that it disagreed with itself. We wanted a memory that is **honest about what it holds**.
 
 So the guiding question became: *not just how does an agent remember, but how does an agent stay truthful as its memory grows?*
 
@@ -20,74 +20,22 @@ So the guiding question became: *not just how does an agent remember, but how do
 
 Every fused financial event, validation finding, and narrated insight is embedded with **Qwen `text-embedding-v4`** and written to a **pgvector** store. On any later run — a different session, process, or container — the agent **recalls the relevant prior facts by meaning** and grounds a **Qwen `qwen-plus`** answer in them, citing the exact memories it used.
 
-It exposes a small HTTP surface: `/ingest` (write memories for an event), `/recall` (grounded, cited answer), `/consistency` (the field-level self-audit) and `/consistency/semantic` (the meaning-level self-audit), plus `/consolidate` and `/forget` for hygiene — and an interactive `/docs` explorer.
+It exposes a small HTTP surface: public-tenant `/recall`, `/pnl`, and `/consistency`; authenticated tenant-scoped `/ingest`, `/ingest/invoice`, `/ingest/documents`, `/feedback`, `/consistency/semantic`, `/consolidate`, and `/forget`; plus `/docs` and `/ready`. Qwen-spending routes have per-subject/IP plus global daily quotas. Lifecycle calls preview by default and require `confirm=true` to change state.
 
-Three ideas make the memory *strong*, not merely present:
+Four ideas make the memory *strong*, not merely present:
 
 1. **Recall that respects exact tokens** — hybrid dense + lexical retrieval, refined by a cross-encoder re-ranker.
 2. **Memory that audits itself** — a pure function that flags when two of the agent's own memories contradict, and *recommends* which to trust without ever mutating them.
-3. **Honest measurement** — every claim above is backed by a frozen, reproducible benchmark, including a real head-to-head against Mem0.
+3. **Feedback and bounded lifecycle** — explicit corrections supersede bad memories; consolidation/forgetting are tenant-scoped and safe-by-default.
+4. **Honest measurement** — every quality claim above is backed by a frozen, reproducible benchmark, including a pinned head-to-head against Mem0.
 
 ## System Architecture
 
 Below is the system architecture diagram showing the ingestion pipeline, MemoryAgent core, and Qwen Cloud / Alibaba Cloud integration:
 
-```mermaid
-flowchart TB
-    Agent["AI agent / HTTP caller"]
-    Docs["Raw financial documents<br/>(scanned images · pdf · text)"]
-    MCPClient["MCP client — Claude Desktop / IDE / agent"]
+![Archon MemoryAgent architecture](../docs/architecture.svg)
 
-    subgraph ECS["Alibaba Cloud · ECS ap-southeast-1 · docker-compose"]
-        direction TB
-        subgraph API["backend container — Fastify · src/server.ts"]
-            direction LR
-            H["GET /health · /docs · /pnl"]
-            I["POST /ingest · /ingest/documents"]
-            R["POST /recall"]
-            C["POST /consistency · /consistency/semantic"]
-        end
-        subgraph PIPE["Ingestion pipeline — src/pipeline (supporting cast)"]
-            direction LR
-            EX["Extractor<br/>(qwen-vl-max / qwen-plus)"]
-            CL["Classifier"]
-            EL["EventLinker<br/>fuse triplet"]
-            VA["Validator R1–R4"]
-            PN["P&amp;L math"]
-            EX --> CL --> EL --> VA --> PN
-        end
-        subgraph MCPSURF["MCP surface — src/mcp/* + src/skills/*"]
-            direction LR
-            MT["4 MCP tools<br/>recall · ingest · audit(+semantic) · count"]
-            SK["SkillDispatcher (shared)<br/>+ qwen-plus function-calling skills"]
-        end
-        MA["★ MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()<br/>+ self-audit (contradictions · dangling refs)"]
-        DB["pgvector container · PostgreSQL — THE MEMORY<br/>agent_memory(embedding vector(1024)) + HNSW cosine index<br/>recall = ORDER BY embedding &lt;=&gt; $query"]
-    end
-
-    subgraph QWEN["Model Studio / DashScope — Qwen Cloud"]
-        direction TB
-        VL["qwen-vl-max (vision extraction)"]
-        EMB["text-embedding-v4 (1024-d)"]
-        LLM["qwen-plus (RAG narrator · function-calling)"]
-    end
-
-    RDS["Managed ApsaraDB RDS / AnalyticDB for PostgreSQL<br/>same pg-wire code · DATABASE_URL swap"]
-
-    Agent -->|HTTP / JSON| API
-    Docs -->|POST /ingest/documents| API
-    API --> PIPE
-    API --> MA
-    PIPE -->|fused events + findings| MA
-    EX -->|vision / text| VL
-    MCPClient -->|MCP · stdio / Streamable HTTP| MT
-    MT --> SK
-    SK --> MA
-    MA -->|embed| EMB
-    MA -->|chat| LLM
-    MA -->|SQL · pg-wire| DB
-    DB -. drop-in swap .-> RDS
-```
+The canonical diagram source is [`docs/architecture.mmd`](../docs/architecture.mmd), with submission-ready [SVG](../docs/architecture.svg) and [PNG](../docs/architecture.png) renders. It distinguishes the public fixed-demo/read path from authenticated tenant mutations and semantic audit, shows durable Qwen quotas, and records the exact event-link key (`company + period + event_ref`) and mixed-currency boundary.
 
 ## How we built it
 
@@ -132,11 +80,11 @@ Higher importance wins; ties break on source authority; remaining ties break on 
 
 ### The audit sees *meaning*, not just fields
 
-`POST /consistency` compares metadata fields, so it is blind to a whole class of real contradiction: two memories that oppose each other in *meaning* while sharing no comparable key — *"vendor always pays on time"* vs *"vendor is chronically late"*. A companion **semantic** audit (`POST /consistency/semantic`, `src/memory/semantic-consistency.ts`) closes that gap, additively. It embeds each memory with the same `text-embedding-v4` recall path, keeps only same-subject pairs by cosine, then asks a judge whether they *directly* contradict — **qwen-plus** online, a deterministic polarity/negation heuristic offline (so it still runs in CI with no key). The online judge **fails closed**: an upstream error is "no contradiction", never a fabricated one. It reuses the **same read-only resolution ladder**, never mutates memory, and is reachable over HTTP, over MCP (`audit_memory` with `semantic: true`), and in the seeded live demo. Honest scope: a proven mechanism with a working live demo and full offline unit coverage — not yet a scored labelled-set benchmark (that's the stated next step in `BENCHMARK.md`).
+`POST /consistency` compares metadata fields, so it is blind to a whole class of real contradiction: two memories that oppose each other in *meaning* while sharing no comparable key — *"vendor always pays on time"* vs *"vendor is chronically late"*. A companion **semantic** audit (`POST /consistency/semantic`, `src/memory/semantic-consistency.ts`) closes that gap, additively. It embeds each memory with the same recall path, keeps only same-subject pairs by cosine, then asks a judge whether they directly contradict — **qwen-plus** online, a deterministic polarity/negation heuristic offline. It reuses the same read-only resolution ladder and never mutates memory. Honest scope: the committed labelled-set score (**9/10 contradictions, 0 false positives**) measures the deterministic offline judge and protects CI from regressions; it is not presented as a live-Qwen accuracy estimate. Live runs expose their model, completion status, errors and truncation separately.
 
 ### Offline-first engineering
 
-Every external dependency has an injectable seam. With no `DASHSCOPE_API_KEY`, a deterministic `FakeEmbedder` and `FakeNarrator` engage, so the full pgvector write-and-recall path still runs — with **zero credentials and zero spend**. That single decision is what lets the entire test pyramid and every benchmark run in CI, offline, on every commit.
+Every external dependency has an injectable seam. With no `DASHSCOPE_API_KEY`, local/CI runs use deterministic Fake providers, so the pgvector write-and-recall path and committed-fixture benchmarks run with **zero cloud credentials and zero model spend**. Production is different by design: Qwen-heavy routes fail closed with Fake providers and `/ready` requires real Qwen.
 
 ## Challenges we ran into
 
@@ -153,8 +101,8 @@ Every external dependency has an injectable seam. With no `DASHSCOPE_API_KEY`, a
 - **A retrieval win over the field default, not a strawman.** The `reranked-hybrid` retriever beats the single-vector cosine baseline that LangChain and most pgvector demos ship: **MRR 0.883 → 0.911**, **nDCG@5 0.903 → 0.938**, **Recall@3 90.0% → 96.7%**.
 - **An honest accuracy number on our own answers.** Gold-memory **recall@5 100%**, answer **correctness 100%**, and answer **grounding 90.9%** — we report the 90.9%, not a suspicious 100%, because one answer cites a *derived* figure the metric correctly refuses to credit.
 - **A real, reproducible comparison to Mem0.** Installed and driven with the same models on the same conflict pairs; result stated plainly (retrieval parity; no conflict/resolution API in Mem0), with Zep cited honestly.
-- **Reproducible with zero credentials.** The full pipeline, test pyramid, and every benchmark gate run offline in CI via deterministic Fakes — no key, no spend.
-- **A complete engineering package.** Unit + integration + e2e + benchmark gates + a k6 load tier, an interactive OpenAPI `/docs` explorer, CodeQL and secret scanning, all green — plus a live public URL on Alibaba Cloud.
+- **Reproducible with zero cloud credentials.** Deterministic Fakes and committed fixtures cover model seams in local/CI runs; real-database slices are explicit rather than silently mocked.
+- **A complete engineering package.** The verified run is **300 total, 285 pass, 0 fail, 15 real-DB skips**, with **91.96% statement / 84.96% branch / 91.25% function / 91.96% line coverage**, plus benchmark gates, k6, OpenAPI, CodeQL, and secret scanning.
 
 ## What we learned
 

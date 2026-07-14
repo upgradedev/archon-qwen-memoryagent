@@ -1,28 +1,30 @@
-# Local dev stack: a pgvector database (the memory store) + the MemoryAgent HTTP
-# backend. Mirrors the CI service container and the production Alibaba Cloud
-# PostgreSQL — same pg-wire, same pgvector SQL.
-#
-#   docker compose up -d db      # just the database (for `npm run db:schema` + tests)
-#   docker compose up --build    # database + backend
-#
-# Without a DASHSCOPE_API_KEY the backend runs the deterministic offline Fakes.
-
+# Secure-by-default ECS/local stack. Copy .env.example to .env and replace the
+# database password before starting. PostgreSQL is internal-only; developers who
+# need host access can opt in with docker-compose.dev.yml (loopback binding).
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:0.8.5-pg16-bookworm
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    expose:
+      - "5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+    mem_limit: 640m
+    cpus: 1.0
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - data
 
   backend:
     build: .
@@ -30,17 +32,76 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/postgres
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:?set COMPOSE_DATABASE_URL in .env}
       PORT: 9000
-      # Real Qwen when DASHSCOPE_API_KEY is present (from the shell env or a .env
-      # file next to this compose file); otherwise it resolves to empty and the
-      # app falls back to the deterministic offline Fakes (see src/qwen/client.ts
-      # hasQwenCreds()). The `:-` defaults keep `docker compose config` valid even
-      # when neither is set, so a fresh clone works with or without a key.
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
+      ALLOW_FAKE_QWEN: ${ALLOW_FAKE_QWEN:-false}
+      QWEN_TIMEOUT_MS: ${QWEN_TIMEOUT_MS:-20000}
+      QWEN_MAX_RETRIES: ${QWEN_MAX_RETRIES:-2}
+      QWEN_MODEL: ${QWEN_MODEL:-qwen-plus}
+      QWEN_EMBED_MODEL: ${QWEN_EMBED_MODEL:-text-embedding-v4}
+      EMBED_DIM: ${EMBED_DIM:-1024}
+      QWEN_RERANK_MODEL: ${QWEN_RERANK_MODEL:-qwen-plus}
+      RERANK_TIMEOUT_MS: ${RERANK_TIMEOUT_MS:-3000}
+      QWEN_JUDGE_MODEL: ${QWEN_JUDGE_MODEL:-qwen-plus}
+      SEMANTIC_JUDGE_TIMEOUT_MS: ${SEMANTIC_JUDGE_TIMEOUT_MS:-8000}
+      SEMANTIC_EMBED_TIMEOUT_MS: ${SEMANTIC_EMBED_TIMEOUT_MS:-10000}
+      VISION_MODEL: ${VISION_MODEL:-qwen-vl-max}
+      EXTRACT_TEXT_MODEL: ${EXTRACT_TEXT_MODEL:-qwen-plus}
+      PGPOOL_MAX: ${PGPOOL_MAX:-5}
+      JUDGE_API_KEY: ${JUDGE_API_KEY:-}
+      JUDGE_API_KEYS_JSON: "${JUDGE_API_KEYS_JSON:-}"
+      JUDGE_TENANT_ID: ${JUDGE_TENANT_ID:-_public}
+      JUDGE_AUTH_REQUIRED: ${JUDGE_AUTH_REQUIRED:-true}
+      PUBLIC_TENANT_ID: ${PUBLIC_TENANT_ID:-_public}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      TRUST_PROXY_ADDRESSES: ${TRUST_PROXY_ADDRESSES:-}
+      # The published port is loopback-only. The production .env must explicitly
+      # declare the proxy trust boundary; deploy/redeploy.sh fails closed if it does not.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-}
+      INGEST_DAILY_LIMIT: ${INGEST_DAILY_LIMIT:-100}
+      INGEST_DAILY_LIMIT_GLOBAL: ${INGEST_DAILY_LIMIT_GLOBAL:-500}
+      RECALL_DAILY_LIMIT: ${RECALL_DAILY_LIMIT:-200}
+      RECALL_DAILY_LIMIT_GLOBAL: ${RECALL_DAILY_LIMIT_GLOBAL:-2000}
+      SEMANTIC_AUDIT_DAILY_LIMIT: ${SEMANTIC_AUDIT_DAILY_LIMIT:-20}
+      SEMANTIC_AUDIT_DAILY_LIMIT_GLOBAL: ${SEMANTIC_AUDIT_DAILY_LIMIT_GLOBAL:-100}
+      EMPLOYER_COST_NET_RATIO_MIN: ${EMPLOYER_COST_NET_RATIO_MIN:-1.25}
+      EMPLOYER_COST_NET_RATIO_MAX: ${EMPLOYER_COST_NET_RATIO_MAX:-1.45}
+      PAYMENT_GRACE_DAYS: ${PAYMENT_GRACE_DAYS:-7}
+      MAX_JSON_BODY_BYTES: ${MAX_JSON_BODY_BYTES:-10485760}
+      HTTP_RATE_LIMIT_MAX: ${HTTP_RATE_LIMIT_MAX:-300}
     ports:
-      - "9000:9000"
+      - "127.0.0.1:${BACKEND_PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9000/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      edge:
+        # Docker Engine selects the highest gateway priority as the default
+        # route. Keep Qwen/DashScope egress off the internal-only data network.
+        gw_priority: 1
+      data:
+        gw_priority: 0
+
+networks:
+  edge: {}
+  data:
+    internal: true
 
 volumes:
   pgdata:

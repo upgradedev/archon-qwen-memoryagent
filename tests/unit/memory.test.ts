@@ -12,6 +12,8 @@ import { MemoryAgent } from "../../src/agents/memory-agent.js";
 import { cosineSimilarity } from "../../src/memory/retrieval.js";
 import { toVectorLiteral } from "../../src/db/client.js";
 import type { PayrollEvent } from "../../src/types.js";
+import type { Reranker } from "../../src/memory/rerank.js";
+import { FakeJudge } from "../../src/memory/semantic-consistency.js";
 
 const EVENT: PayrollEvent = {
   event_id: "evt-acme-2026-03",
@@ -107,6 +109,67 @@ test("MemoryAgent.ingestEvent writes event + insight + per-employee memories", a
   assert.equal(ids.length, 4);
 });
 
+test("MemoryAgent.ingestPipelineBatch commits event + derived findings in one batch", async () => {
+  const store = new InMemoryStore();
+  const agent = new MemoryAgent(new FakeEmbedder(), store, new FakeNarrator());
+  const ids = await agent.ingestPipelineBatch(EVENT, [{
+    kind: "validation",
+    company: EVENT.company,
+    period: EVENT.period,
+    sourceRef: EVENT.event_id,
+    content: "Cross-document totals agree.",
+    metadata: { rule: "R1", passed: true },
+    idempotencyKey: `event:${EVENT.event_id}:validation:R1`,
+  }]);
+  assert.equal(ids.length, 5);
+  assert.equal(await store.count(EVENT.company), 5);
+});
+
+test("MemoryAgent.ingestPipelineBatch leaves no partial event when any derived fact conflicts", async () => {
+  const store = new InMemoryStore();
+  const agent = new MemoryAgent(new FakeEmbedder(), store, new FakeNarrator());
+  await assert.rejects(
+    agent.ingestPipelineBatch(EVENT, [{
+      kind: "validation",
+      company: EVENT.company,
+      period: EVENT.period,
+      content: "A different payload illegally reused the event-summary key.",
+      idempotencyKey: `event:${EVENT.event_id}:summary`,
+    }]),
+    /idempotency key/i,
+  );
+  assert.equal(await store.count(EVENT.company), 0, "the staged event rows must roll back with the bad finding");
+});
+
+test("idempotency requires the complete logical payload, not content alone", async () => {
+  const store = new InMemoryStore();
+  const base = {
+    kind: "validation" as const,
+    company: "Acme",
+    period: "2026-05",
+    sourceRef: "R1",
+    content: "Validation R1 passed.",
+    metadata: { passed: true, observed: 100 },
+    importance: 0.7,
+    idempotencyKey: "validation:R1",
+    embedding: [1, 0, 0],
+    embedModel: "model-v1",
+  };
+  const first = await store.remember(base);
+  assert.equal(await store.remember({ ...base, embedModel: "model-v2", embedding: [0, 1, 0] }), first,
+    "embedding/model rotation is not a logical payload change");
+  await assert.rejects(
+    store.remember({ ...base, metadata: { passed: true, observed: 999 } }),
+    /different logical memory/i,
+  );
+  await assert.rejects(
+    store.remember({ ...base, company: "Other Co" }),
+    /different logical memory/i,
+  );
+  assert.equal(await store.count("Acme"), 1);
+  assert.equal(await store.count("Other Co"), 0);
+});
+
 test("MemoryAgent.auditConsistency surfaces a cross-session contradiction", async () => {
   // The demo "aha": session A stores one value for a record; a later session
   // stores a DIFFERENT value for the same record → the agent's self-audit
@@ -133,6 +196,31 @@ test("MemoryAgent.auditConsistency surfaces a cross-session contradiction", asyn
   assert.equal(report.ok, false);
 });
 
+test("MemoryAgent semantic audit reuses stored tenant-scoped embeddings", async () => {
+  const store = new InMemoryStore();
+  for (const [content, sourceRef] of [
+    ["Vendor Northwind always pays invoices on time.", "a"],
+    ["Vendor Northwind is chronically late paying invoices.", "b"],
+  ] as const) {
+    await store.remember({
+      tenantId: "tenant-a", kind: "insight", company: "Acme", period: "2026-05",
+      sourceRef, content, embedding: [1, 0, 0], embedModel: "stored-model",
+    });
+  }
+  const noReembed = {
+    modelId: "must-not-run",
+    dim: 3,
+    async embed(): Promise<number[]> {
+      throw new Error("semantic audit must use stored vectors");
+    },
+  };
+  const agent = new MemoryAgent(noReembed, store, new FakeNarrator(), new FakeJudge(), undefined, "tenant-a");
+  const report = await agent.auditSemanticConsistency({ company: "Acme" }, { similarityThreshold: 0.9 });
+  assert.equal(report.audited, 2);
+  assert.equal(report.embeddingFailed, 0);
+  assert.equal(report.semanticContradictions.length, 1);
+});
+
 test("MemoryAgent.recallAnswer grounds a cited answer in the recalled memories", async () => {
   const agent = new MemoryAgent(new FakeEmbedder(), new InMemoryStore(), new FakeNarrator());
   await agent.ingestEvent(EVENT);
@@ -145,9 +233,10 @@ test("MemoryAgent.recallAnswer grounds a cited answer in the recalled memories",
   for (const c of citations) assert.ok(answer.includes(c.marker), `answer missing marker ${c.marker}`);
   const allContent = citations.map((c) => c.content).join(" ");
   assert.ok(
-    allContent.includes("€63,800") || allContent.includes("€22,800"),
+    allContent.includes("63,800 currency units") || allContent.includes("22,800 currency units"),
     "recalled memories must include the employer-cost figures"
   );
+  assert.doesNotMatch(allContent, /€/, "a currency-less PayrollEvent must not fabricate EUR");
 });
 
 test("MemoryAgent.recallAnswer degrades gracefully when the narrator is down (returns the recalled memories, flagged)", async () => {
@@ -177,4 +266,42 @@ test("MemoryAgent.recallAnswer degrades gracefully when the narrator is down (re
   for (const c of res.citations) assert.ok(res.answer.includes(c.marker), `fallback missing marker ${c.marker}`);
   // The self-audit still runs over the recalled memories in the degraded path.
   assert.ok(res.consistency && typeof res.consistency.audited === "number");
+});
+
+test("MemoryAgent.recallAnswer runs the production rerank stage and exposes provenance", async () => {
+  const embedder = new FakeEmbedder();
+  const store = new InMemoryStore();
+  await remember(embedder, store, { kind: "insight", company: "Acme", content: "generic payroll note" });
+  await remember(embedder, store, { kind: "insight", company: "Acme", content: "authoritative corrected employer cost EUR 63,800" });
+  const reranker: Reranker = {
+    modelId: "qwen-rerank-test",
+    async rerank(_query, docs) {
+      return docs.map((doc) => ({ id: doc.id, score: doc.content.includes("63,800") ? 1 : 0 }));
+    },
+  };
+  const agent = new MemoryAgent(embedder, store, new FakeNarrator(), undefined, reranker);
+  const result = await agent.recallAnswer("What is the corrected employer cost?", {
+    company: "Acme",
+    limit: 1,
+  });
+  assert.match(result.hits[0]!.content, /63,800/);
+  assert.equal(result.retrieval.reranker.status, "applied");
+  assert.equal(result.retrieval.reranker.modelId, "qwen-rerank-test");
+  assert.equal(result.retrieval.candidateCount, 2);
+  assert.equal(result.retrieval.returnedCount, 1);
+});
+
+test("MemoryAgent.recallAnswer falls back to hybrid order when reranking times out", async () => {
+  const embedder = new FakeEmbedder();
+  const store = new InMemoryStore();
+  await remember(embedder, store, { kind: "insight", content: "first memory" });
+  await remember(embedder, store, { kind: "insight", content: "second memory" });
+  const never: Reranker = {
+    modelId: "hung-reranker",
+    rerank: async () => new Promise(() => {}),
+  };
+  const agent = new MemoryAgent(embedder, store, new FakeNarrator(), undefined, never);
+  const result = await agent.recallAnswer("memory", { limit: 2, rerankTimeoutMs: 100 });
+  assert.equal(result.hits.length, 2, "successful hybrid candidates survive a reranker timeout");
+  assert.equal(result.retrieval.reranker.status, "fallback");
 });

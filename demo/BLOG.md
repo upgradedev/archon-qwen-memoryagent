@@ -24,62 +24,14 @@ part that's usually missing: **the memory audits itself.**
 
 Below is the system architecture diagram showing the ingestion pipeline, MemoryAgent core, and Qwen Cloud / Alibaba Cloud integration:
 
-```mermaid
-flowchart TB
-    Agent["AI agent / HTTP caller"]
-    Docs["Raw financial documents<br/>(scanned images · pdf · text)"]
-    MCPClient["MCP client — Claude Desktop / IDE / agent"]
+![Archon MemoryAgent architecture](../docs/architecture.svg)
 
-    subgraph ECS["Alibaba Cloud · ECS ap-southeast-1 · docker-compose"]
-        direction TB
-        subgraph API["backend container — Fastify · src/server.ts"]
-            direction LR
-            H["GET /health · /docs · /pnl"]
-            I["POST /ingest · /ingest/documents"]
-            R["POST /recall"]
-            C["POST /consistency · /consistency/semantic"]
-        end
-        subgraph PIPE["Ingestion pipeline — src/pipeline (supporting cast)"]
-            direction LR
-            EX["Extractor<br/>(qwen-vl-max / qwen-plus)"]
-            CL["Classifier"]
-            EL["EventLinker<br/>fuse triplet"]
-            VA["Validator R1–R4"]
-            PN["P&amp;L math"]
-            EX --> CL --> EL --> VA --> PN
-        end
-        subgraph MCPSURF["MCP surface — src/mcp/* + src/skills/*"]
-            direction LR
-            MT["4 MCP tools<br/>recall · ingest · audit(+semantic) · count"]
-            SK["SkillDispatcher (shared)<br/>+ qwen-plus function-calling skills"]
-        end
-        MA["★ MemoryAgent — embedder · store · narrator (all injectable)<br/>ingestEvent → remember() · recallAnswer → recall() → narrate()<br/>+ self-audit (contradictions · dangling refs)"]
-        DB["pgvector container · PostgreSQL — THE MEMORY<br/>agent_memory(embedding vector(1024)) + HNSW cosine index<br/>recall = ORDER BY embedding &lt;=&gt; $query"]
-    end
-
-    subgraph QWEN["Model Studio / DashScope — Qwen Cloud"]
-        direction TB
-        VL["qwen-vl-max (vision extraction)"]
-        EMB["text-embedding-v4 (1024-d)"]
-        LLM["qwen-plus (RAG narrator · function-calling)"]
-    end
-
-    RDS["Managed ApsaraDB RDS / AnalyticDB for PostgreSQL<br/>same pg-wire code · DATABASE_URL swap"]
-
-    Agent -->|HTTP / JSON| API
-    Docs -->|POST /ingest/documents| API
-    API --> PIPE
-    API --> MA
-    PIPE -->|fused events + findings| MA
-    EX -->|vision / text| VL
-    MCPClient -->|MCP · stdio / Streamable HTTP| MT
-    MT --> SK
-    SK --> MA
-    MA -->|embed| EMB
-    MA -->|chat| LLM
-    MA -->|SQL · pg-wire| DB
-    DB -. drop-in swap .-> RDS
-```
+The trust boundary matters as much as the model graph. The public surface is a fixed,
+idempotent demo plus public-tenant reads; public seed and recall are quota-bounded.
+Writes, feedback, lifecycle operations, meaning-level audit, and Streamable HTTP MCP
+are authenticated and mapped to a tenant by the server. The event linker groups by
+`company + period + event_ref`, and P&L totals stay separated by currency. The editable
+source and PNG/SVG renders live in [`docs/`](../docs/architecture.mmd).
 
 ## The innovation: detect → resolve
 
@@ -130,11 +82,13 @@ heuristic offline so it still runs in CI with no key. The online judge **fails
 closed**: any error or unparseable reply is treated as "no contradiction", never a
 manufactured one. It reuses the **same read-only resolution ladder** and, like the
 rule-based path, **never mutates memory** — it runs *alongside* the field-level
-engine, additive, neither replacing the other. It is exposed over HTTP, over MCP
-(the `audit_memory` tool takes `semantic: true`), and is seeded into the live demo
+engine, additive, neither replacing the other. It is exposed over authenticated,
+quota-bounded HTTP and HTTP MCP (the `audit_memory` tool takes `semantic: true`),
+and its fixed contradiction pair is planted by the public idempotent demo seed
 so you can see the agent catch a meaning-level contradiction in its own memory.
 (Honest scope: the semantic detector is a *proven mechanism with a working live
-demo and full offline unit coverage*, not yet a scored labelled-set benchmark — see
+demo, full offline unit coverage, and a scored labelled set for the deterministic
+offline judge (not a live-Qwen accuracy claim) — see
 `BENCHMARK.md`.)
 
 ## It's measured, offline, and reproducible
@@ -194,24 +148,22 @@ and it's a gated test, not a slide.
 
 ## What it's a memory *of*
 
-Archon is a **unified financial-intelligence platform**: it ingests all of a
-business's financial documents and data — sales and purchase invoices, orders,
-receipts, payments, bank transfers and statements, expenses — into one place and
-produces a consolidated P&L / EBITDA / cash view, while cross-checking the whole
-picture for missing or inconsistent information (for example, a bank payment with
-no matching invoice: did the vendor never send it, did the accountant never record
-it, or is the payment wrong?). This MemoryAgent gives that pipeline a memory. The
-facts it remembers are broad — one memory is a sales invoice, the next a cash
-position, the next a completeness anomaly, and among them the true cost of
-employing a team (a bank salary transfer understates it, because it never shows
-employer social-security contributions) as **one example among many**, not the
-whole story.
+The shipped financial proof has two explicit inputs: a document pipeline that fuses
+a payroll register, bank confirmation, and payslips; and a strict JSON path for
+purchase/sales invoices. Over those memories it reports payroll cost, purchases,
+sales, known/unknown cash, and net profit **per currency**. If currencies are mixed,
+top-level monetary totals are `null` and `by_currency` carries independent totals.
+Payroll without a stated currency is `UNSPECIFIED`, never silently EUR.
+
+That scope is intentionally narrower than the broader Archon roadmap. This entry
+does not claim shipped order/receipt/general-bank-statement extraction, EBITDA, or
+sales targets.
 
 ## The stack, and where it runs
 
-- **Qwen models:** `text-embedding-v4` (1024-dim embeddings) + `qwen-plus` (RAG
-  narration and the cross-encoder re-rank), via Alibaba Cloud Model Studio /
-  DashScope over the OpenAI-compatible endpoint.
+- **Qwen models:** `text-embedding-v4` (1024-dim embeddings), `qwen-plus` (RAG
+  narration, rerank, semantic judge, and skills), and `qwen-vl-max` (payroll-document
+  vision extraction), via Alibaba Cloud Model Studio / DashScope.
 - **Memory store:** pgvector on PostgreSQL — `agent_memory(embedding vector(1024))`
   with an HNSW cosine index, semantic recall as `ORDER BY embedding <=> $query`.
 - **Live deployment:** an Alibaba Cloud **ECS** instance (`ecs.e-c1m2.large`,
@@ -221,19 +173,24 @@ whole story.
   ApsaraDB RDS / AnalyticDB for PostgreSQL instance (the Function Compute
   alternative shipped in `deploy/`), a drop-in `DATABASE_URL` swap.
 
-Offline, with no DashScope key, deterministic Fakes auto-engage and the full
-pgvector write + vector-recall path still executes — so the whole test pyramid and
-every benchmark run in CI with zero cloud credentials.
+Offline, with no DashScope key, deterministic Fakes exercise the model seams and the
+pgvector/fixture path with zero cloud credentials. Production is fail-closed: real
+Qwen plus configured judge authentication are required for `/ready`.
 
 ## Try it
 
 ```bash
-docker compose up -d db
-export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+cp .env.example .env
+# Fill POSTGRES_PASSWORD + both DATABASE_URL values with the same URL-safe
+# random password; set a separate 32+ character JUDGE_API_KEY.
+set -a; . ./.env; set +a
+npm ci
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
 npm run db:schema
-npm run memory:demo                 # write the full financial picture, recall by meaning
+npm run memory:demo                 # write the payroll evidence, recall by meaning
 npm run bench -- --gate             # retrieval: regression + fusion + discrimination gates
 npm run bench:consistency -- --gate # self-audit: 5/5 detected, 0 false positives
+npm run bench:semantic -- --gate    # meaning audit: 90% recall, 100% precision, 0 FP
 npm run bench:resolution -- --gate  # resolution: 4/4 winners correct
 ```
 

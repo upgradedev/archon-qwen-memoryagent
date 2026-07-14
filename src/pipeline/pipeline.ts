@@ -9,14 +9,15 @@
 //            ──▶ EventLinkerAgent   fuse the payroll triplet → PayrollEvent
 //            ──▶ ValidatorAgent     R1–R4 cross-document consistency
 //            ──▶ PnL math           employer cost / cash-out / per-employee
-//            ──▶ MemoryAgent.ingestEvent()   WRITE the fused event to pgvector
+//            ──▶ MemoryAgent.ingestPipelineBatch()   atomically WRITE event + findings
 //
 // `runPipeline` is pure (no DB, no key) so the whole flow is unit-testable with
 // the Fake extractor. `ingestPipeline` adds the single side effect: it writes
 // the fused events + validation findings into the EXISTING memory via the
-// unchanged `MemoryAgent` — the agent core is not modified, only fed.
+// `MemoryAgent` through its transactional batch-ingestion seam.
 
 import type { MemoryAgent } from "../agents/memory-agent.js";
+import type { MemoryInput } from "../memory/store.js";
 import type { PayrollEvent } from "../types.js";
 import type { ExtractedDocument, RawDocument } from "./models.js";
 import { Extractor } from "./extractor.js";
@@ -56,16 +57,25 @@ export async function runPipeline(
   const events = linker.link(extracted);
 
   const results: EventResult[] = events.map((event) => {
+    const linked = extracted.filter((d) => event.linked_docs.includes(d.doc_id));
     // The bank confirmation's value date (R3) is not stored on the fused event —
     // recover it from the linked extracted documents.
     const paymentDate =
-      extracted.find(
-        (d) => event.linked_docs.includes(d.doc_id) && d.doc_type === "bank_confirmation",
-      )?.payment_date ?? null;
+      linked.find((d) => d.doc_type === "bank_confirmation")?.payment_date ?? null;
+    const evidence = {
+      hasBankConfirmation: linked.some((d) => d.doc_type === "bank_confirmation"),
+      hasPayrollRegister: linked.some((d) => d.doc_type === "payroll_register"),
+      hasPayslips: linked.some((d) => d.doc_type === "payslip" && d.payslip != null),
+      hasDeclaredEmployeeCount: linked.some(
+        (d) =>
+          (d.doc_type === "payroll_register" || d.doc_type === "bank_confirmation") &&
+          d.employee_count != null,
+      ),
+    };
     return {
       event,
       pnl: pnlForEvent(event),
-      validation: validator.validate(event, paymentDate),
+      validation: validator.validate(event, paymentDate, evidence),
     };
   });
 
@@ -76,9 +86,10 @@ export interface IngestResult extends PipelineResult {
   memoryIds: string[];
 }
 
-// The one side effect: run the pipeline, then WRITE the fused events + their
-// validation findings into memory through the unchanged MemoryAgent. Returns the
-// ids of every memory written, so the caller can prove the memory was fed.
+// The one side effect: run the pipeline, then atomically WRITE each fused event
+// together with every derived validation finding. Embedding or persistence
+// failure leaves that event entirely uncommitted; stable idempotency keys make a
+// retry safe instead of duplicating either event facts or validation facts.
 export async function ingestPipeline(
   agent: MemoryAgent,
   docs: RawDocument[],
@@ -88,24 +99,26 @@ export async function ingestPipeline(
   const memoryIds: string[] = [];
 
   for (const { event, validation } of result.events) {
-    // 1. The fused event → event summary + insight + per-employee lines.
-    memoryIds.push(...(await agent.ingestEvent(event)));
-
-    // 2. The validation findings → recallable `validation` memories, so the
-    //    agent can later recall / self-audit which cross-document checks ran.
-    for (const v of validation) {
-      const id = await agent.remember(
-        "validation",
-        `Validation ${v.passed ? "PASSED" : "FAILED"} for ${event.company} ${event.period} — ${v.rule}: ${v.message}`,
-        {
-          company: event.company,
-          period: event.period,
-          sourceRef: `${event.event_id}:${v.rule.split(":")[0]}`,
-          metadata: { rule: v.rule, passed: v.passed, severity: v.severity },
+    const validationMemories: Array<Omit<MemoryInput, "tenantId">> = validation.map((v) => {
+      const ruleCode = v.rule.split(":", 1)[0]!.trim();
+      return {
+        kind: "validation",
+        company: event.company,
+        period: event.period,
+        sourceRef: `${event.event_id}:${ruleCode}`,
+        idempotencyKey: `event:${event.event_id}:validation:${ruleCode}`,
+        content:
+          `Validation ${v.status.toUpperCase()} for ${event.company} ${event.period} — ` +
+          `${v.rule}: ${v.message}`,
+        metadata: {
+          rule: v.rule,
+          status: v.status,
+          passed: v.passed,
+          severity: v.severity,
         },
-      );
-      memoryIds.push(id);
-    }
+      };
+    });
+    memoryIds.push(...(await agent.ingestPipelineBatch(event, validationMemories)));
   }
 
   return { ...result, memoryIds };

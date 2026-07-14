@@ -12,9 +12,9 @@ import { MemoryAgent } from "../../src/agents/memory-agent.js";
 test("planConsolidation clusters near-duplicates and keeps the most important", () => {
   const plan = planConsolidation(
     [
-      { id: "a", kind: "insight", content: "dup", embedding: [1, 0, 0], importance: 0.5, createdAt: "2026-01-01T00:00:00Z" },
-      { id: "b", kind: "insight", content: "dup", embedding: [1, 0, 0], importance: 0.9, createdAt: "2026-01-02T00:00:00Z" },
-      { id: "c", kind: "insight", content: "distinct", embedding: [0, 1, 0], importance: 0.5, createdAt: "2026-01-03T00:00:00Z" },
+      { id: "a", kind: "insight", company: "Acme", period: "2026-01", content: "dup", embedding: [1, 0, 0], importance: 0.5, createdAt: "2026-01-01T00:00:00Z" },
+      { id: "b", kind: "insight", company: "Acme", period: "2026-01", content: "dup", embedding: [1, 0, 0], importance: 0.9, createdAt: "2026-01-02T00:00:00Z" },
+      { id: "c", kind: "insight", company: "Acme", period: "2026-01", content: "distinct", embedding: [0, 1, 0], importance: 0.5, createdAt: "2026-01-03T00:00:00Z" },
     ],
     0.95
   );
@@ -27,12 +27,46 @@ test("planConsolidation clusters near-duplicates and keeps the most important", 
 test("planConsolidation never merges different kinds", () => {
   const plan = planConsolidation(
     [
-      { id: "a", kind: "insight", content: "x", embedding: [1, 0], importance: 0.5, createdAt: "2026-01-01T00:00:00Z" },
-      { id: "b", kind: "document", content: "x", embedding: [1, 0], importance: 0.5, createdAt: "2026-01-01T00:00:00Z" },
+      { id: "a", kind: "insight", company: "Acme", period: "2026-01", content: "x", embedding: [1, 0], importance: 0.5, createdAt: "2026-01-01T00:00:00Z" },
+      { id: "b", kind: "document", company: "Acme", period: "2026-01", content: "x", embedding: [1, 0], importance: 0.5, createdAt: "2026-01-01T00:00:00Z" },
     ],
     0.95
   );
   assert.equal(plan.groups.length, 0);
+});
+
+test("planConsolidation never merges across company or period", () => {
+  const base = {
+    kind: "insight",
+    content: "same-looking fact",
+    embedding: [1, 0],
+    importance: 0.5,
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  const plan = planConsolidation([
+    { ...base, id: "a", company: "Acme", period: "2026-01" },
+    { ...base, id: "b", company: "OtherCo", period: "2026-01" },
+    { ...base, id: "c", company: "Acme", period: "2026-02" },
+  ]);
+  assert.equal(plan.groups.length, 0);
+});
+
+test("planConsolidation clamps unsafe thresholds and prevents single-link chaining", () => {
+  const base = {
+    kind: "insight",
+    company: "Acme",
+    period: "2026-01",
+    content: "fact",
+    importance: 0.5,
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  const plan = planConsolidation([
+    { ...base, id: "a", embedding: [1, 0] },
+    { ...base, id: "b", embedding: [0.9511, 0.309] },
+    { ...base, id: "c", embedding: [0.809, 0.588] },
+  ], -100);
+  assert.equal(plan.groups.length, 1, "A/B may merge but C must not chain through B");
+  assert.equal(plan.groups[0]!.losers.length, 1);
 });
 
 test("planForget drops superseded rows and stale low-importance ones", () => {
@@ -48,6 +82,18 @@ test("planForget drops superseded rows and stale low-importance ones", () => {
     now
   );
   assert.deepEqual(ids.sort(), ["old-lowimp", "sup"], "keep high-importance + fresh memories");
+});
+
+test("planForget empty policy is a safe no-op and invalid dates are retained", () => {
+  const candidates = [
+    { id: "sup", importance: 0.1, createdAt: "2026-01-01T00:00:00Z", supersededAt: "2026-02-01T00:00:00Z" },
+    { id: "invalid", importance: 0, createdAt: "not-a-date", supersededAt: null },
+  ];
+  assert.deepEqual(planForget(candidates, {}), []);
+  assert.deepEqual(
+    planForget(candidates, { olderThanDays: 1, maxImportance: 1 }, new Date("2026-06-01T00:00:00Z")),
+    [],
+  );
 });
 
 test("MemoryAgent.consolidate collapses re-ingested duplicates so recall stops repeating them", async () => {

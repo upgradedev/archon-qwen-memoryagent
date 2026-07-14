@@ -134,6 +134,15 @@ export function subjectKey(m: AuditMemory): string | null {
   return null;
 }
 
+// Internal identity includes the tenant/company and period boundary. Public
+// findings still expose the human-readable record id from subjectKey().
+function scopedSubjectKey(m: AuditMemory, subject = subjectKey(m)): string | null {
+  if (!subject) return null;
+  const company = m.company.trim().toLocaleLowerCase("en-US");
+  const period = m.period ?? "";
+  return JSON.stringify([company, period, subject]);
+}
+
 // Compare two attribute values for equality. Numbers use an absolute tolerance;
 // everything else uses strict string-normalized equality.
 function valuesAgree(a: unknown, b: unknown, tol: number): boolean {
@@ -316,13 +325,17 @@ export function auditConsistency(
   memories: AuditMemory[],
   opts: AuditOptions = {}
 ): ConsistencyReport {
-  const tol = opts.numericTolerance ?? 0.5;
+  const requestedTolerance = opts.numericTolerance;
+  const tol =
+    typeof requestedTolerance === "number" && Number.isFinite(requestedTolerance)
+      ? Math.max(0, requestedTolerance)
+      : 0.5;
 
   // Group memories by the record they describe.
   const bySubject = new Map<string, AuditMemory[]>();
   const presentSubjects = new Set<string>();
   for (const m of memories) {
-    const s = subjectKey(m);
+    const s = scopedSubjectKey(m);
     if (!s) continue;
     presentSubjects.add(s);
     (bySubject.get(s) ?? bySubject.set(s, []).get(s)!).push(m);
@@ -330,8 +343,9 @@ export function auditConsistency(
 
   // ── Contradictions: same subject, same attribute, disagreeing values ────────
   const contradictions: Contradiction[] = [];
-  for (const [subject, group] of bySubject) {
+  for (const [, group] of bySubject) {
     if (group.length < 2) continue;
+    const subject = subjectKey(group[0]!)!;
 
     // Collect, per attribute, the (value, memory) carriers across the group.
     const byAttr = new Map<string, Array<{ m: AuditMemory; value: unknown }>>();
@@ -384,21 +398,27 @@ export function auditConsistency(
   }
 
   // ── Absences: a referenced record with no memory of its own ─────────────────
-  const referencedBy = new Map<string, Array<{ memoryId: string; sourceRef: string | null }>>();
+  const referencedBy = new Map<
+    string,
+    { subject: string; refs: Array<{ memoryId: string; sourceRef: string | null }> }
+  >();
   for (const m of memories) {
     const refs = m.metadata?.["refs"];
     if (!Array.isArray(refs)) continue;
     for (const r of refs) {
       const key = typeof r === "number" ? String(r) : typeof r === "string" ? r : null;
       if (!key) continue;
-      if (presentSubjects.has(key)) continue; // the referenced record exists
-      (referencedBy.get(key) ?? referencedBy.set(key, []).get(key)!).push({
+      const scoped = scopedSubjectKey(m, key);
+      if (!scoped || presentSubjects.has(scoped)) continue;
+      const entry = referencedBy.get(scoped) ?? { subject: key, refs: [] };
+      entry.refs.push({
         memoryId: m.id,
         sourceRef: m.sourceRef,
       });
+      referencedBy.set(scoped, entry);
     }
   }
-  const absences: Absence[] = [...referencedBy.entries()].map(([subject, refs]) => ({
+  const absences: Absence[] = [...referencedBy.values()].map(({ subject, refs }) => ({
     type: "absence",
     subject,
     referencedBy: refs,

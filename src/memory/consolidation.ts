@@ -19,6 +19,8 @@ import { cosineSimilarity } from "./retrieval.js";
 export interface ConsolidatableMemory {
   id: string;
   kind: string;
+  company: string;
+  period: string | null;
   content: string;
   embedding: number[];
   importance: number;
@@ -45,47 +47,35 @@ function pickWinner(members: ConsolidatableMemory[]): ConsolidatableMemory {
   })[0]!;
 }
 
-// Single-link clustering by cosine similarity within the same `kind`. Threshold
-// ~0.95 means "these two memories say the same thing"; distinct facts stay apart.
+export const MIN_CONSOLIDATION_THRESHOLD = 0.9;
+export const DEFAULT_CONSOLIDATION_THRESHOLD = 0.95;
+
+// Conservative complete-link clustering within the same kind/company/period.
+// Every new member must be near-duplicate with EVERY existing member, preventing
+// transitive A≈B≈C chains from merging A and C when they are materially distinct.
 export function planConsolidation(
   memories: ConsolidatableMemory[],
-  threshold = 0.95
+  threshold = DEFAULT_CONSOLIDATION_THRESHOLD
 ): ConsolidationPlan {
-  const parent = new Map<string, string>();
-  const find = (x: string): string => {
-    let r = x;
-    while (parent.get(r) !== r) r = parent.get(r)!;
-    // path-compress
-    let c = x;
-    while (parent.get(c) !== r) {
-      const next = parent.get(c)!;
-      parent.set(c, r);
-      c = next;
-    }
-    return r;
-  };
-  const union = (a: string, b: string) => parent.set(find(a), find(b));
+  const safeThreshold = normalizeThreshold(threshold);
+  const clusters: ConsolidatableMemory[][] = [];
+  const sorted = [...memories].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-  for (const m of memories) parent.set(m.id, m.id);
-
-  for (let i = 0; i < memories.length; i++) {
-    for (let j = i + 1; j < memories.length; j++) {
-      const a = memories[i]!;
-      const b = memories[j]!;
-      if (a.kind !== b.kind) continue;
-      if (cosineSimilarity(a.embedding, b.embedding) >= threshold) union(a.id, b.id);
-    }
-  }
-
-  const byRoot = new Map<string, ConsolidatableMemory[]>();
-  for (const m of memories) {
-    const root = find(m.id);
-    (byRoot.get(root) ?? byRoot.set(root, []).get(root)!).push(m);
+  for (const memory of sorted) {
+    const cluster = clusters.find(
+      (members) =>
+        sameConsolidationScope(memory, members[0]!) &&
+        members.every(
+          (member) => cosineSimilarity(memory.embedding, member.embedding) >= safeThreshold,
+        ),
+    );
+    if (cluster) cluster.push(memory);
+    else clusters.push([memory]);
   }
 
   const groups: SupersedePlan[] = [];
   let supersededCount = 0;
-  for (const members of byRoot.values()) {
+  for (const members of clusters) {
     if (members.length < 2) continue;
     const winner = pickWinner(members);
     const losers = members.filter((m) => m.id !== winner.id).map((m) => m.id);
@@ -97,8 +87,23 @@ export function planConsolidation(
   return { groups, supersededCount };
 }
 
+function sameConsolidationScope(a: ConsolidatableMemory, b: ConsolidatableMemory): boolean {
+  return (
+    a.kind === b.kind &&
+    a.company.trim().toLocaleLowerCase("en-US") ===
+      b.company.trim().toLocaleLowerCase("en-US") &&
+    a.period === b.period
+  );
+}
+
+function normalizeThreshold(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_CONSOLIDATION_THRESHOLD;
+  return Math.min(1, Math.max(MIN_CONSOLIDATION_THRESHOLD, value));
+}
+
 export interface ForgetPolicy {
-  // Hard-delete rows already superseded by consolidation (default true).
+  // Hard-delete rows already superseded by consolidation. This must be explicit;
+  // an empty/default policy is a safe no-op.
   deleteSuperseded?: boolean;
   // Also forget active memories older than this many days whose importance is
   // below `maxImportance`. Both must be set to enable time-based forgetting.
@@ -119,7 +124,17 @@ export function planForget(
   policy: ForgetPolicy,
   now: Date = new Date()
 ): string[] {
-  const { deleteSuperseded = true, olderThanDays, maxImportance } = policy;
+  const { deleteSuperseded = false } = policy;
+  const olderThanDays =
+    typeof policy.olderThanDays === "number" &&
+    Number.isFinite(policy.olderThanDays) &&
+    policy.olderThanDays >= 1
+      ? policy.olderThanDays
+      : undefined;
+  const maxImportance =
+    typeof policy.maxImportance === "number" && Number.isFinite(policy.maxImportance)
+      ? Math.min(1, Math.max(0, policy.maxImportance))
+      : undefined;
   const cutoff =
     olderThanDays != null ? now.getTime() - olderThanDays * 86_400_000 : null;
   const ids: string[] = [];
@@ -133,10 +148,11 @@ export function planForget(
       maxImportance != null &&
       !m.supersededAt &&
       m.importance <= maxImportance &&
-      new Date(m.createdAt).getTime() < cutoff
+      Number.isFinite(Date.parse(m.createdAt)) &&
+      Date.parse(m.createdAt) < cutoff
     ) {
       ids.push(m.id);
     }
   }
-  return ids;
+  return [...new Set(ids)].sort();
 }

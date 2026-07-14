@@ -1,0 +1,82 @@
+%% Archon MemoryAgent — submission architecture (render with Mermaid CLI)
+flowchart LR
+    DOCS["Payroll evidence<br/>PDF · image · text"]
+    BROWSER["Judge / browser<br/>public demo + public-tenant reads"]
+    OPERATOR["Reviewer / operator<br/>Bearer or x-api-key"]
+    MCP["MCP client<br/>trusted stdio · authenticated HTTP"]
+
+    subgraph EDGE["HTTPS edge"]
+      TLS["TLS termination · exact CORS allow-list<br/>security headers · request/body limits"]
+    end
+
+    subgraph ECS["Alibaba Cloud ECS · ap-southeast-1"]
+      direction TB
+      subgraph API["Fastify application"]
+        HEALTH["Public probes and schema<br/>health · ready · docs"]
+        PUBLIC_READ["Public-tenant cheap reads<br/>count · list · P&L · field audit"]
+        PUBLIC_QWEN["Quota-bounded public demo<br/>fixed seed · grounded recall"]
+        PROTECTED["Credential → server-owned tenant<br/>ingest · invoice · feedback<br/>semantic audit · lifecycle"]
+        QUOTA["Durable Qwen-route quotas<br/>per principal/IP + global · UTC daily"]
+      end
+
+      subgraph PIPE["Evidence-aware ingestion pipeline"]
+        EX["Extractor<br/>qwen-vl-max / qwen-plus"]
+        CL["Classifier"]
+        LINK["Event linker<br/>company + period + event_ref"]
+        VAL["Cross-document validator<br/>conflicts stay visible"]
+        PNL["Currency-separated P&L<br/>mixed totals never combined"]
+        EX --> CL --> LINK --> VAL --> PNL
+      end
+
+      MCP_BOUNDARY["MCP boundary<br/>HTTP always fail-closed auth<br/>four tools · six memory kinds"]
+      AGENT["MemoryAgent<br/>atomic writes · invoice idempotency · grounded recall<br/>feedback · dry-run/confirm lifecycle"]
+      RETRIEVE["Hybrid retrieval<br/>pgvector cosine + lexical RRF"]
+      RERANK["Bounded qwen-plus rerank<br/>fallback + provenance"]
+      AUDIT["Read-only self-audit<br/>field rule + semantic judge<br/>complete / partial / inconclusive"]
+      STORE[("Private PostgreSQL + pgvector<br/>tenant_id + canonical company scope<br/>HNSW + full-text indexes")]
+    end
+
+    subgraph QWEN["Alibaba Cloud Model Studio / DashScope"]
+      VL["qwen-vl-max<br/>document vision"]
+      EMB["text-embedding-v4<br/>1024-d embeddings"]
+      PLUS["qwen-plus<br/>narration · rerank · semantic judge · skills"]
+    end
+
+    DOCS --> TLS
+    BROWSER --> TLS
+    OPERATOR --> TLS
+    TLS --> HEALTH
+    TLS --> PUBLIC_READ
+    TLS --> PUBLIC_QWEN
+    TLS --> PROTECTED
+    PUBLIC_READ --> AGENT
+    PUBLIC_QWEN --> QUOTA
+    PUBLIC_QWEN --> PIPE
+    PROTECTED --> AGENT
+    PROTECTED --> PIPE
+    PROTECTED -. "Qwen-heavy operations" .-> QUOTA
+    QUOTA --> AGENT
+    MCP --> MCP_BOUNDARY
+    MCP_BOUNDARY --> QUOTA
+    PNL --> AGENT
+    AGENT --> RETRIEVE
+    RETRIEVE --> STORE
+    RETRIEVE --> RERANK
+    RERANK --> PLUS
+    AGENT --> AUDIT
+    AUDIT --> PLUS
+    AGENT --> STORE
+    AGENT --> EMB
+    EX --> VL
+    EX --> PLUS
+
+    classDef input fill:#7c3aed,color:#fff,stroke:#4c1d95,stroke-width:1.5px;
+    classDef boundary fill:#f59e0b,color:#291800,stroke:#b45309,stroke-width:2px;
+    classDef core fill:#0f766e,color:#fff,stroke:#134e4a,stroke-width:1.5px;
+    classDef memory fill:#0891b2,color:#fff,stroke:#155e75,stroke-width:1.5px;
+    classDef qwen fill:#2563eb,color:#fff,stroke:#1e40af,stroke-width:1.5px;
+    class DOCS,BROWSER,OPERATOR,MCP input;
+    class TLS,PROTECTED,QUOTA,MCP_BOUNDARY boundary;
+    class HEALTH,PUBLIC_READ,PUBLIC_QWEN,EX,CL,LINK,VAL,PNL,AGENT,RETRIEVE,RERANK,AUDIT core;
+    class STORE memory;
+    class VL,EMB,PLUS qwen;

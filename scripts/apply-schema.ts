@@ -16,6 +16,7 @@ const schemaPath = join(here, "..", "src", "db", "schema.sql");
 async function main() {
   const sql = readFileSync(schemaPath, "utf8");
   const pool = getPool();
+  const client = await pool.connect();
   console.log(`Applying schema → ${redactUrl(process.env.DATABASE_URL!)}`);
   // Strip `--` comment lines FIRST (a comment may contain a semicolon), then
   // split on `;`. This schema has no semicolons inside literals.
@@ -23,22 +24,31 @@ async function main() {
     .split(";")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  for (const stmt of statements) {
-    await pool.query(stmt);
+  try {
+    // FC can cold-start multiple instances concurrently. Serialize idempotent
+    // DDL so two starters never race on CREATE INDEX / ALTER TABLE.
+    await client.query(`SELECT pg_advisory_lock(hashtext($1))`, ["archon-memoryagent-schema-v1"]);
+    for (const stmt of statements) await client.query(stmt);
+    const { rows } = await client.query(
+      `SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' ORDER BY table_name`
+    );
+    console.log("Tables:", rows.map((r) => r.table_name).join(", "));
+    const idx = await client.query(
+      `SELECT indexname FROM pg_indexes
+        WHERE tablename = 'agent_memory' AND indexname = 'idx_agent_memory_embedding' LIMIT 1`
+    );
+    if (!idx.rowCount) throw new Error("vector index idx_agent_memory_embedding is missing");
+    console.log("✓ vector index idx_agent_memory_embedding present");
+  } finally {
+    try {
+      await client.query(`SELECT pg_advisory_unlock(hashtext($1))`, ["archon-memoryagent-schema-v1"]);
+    } catch {
+      // Releasing the session below is the PostgreSQL-guaranteed fallback.
+    }
+    client.release(); // advisory locks are released with the session
+    await closePool();
   }
-  const { rows } = await pool.query(
-    `SELECT table_name FROM information_schema.tables
-      WHERE table_schema = 'public' ORDER BY table_name`
-  );
-  console.log("Tables:", rows.map((r) => r.table_name).join(", "));
-  const idx = await pool.query(
-    `SELECT indexname FROM pg_indexes
-      WHERE tablename = 'agent_memory' AND indexname = 'idx_agent_memory_embedding' LIMIT 1`
-  );
-  console.log(
-    idx.rowCount ? "✓ vector index idx_agent_memory_embedding present" : "⚠ vector index missing"
-  );
-  await closePool();
 }
 
 function redactUrl(url: string): string {

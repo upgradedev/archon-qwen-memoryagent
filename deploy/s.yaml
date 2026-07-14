@@ -14,10 +14,10 @@ name: archon-qwen-memoryagent
 access: default
 
 vars:
-  region: ap-southeast-1            # Singapore (international) — matches the Qwen intl endpoint
+  region: ${env('REGION', 'ap-southeast-1')}
   caPort: 9000
-  # Replace <namespace> with your ACR namespace; image is built + pushed by deploy-fc.sh.
-  image: registry.ap-southeast-1.aliyuncs.com/<namespace>/archon-qwen-memoryagent:latest
+  # deploy-fc.sh exports the immutable, just-pushed image URI.
+  image: ${env('IMAGE_URI')}
 
 resources:
   memoryagent:
@@ -30,14 +30,37 @@ resources:
       timeout: 60
       memorySize: 1024
       caPort: ${vars.caPort}
+      # Managed PostgreSQL is private. FC must join the database VPC while
+      # retaining outbound internet access for Alibaba Model Studio.
+      internetAccess: true
+      vpcConfig:
+        vpcId: ${env('FC_VPC_ID')}
+        securityGroupId: ${env('FC_SECURITY_GROUP_ID')}
+        vSwitchIds:
+          - ${env('FC_VSWITCH_ID')}
+      # Persist stdout/stderr plus request/instance metrics in FC-managed SLS.
+      logConfig: auto
       customContainerConfig:
         image: ${vars.image}
       environmentVariables:
         PORT: "9000"
-        # Set at deploy time (never commit real values — see .env.example):
-        #   DATABASE_URL        → Alibaba AnalyticDB / ApsaraDB RDS for PostgreSQL (pgvector)
-        #   DASHSCOPE_API_KEY   → Model Studio key (omit to run the offline Fakes)
-        #   DASHSCOPE_BASE_URL  → https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+        NODE_ENV: production
+        APPLY_SCHEMA_ON_START: "true"
+        DATABASE_URL: ${env('DATABASE_URL')}
+        DASHSCOPE_API_KEY: ${env('DASHSCOPE_API_KEY')}
+        DASHSCOPE_BASE_URL: ${env('DASHSCOPE_BASE_URL', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1')}
+        QWEN_MODEL: ${env('QWEN_MODEL', 'qwen-plus')}
+        QWEN_EMBED_MODEL: ${env('QWEN_EMBED_MODEL', 'text-embedding-v4')}
+        EMBED_DIM: ${env('EMBED_DIM', '1024')}
+        JUDGE_API_KEY: ${env('JUDGE_API_KEY')}
+        JUDGE_TENANT_ID: ${env('JUDGE_TENANT_ID', '_public')}
+        JUDGE_AUTH_REQUIRED: "true"
+        PUBLIC_TENANT_ID: ${env('PUBLIC_TENANT_ID', '_public')}
+        CORS_ORIGIN: ${env('CORS_ORIGIN', '')}
+        QWEN_RERANK_MODEL: ${env('QWEN_RERANK_MODEL', 'qwen-plus')}
+        RERANK_TIMEOUT_MS: ${env('RERANK_TIMEOUT_MS', '3000')}
+        SEMANTIC_JUDGE_TIMEOUT_MS: ${env('SEMANTIC_JUDGE_TIMEOUT_MS', '8000')}
+        SEMANTIC_EMBED_TIMEOUT_MS: ${env('SEMANTIC_EMBED_TIMEOUT_MS', '10000')}
       triggers:
         - triggerName: http
           triggerType: http

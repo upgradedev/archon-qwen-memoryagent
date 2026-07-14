@@ -1,39 +1,59 @@
 #!/usr/bin/env bash
-# Build → push → deploy the MemoryAgent backend to Alibaba Cloud Function Compute.
-#
-# This is a USER-GATED script: it needs a real Alibaba Cloud account. It is not
-# run in CI. Everything it does is also achievable from the FC / ACR console.
-#
-# Required environment (see ../.env.example + your Alibaba Cloud console):
-#   ACR_REGISTRY   e.g. registry.ap-southeast-1.aliyuncs.com
-#   ACR_NAMESPACE  your ACR namespace (same region as the function)
-#   REGION         e.g. ap-southeast-1  (Singapore / international)
-# And, configured via `s config add`:
-#   ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET
-#
-# Usage:  REGION=ap-southeast-1 ACR_NAMESPACE=my-ns ACR_REGISTRY=registry.ap-southeast-1.aliyuncs.com bash deploy/deploy-fc.sh
+# Build, push and deploy an immutable MemoryAgent image to Alibaba Function
+# Compute. Secrets are read from the environment and never written to a manifest.
 set -euo pipefail
 
-: "${ACR_REGISTRY:?set ACR_REGISTRY (e.g. registry.ap-southeast-1.aliyuncs.com)}"
-: "${ACR_NAMESPACE:?set ACR_NAMESPACE (your ACR namespace)}"
+required=(
+  ACR_REGISTRY ACR_NAMESPACE ACR_USERNAME ACR_PASSWORD
+  DATABASE_URL DASHSCOPE_API_KEY JUDGE_API_KEY
+  FC_VPC_ID FC_VSWITCH_ID FC_SECURITY_GROUP_ID
+)
+for name in "${required[@]}"; do
+  [[ -n "${!name:-}" ]] || { echo "ERROR: set ${name}" >&2; exit 2; }
+done
+command -v docker >/dev/null || { echo "ERROR: docker not found" >&2; exit 2; }
+command -v s >/dev/null || { echo "ERROR: Serverless Devs CLI 's' not found" >&2; exit 2; }
+
 REGION="${REGION:-ap-southeast-1}"
-IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/archon-qwen-memoryagent:latest"
-
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ -n "${IMAGE_TAG:-}" ]]; then
+  TAG="${IMAGE_TAG}"
+elif git -C "${ROOT}" diff --quiet --ignore-submodules -- && \
+     git -C "${ROOT}" diff --cached --quiet --ignore-submodules --; then
+  TAG="$(git -C "${ROOT}" rev-parse --short=12 HEAD)"
+else
+  TAG="dirty-$(date -u +%Y%m%d%H%M%S)"
+fi
+[[ "${TAG}" =~ ^[A-Za-z0-9_.-]{1,128}$ ]] || { echo "ERROR: invalid IMAGE_TAG" >&2; exit 2; }
+[[ "${DATABASE_URL}" == postgresql://* || "${DATABASE_URL}" == postgres://* ]] \
+  || { echo "ERROR: DATABASE_URL must use postgres:// or postgresql://" >&2; exit 2; }
+[[ "${FC_VPC_ID}" =~ ^vpc-[A-Za-z0-9]+$ ]] || { echo "ERROR: invalid FC_VPC_ID" >&2; exit 2; }
+[[ "${FC_VSWITCH_ID}" =~ ^vsw-[A-Za-z0-9]+$ ]] || { echo "ERROR: invalid FC_VSWITCH_ID" >&2; exit 2; }
+[[ "${FC_SECURITY_GROUP_ID}" =~ ^sg-[A-Za-z0-9]+$ ]] || { echo "ERROR: invalid FC_SECURITY_GROUP_ID" >&2; exit 2; }
 
-echo "==> Building image ${IMAGE} (linux/amd64 for Function Compute)"
-docker build --platform linux/amd64 -t "${IMAGE}" "${ROOT}"
+export IMAGE_URI="${ACR_REGISTRY}/${ACR_NAMESPACE}/archon-qwen-memoryagent:${TAG}"
+export REGION DATABASE_URL DASHSCOPE_API_KEY
+export JUDGE_API_KEY
+export FC_VPC_ID FC_VSWITCH_ID FC_SECURITY_GROUP_ID
+export JUDGE_TENANT_ID="${JUDGE_TENANT_ID:-_public}"
+export DASHSCOPE_BASE_URL="${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}"
 
-echo "==> Logging in to ACR (${ACR_REGISTRY})"
-docker login "${ACR_REGISTRY}"
+echo "==> Validating Serverless Devs manifest"
+(cd "${ROOT}/deploy" && s verify)
 
-echo "==> Pushing image"
-docker push "${IMAGE}"
+echo "==> Building ${IMAGE_URI} for linux/amd64"
+docker build --pull --platform linux/amd64 -t "${IMAGE_URI}" "${ROOT}"
 
-echo "==> Deploying with Serverless Devs (deploy/s.yaml)"
-# `s` reads deploy/s.yaml; override the image + region it uses.
+echo "==> Authenticating to ACR with password-stdin"
+printf '%s' "${ACR_PASSWORD}" | docker login "${ACR_REGISTRY}" \
+  --username "${ACR_USERNAME}" --password-stdin
+
+echo "==> Pushing immutable image"
+docker push "${IMAGE_URI}"
+
+echo "==> Deploying Function Compute"
 cd "${ROOT}/deploy"
-s deploy --skip-push true 2>/dev/null || s deploy
+s deploy -y --skip-push true
 
-echo "==> Done. The HTTP trigger URL is printed above."
-echo "    Verify:  curl <trigger-url>/health"
+echo "==> Deployed ${IMAGE_URI}"
+echo "    Verify the trigger URL printed above with: curl -fsS <url>/ready"

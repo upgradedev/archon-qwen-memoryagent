@@ -10,7 +10,7 @@ Session B is a fresh client with only a question: what did it truly cost to empl
 
 Now the differentiator: a memory that audits itself. Two sessions wrote one record with two values. Mem0 and Zep would silently overwrite; Archon never mutates — it detects the contradiction and recommends which to trust, with a rule and rationale.
 
-It even audits meaning, not just fields: notes that a vendor pays on time, then is chronically late, share no number to compare, so a semantic pass asks qwen-plus if they contradict. And every operation is also a Model Context Protocol tool for any MCP client.
+It even audits meaning, not just fields: notes that a vendor pays on time, then is chronically late, share no number to compare, so an authenticated semantic pass asks qwen-plus if they contradict. Four core memory operations are also exposed as typed MCP tools; Streamable HTTP is authenticated and tenant-scoped.
 
 And it's measured: five of five contradictions detected, zero false positives, a recommender correct four of four; retrieval Recall at three rises from ninety to ninety-six point seven percent, at full answer correctness.
 

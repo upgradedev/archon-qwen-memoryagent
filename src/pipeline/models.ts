@@ -41,6 +41,9 @@ export interface RawDocument {
   content: string;
   company?: string;
   period?: string; // YYYY-MM
+  // Distinguishes multiple payroll runs/batches in one company-month. When
+  // absent, the extractor labels the document as the monthly consolidated run.
+  event_ref?: string;
   // A caller may pre-declare the type; otherwise the ClassifierAgent infers it.
   declared_type?: PipelineDocType;
 }
@@ -65,6 +68,7 @@ export interface ExtractedDocument {
   doc_type: PipelineDocType;
   company: string;
   period: string; // YYYY-MM
+  event_ref?: string;
   // payroll_register / bank_confirmation totals
   gross_pay_total?: number | null; // register
   employer_cost_total?: number | null; // register (true cost)

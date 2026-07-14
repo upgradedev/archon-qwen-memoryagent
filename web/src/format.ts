@@ -1,15 +1,13 @@
 // Small formatting helpers shared across panels.
 
-// Format an unknown attribute value for display. Numbers that look like money
-// (the domain's totals/gaps) render as €-grouped figures; everything else falls
-// back to a safe string form. `value` is typed `unknown` in the API, so we guard.
+// Format an unknown audit attribute without inventing a currency. The
+// contradiction contract carries arbitrary values (counts, limits, quantities,
+// money) and no currency field, so a hard-coded symbol would be misleading.
 export function formatValue(value: unknown): string {
   if (typeof value === "number") {
-    if (Number.isInteger(value)) {
-      return `€${value.toLocaleString("en-US")}`;
-    }
-    // Non-integer numerics (e.g. a percentage like 75.6) — show as-is.
-    return String(value);
+    return Number.isFinite(value)
+      ? value.toLocaleString("en-US", { maximumFractionDigits: 6 })
+      : "—";
   }
   if (typeof value === "string") return value;
   if (value == null) return "—";
