@@ -125,6 +125,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Build production container (runtime dependency closure)
+        run: docker build --tag archon-qwen-memoryagent:ci .
+
       - name: Apply schema (creates the vector(1024) memory table + HNSW index)
         run: npm run db:schema
 

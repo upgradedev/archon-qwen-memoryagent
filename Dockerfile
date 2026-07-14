@@ -10,6 +10,7 @@ RUN npm ci --ignore-scripts
 COPY tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
+COPY bench ./bench
 RUN npm run build
 
 FROM node:24.18.0-bookworm-slim AS runtime
@@ -24,10 +25,15 @@ RUN npm ci --omit=dev --ignore-scripts \
 
 COPY --from=build /app/dist/src ./dist/src
 COPY --from=build /app/dist/scripts ./dist/scripts
+COPY --from=build /app/dist/bench ./dist/bench
 # Non-TypeScript runtime assets referenced relative to the compiled modules.
 COPY src/ui.html ./dist/src/ui.html
 COPY src/db/schema.sql ./dist/src/db/schema.sql
 COPY package.json ./dist/package.json
+
+# The readiness gate imports the semantic benchmark at runtime. Fail the image
+# build if that transitive artifact is ever omitted from the production stage.
+RUN test -f /app/dist/bench/semantic-consistency-run.js
 
 RUN chown -R node:node /app
 USER node
