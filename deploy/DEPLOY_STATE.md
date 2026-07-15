@@ -1,6 +1,13 @@
 # MemoryAgent deployment state and production runbook
 
-Updated: **2026-07-15**. This file describes the intended/current hardened release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
+Updated: **2026-07-15**. This is the authoritative hardened live-release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
+
+> **Status: LIVE and production-verified over HTTPS.**
+> <https://memory.43.106.13.19.sslip.io>
+>
+> Runtime code commit: [`1f3688a`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/1f3688a57e8ae3fa2869f1dbba8d18dee35da93b), including the production-image closure hotfix. The final hardening landed through [PR #56](https://github.com/upgradedev/archon-qwen-memoryagent/pull/56) and the Docker runtime gate through [PR #57](https://github.com/upgradedev/archon-qwen-memoryagent/pull/57).
+>
+> Verified on the live host: real `text-embedding-v4` / `qwen-plus`; `/ready` 200 with database, Qwen and judge auth ready; authenticated ingest→recall and semantic-audit success; unauthenticated protected route 401; backend loopback-only; PostgreSQL has no host port; direct public 9000/5432 blocked; container limits and read-only/cap-drop controls active; zero smoke rows remain.
 
 ## Historical note — do not operate from the old snapshot
 
@@ -33,7 +40,7 @@ Backend ── HTTPS ── Alibaba Cloud Model Studio / DashScope
 - **Durability:** database files live in the named `pgdata` volume, so normal container rebuild/recreation preserves them. `docker compose down -v`, volume deletion, or host-disk loss is destructive; use an ECS disk snapshot/backup before risky maintenance.
 - **Alternative only:** Function Compute + managed pg-wire PostgreSQL remains available through `deploy/s.yaml`; it is not the claimed active topology.
 
-The Alibaba security group should expose public `443` only (plus narrowly restricted administrative SSH where required). It must not expose `9000` or `5432` to the Internet.
+The live Alibaba security group exposes `80` only for HTTP redirect/ACME and `443` for the application; administrative SSH is restricted to the operator `/32`. It does not expose `9000` or `5432` to the Internet.
 
 ## Current security and readiness contract
 
@@ -58,7 +65,7 @@ The Alibaba security group should expose public `443` only (plus narrowly restri
 - Qwen-heavy HTTP/MCP requests use durable PostgreSQL-backed per-subject/IP plus global UTC-daily quotas, so counters survive backend restarts and work across replicas.
 - The backend image runs as the unprivileged `node` user.
 - Compose gives the backend a read-only root filesystem, a bounded `/tmp` tmpfs, `no-new-privileges`, and drops all Linux capabilities. PostgreSQL also uses `no-new-privileges`.
-- Compose configures explicit containment limits: PostgreSQL **640 MiB / 1 CPU / 128 PIDs** and the backend **512 MiB / 1 CPU / 128 PIDs**. These are configured controls; describe them as active on the live box only after the post-deploy `docker inspect` check below reports the matching non-zero values.
+- Compose configures explicit containment limits: PostgreSQL **640 MiB / 1 CPU / 128 PIDs** and the backend **512 MiB / 1 CPU / 128 PIDs**. The 2026-07-15 live `docker inspect` gate verified the exact byte/CPU/PID values, backend read-only root, and `cap-drop ALL`.
 
 ### Reverse-proxy trust
 
