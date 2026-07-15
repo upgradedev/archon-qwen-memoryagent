@@ -5,8 +5,10 @@
   "description": "Archon MemoryAgent — an agent with persistent, queryable, cross-session memory built on Qwen (Alibaba Cloud Model Studio / DashScope) with a pgvector memory layer, running live on Alibaba Cloud ECS (docker-compose: backend + pgvector container); Function Compute + managed RDS is a drop-in alternative.",
   "license": "MIT",
   "type": "module",
+  "packageManager": "npm@11.16.0",
   "engines": {
-    "node": ">=20"
+    "node": "24.18.0",
+    "npm": "11.16.0"
   },
   "bin": {
     "archon-memoryagent-mcp": "src/mcp/server.ts"
@@ -40,7 +42,7 @@
     "load": "k6 run load/recall-load.js",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "test:docs": "node --import tsx --test tests/docs/docs-consistency.test.ts",
+    "test:docs": "node --import tsx --test tests/docs/docs-consistency.test.ts tests/docs/supply-chain-consistency.test.ts",
     "test:unit": "node --import tsx --test tests/unit/db-least-privilege.test.ts tests/unit/media-path-containment.test.ts tests/unit/embeddings.test.ts tests/unit/narrator.test.ts tests/unit/memory.test.ts tests/unit/retrieval.test.ts tests/unit/metrics.test.ts tests/unit/consolidation.test.ts tests/unit/consistency.test.ts tests/unit/semantic-consistency.test.ts tests/unit/semantic-heldout.test.ts tests/unit/semantic-qwen37-candidate.test.ts tests/unit/scale-evidence.test.ts tests/unit/rerank.test.ts tests/unit/accuracy.test.ts tests/unit/server.test.ts tests/unit/skills.test.ts tests/unit/mcp.test.ts tests/unit/pnl.test.ts tests/unit/pipeline.test.ts",
     "test:integration": "node --import tsx --test --test-concurrency=1 tests/integration/pgvector-store.test.ts tests/integration/pipeline-ingest.test.ts",
     "test:e2e": "node --import tsx --test --test-concurrency=1 tests/e2e/cross-session.test.ts tests/e2e/templates.test.ts tests/e2e/http-journeys.test.ts tests/e2e/mcp-journeys.test.ts tests/e2e/robustness.test.ts tests/e2e/full-journey.test.ts tests/e2e/readiness.test.ts",

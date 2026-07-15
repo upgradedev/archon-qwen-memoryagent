@@ -8,7 +8,7 @@ x-memoryagent-image: &memoryagent-image
 
 services:
   db:
-    image: pgvector/pgvector:0.8.5-pg16-bookworm
+    image: pgvector/pgvector:0.8.5-pg16-bookworm@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}

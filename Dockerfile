@@ -1,7 +1,7 @@
 # Reproducible multi-stage production image. TypeScript and tests exist only in
 # the build stage; the runtime executes compiled JavaScript as an unprivileged
 # user and never invokes npx or downloads packages at startup.
-FROM node:24.18.0-bookworm-slim AS build
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -13,7 +13,7 @@ COPY scripts ./scripts
 COPY bench ./bench
 RUN npm run build
 
-FROM node:24.18.0-bookworm-slim AS runtime
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runtime
 
 ENV NODE_ENV=production \
     PORT=9000

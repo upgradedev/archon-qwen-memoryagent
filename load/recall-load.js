@@ -43,7 +43,7 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
 import { Rate } from "k6/metrics";
-import { textSummary } from "https://jslib.k6.io/k6-summary/0.0.1/index.js";
+import { deterministicTextSummary } from "./deterministic-summary.js";
 
 const BASE = (__ENV.TARGET_URL || "https://memory.43.106.13.19.sslip.io").replace(/\/+$/, "");
 const OFFLINE = (__ENV.OFFLINE || "").toLowerCase() === "true";
@@ -313,10 +313,11 @@ function safeJson(res) {
 
 // ── Summary artifact ─────────────────────────────────────────────────────────
 // Emit both a human-readable stdout summary and a machine-readable JSON file
-// (uploaded as a CI artifact by .github/workflows/load-test.yml).
+// (uploaded as a CI artifact by .github/workflows/load-test.yml). The formatter
+// is repository-local: no executable JavaScript is fetched while k6 starts.
 export function handleSummary(data) {
   return {
-    stdout: textSummary(data, { indent: " ", enableColors: true }),
+    stdout: deterministicTextSummary(data),
     "load-summary.json": JSON.stringify(data, null, 2),
   };
 }
