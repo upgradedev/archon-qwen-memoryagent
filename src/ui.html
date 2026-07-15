@@ -951,8 +951,13 @@
       const btn = $('demoBtn'); btn.disabled = true; $('status').className = ''; $('status').textContent = 'Seeding demo…';
       try {
         const s = await api('POST', '/demo/seed');
-        await refreshAll();
         $('company').value = s.company || 'Northwind Trading';
+        // Scope the supporting P&L before refreshing it. A long-lived public
+        // tenant can legitimately hold memories from several companies (and
+        // older records without currency evidence); refreshing first would
+        // leave the one-click demo showing an unrelated global currency
+        // boundary even though recall is correctly scoped to the demo company.
+        await refreshAll();
         $('question').value = TEMPLATES[0].q;
         $('ask').requestSubmit();
       } catch (e) { $('status').className = 'err'; $('status').textContent = 'Demo failed: ' + e.message; }

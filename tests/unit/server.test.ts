@@ -913,6 +913,11 @@ test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
   // One-click Run demo → seeds via the pipeline, then recalls.
   assert.match(res.body, /Run demo/);
   assert.match(res.body, /\/demo\/seed/);
+  assert.match(
+    res.body,
+    /const s = await api\('POST', '\/demo\/seed'\);\s*\$\('company'\)\.value = s\.company \|\| 'Northwind Trading';[\s\S]*?await refreshAll\(\);/,
+    "one-click demo must scope the company before refreshing its P&L",
+  );
   // Clear empty-state instead of a blank panel.
   assert.match(res.body, /No memories yet/);
   // Supporting P&L + records views wired to their endpoints.
