@@ -151,8 +151,8 @@ jobs:
       - name: Vector-recall smoke (offline Fakes — no DashScope key)
         run: npm run memory:demo
 
-  # Stage 2c — code-coverage measurement + gate. Runs the FULL testing pyramid
-  # (unit + integration + e2e) under c8 against a real pgvector service container,
+  # Stage 2c — code-coverage measurement + gate. Runs the FULL product pyramid
+  # (unit + integration + security + e2e) under c8 against a real pgvector service container,
   # so store.ts / db/client.ts (the DB seam) are measured for real, not just the
   # in-memory doubles. Emits a text summary + lcov; the gate step fails the build
   # if src/ coverage regresses below the honest floor. Fully OFFLINE (no key).
@@ -207,30 +207,7 @@ jobs:
       - name: Verify DML-only runtime role and cross-database denial
         run: npm run db:verify-role
       - name: Coverage gate (full pyramid under c8; fails below the src/ floor)
-        run: >-
-          npx c8 --check-coverage
-          --statements=80 --branches=80 --functions=80 --lines=80
-          node --import tsx --test --test-concurrency=1
-          tests/unit/db-least-privilege.test.ts tests/unit/embeddings.test.ts tests/unit/narrator.test.ts
-          tests/unit/memory.test.ts tests/unit/retrieval.test.ts
-          tests/unit/metrics.test.ts tests/unit/consolidation.test.ts
-          tests/unit/consistency.test.ts tests/unit/semantic-consistency.test.ts tests/unit/rerank.test.ts
-          tests/unit/accuracy.test.ts tests/unit/server.test.ts
-          tests/unit/skills.test.ts tests/unit/mcp.test.ts
-          tests/unit/pnl.test.ts tests/unit/pipeline.test.ts
-          tests/integration/pgvector-store.test.ts
-          tests/integration/pipeline-ingest.test.ts
-          tests/security/authz.test.ts
-          tests/security/injection.test.ts
-          tests/security/mcp-boundary.test.ts
-          tests/security/exposure.test.ts
-          tests/e2e/cross-session.test.ts
-          tests/e2e/templates.test.ts
-          tests/e2e/http-journeys.test.ts
-          tests/e2e/mcp-journeys.test.ts
-          tests/e2e/robustness.test.ts
-          tests/e2e/full-journey.test.ts
-          tests/e2e/readiness.test.ts
+        run: npm run coverage
       - name: Upload lcov coverage report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

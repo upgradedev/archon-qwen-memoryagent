@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUtc": "2026-07-15T21:46:09Z",
+  "workflowRun": {
+    "url": "https://github.com/upgradedev/archon-qwen-memoryagent/actions/runs/29452852253",
+    "headSha": "e4b208a63e1768409e5b94fe305a3672c4c96dcd",
+    "conclusion": "success"
+  },
+  "artifact": {
+    "name": "k6-load-summary",
+    "sha256": "dc489cc518d37e2b2382e6081a4512ca849eea43e4b671908e5a735bb27a18a5"
+  },
+  "environment": {
+    "mode": "live-read-only",
+    "modelPath": "Qwen embedding and narration",
+    "store": "pgvector",
+    "writesEnabled": false,
+    "profile": "smoke then 0-to-1-to-2-to-0 iterations per second"
+  },
+  "metrics": {
+    "durationMs": 238456.628549,
+    "maxObservedActiveVUs": 3,
+    "iterations": 300,
+    "httpRequests": 342,
+    "checks": {
+      "passes": 1110,
+      "failures": 0,
+      "rate": 1
+    },
+    "httpFailures": {
+      "count": 0,
+      "rate": 0
+    },
+    "recallGrounded": {
+      "passes": 42,
+      "failures": 0,
+      "rate": 1
+    },
+    "latencyMs": {
+      "overallP95": 319.6159775,
+      "healthP95": 198.94012855,
+      "recallP95": 339.66553125
+    }
+  },
+  "thresholdGatesPassed": 8,
+  "thresholdsPassed": true,
+  "claimBoundary": "Live read-only rate-bounded production-path evidence; not a saturation, maximum-throughput, or provider-capacity claim."
+}
