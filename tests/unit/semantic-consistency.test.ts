@@ -226,10 +226,12 @@ test("PURE: judge failure is inconclusive, never a clean audit", async () => {
   assert.equal(report.ok, false);
 });
 
-test("PURE: a never-resolving judge is bounded and reported inconclusive", async () => {
+test("PURE: a stalled signal-aware judge is bounded and reported inconclusive", async () => {
   const hung: SemanticJudge = {
     modelId: "hung",
-    judge: async () => new Promise<JudgeVerdict>(() => {}),
+    judge: async (_a, _b, signal) => new Promise<JudgeVerdict>((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    }),
   };
   const started = Date.now();
   const report = await detectSemanticContradictions(
@@ -242,6 +244,29 @@ test("PURE: a never-resolving judge is bounded and reported inconclusive", async
   assert.equal(report.failed, 1);
   assert.equal(report.status, "inconclusive");
   assert.equal(report.ok, false);
+});
+
+test("PURE: judge timeout drains a signal-ignoring provider before returning", async () => {
+  let active = 0;
+  const delayed: SemanticJudge = {
+    modelId: "delayed-signal-ignoring",
+    async judge() {
+      active++;
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      active--;
+      return { contradict: false, confidence: 0.5, reason: "late result" };
+    },
+  };
+  const started = Date.now();
+  const report = await detectSemanticContradictions(
+    [smem("a", "A", V_SUBJECT, S_A), smem("b", "B", V_SUBJECT, S_B)],
+    delayed,
+    { similarityThreshold: 0.8, judgeTimeoutMs: 250 },
+  );
+  assert.ok(Date.now() - started >= 330, "capacity must remain held until the delayed provider settles");
+  assert.equal(active, 0);
+  assert.equal(report.failed, 1);
+  assert.equal(report.status, "inconclusive");
 });
 
 test("PURE: candidates are ranked by similarity before maxPairs is applied", async () => {
@@ -315,9 +340,11 @@ test("WRAPPER: rejected and timed-out embeddings become an honest partial report
   const embedder = {
     modelId: "mixed",
     dim: 2,
-    async embed(content: string): Promise<number[]> {
+    async embed(content: string, signal?: AbortSignal): Promise<number[]> {
       if (content === "reject") throw new Error("provider failed");
-      if (content === "hang") return new Promise<number[]>(() => {});
+      if (content === "hang") return new Promise<number[]>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
       return [1, 0];
     },
   };
@@ -333,6 +360,31 @@ test("WRAPPER: rejected and timed-out embeddings become an honest partial report
   assert.deepEqual(report.embeddingErrors.map((e) => e.memoryId).sort(), ["1", "2"]);
   assert.equal(report.status, "partial");
   assert.equal(report.ok, false);
+});
+
+test("WRAPPER: embedding timeout drains a signal-ignoring provider before returning", async () => {
+  let active = 0;
+  const embedder = {
+    modelId: "delayed-signal-ignoring",
+    dim: 2,
+    async embed(): Promise<number[]> {
+      active++;
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      active--;
+      return [1, 0];
+    },
+  };
+  const started = Date.now();
+  const report = await auditSemanticConsistency(
+    [{ ...smem("a", "A", V_SUBJECT, S_A) }],
+    embedder,
+    new FakeJudge(),
+    { embeddingTimeoutMs: 250 },
+  );
+  assert.ok(Date.now() - started >= 330, "capacity must remain held until the delayed embedding settles");
+  assert.equal(active, 0);
+  assert.equal(report.embeddingFailed, 1);
+  assert.equal(report.status, "inconclusive");
 });
 
 test("FakeJudge: detects opposing polarity including negation, ignores unrelated", async () => {
@@ -487,6 +539,8 @@ test("QwenJudge: sends untrusted statements in a JSON data envelope and requests
   const verdict = await new QwenJudge(client).judge(injected, "ordinary statement");
   assert.equal(verdict.status, "ok");
   assert.equal(seen.response_format.type, "json_object");
+  assert.equal(seen.enable_thinking, false);
+  assert.equal("max_tokens" in seen, false, "JSON mode must not risk truncating the verdict");
   const payload = String(seen.messages[1].content).split("relationship:\n")[1];
   assert.ok(payload);
   assert.equal(JSON.parse(payload).statement_a, injected, "injection text remains a JSON string value");

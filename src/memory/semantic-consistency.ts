@@ -21,7 +21,8 @@
 //      they are about the same subject. This both finds candidate pairs and keeps
 //      the (paid) judge calls bounded to plausibly-related memories.
 //   2. OPPOSITION JUDGE — for each near pair ask a judge "do these DIRECTLY
-//      contradict?". Online that is qwen-plus (real semantic reasoning); offline
+//      contradict?". Online that is the configured QWEN_JUDGE_MODEL (real
+//      semantic reasoning); offline
 //      it is a deterministic polarity/negation heuristic (FakeJudge) so the whole
 //      path runs in CI with zero credentials, exactly like the rest of the suite.
 //
@@ -43,8 +44,9 @@ import {
   type QwenChatClient,
 } from "../qwen/client.js";
 
-// The judge model. qwen-plus is the same chat model the narrator uses, reached
-// through the identical OpenAI-compatible Model Studio surface — no new provider.
+// The independently configurable judge model, reached through the same
+// OpenAI-compatible Model Studio surface. qwen-plus remains the rollback
+// baseline; a candidate changes only QWEN_JUDGE_MODEL after passing promotion.
 export const DEFAULT_JUDGE_MODEL = process.env.QWEN_JUDGE_MODEL || "qwen-plus";
 
 // The default subject-similarity gate, tuned for REAL text-embedding-v4 vectors:
@@ -91,7 +93,7 @@ export interface JudgeVerdict {
 // The pluggable opposition judge — QwenJudge online, FakeJudge in CI.
 export interface SemanticJudge {
   readonly modelId: string;
-  judge(a: string, b: string): Promise<JudgeVerdict>;
+  judge(a: string, b: string, signal?: AbortSignal): Promise<JudgeVerdict>;
 }
 
 // A memory the semantic audit can compare: the domain-neutral audit view PLUS an
@@ -221,8 +223,8 @@ export async function detectSemanticContradictions(
   const selected = candidates.slice(0, maxPairs);
   const verdicts = await mapConcurrent(selected, concurrency, async ({ a, b }) => {
     try {
-      return await withTimeout(
-        judge.judge(a.content, b.content),
+      return await withAbortTimeout(
+        (signal) => judge.judge(a.content, b.content, signal),
         judgeTimeoutMs,
         "judge timed out",
       );
@@ -346,8 +348,8 @@ export async function auditSemanticConsistency(
   const selected = selectAuditMemories(memories, maxMemories);
   const outcomes = await mapConcurrent<AuditMemory, EmbeddingOutcome>(selected, concurrency, async (memory) => {
     try {
-      const embedding = await withTimeout(
-        embedder.embed(memory.content),
+      const embedding = await withAbortTimeout(
+        (signal) => embedder.embed(memory.content, signal),
         embeddingTimeoutMs,
         "embedding timed out",
       );
@@ -404,7 +406,7 @@ export class QwenJudge implements SemanticJudge {
     this.modelId = modelId;
   }
 
-  async judge(a: string, b: string): Promise<JudgeVerdict> {
+  async judge(a: string, b: string, signal?: AbortSignal): Promise<JudgeVerdict> {
     if (a.length > MAX_JUDGE_STATEMENT_CHARS || b.length > MAX_JUDGE_STATEMENT_CHARS) {
       return {
         contradict: false,
@@ -429,13 +431,18 @@ export class QwenJudge implements SemanticJudge {
           },
         ],
         temperature: 0,
-        max_tokens: 200,
+        // Qwen 3.7 JSON mode is non-thinking. Do not set max_tokens here:
+        // truncating a structured verdict turns a valid call into invalid JSON.
+        enable_thinking: false,
         response_format: { type: "json_object" as const },
       };
-      const res = await withAbortTimeout(
-        (signal) => this.client.chat.completions.create(request, { signal }),
-        boundedInteger(this.timeoutMs, DEFAULT_JUDGE_TIMEOUT_MS, 250, 30_000),
-      );
+      const res = signal
+        ? await this.client.chat.completions.create(request, { signal })
+        : await withAbortTimeout(
+            (requestSignal) => this.client.chat.completions.create(request, { signal: requestSignal }),
+            boundedInteger(this.timeoutMs, DEFAULT_JUDGE_TIMEOUT_MS, 250, 30_000),
+            "judge timed out",
+          );
       const raw = res.choices?.[0]?.message?.content ?? "";
       return parseVerdict(raw);
     } catch {
@@ -660,32 +667,34 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-    });
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 async function withAbortTimeout<T>(
   operation: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number,
+  message: string,
 ): Promise<T> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const providerPromise = operation(controller.signal);
   try {
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        controller.abort();
-        reject(new Error("judge timed out"));
+        timedOut = true;
+        controller.abort(new Error(message));
+        reject(new Error(message));
       }, timeoutMs);
     });
-    return await Promise.race([operation(controller.signal), timeout]);
+    return await Promise.race([providerPromise, timeout]);
+  } catch (error) {
+    if (timedOut) {
+      // A deadline stops queued work, but admission capacity remains held until
+      // every already-started provider request has actually settled. The live
+      // OpenAI-compatible client timeout is the final bound for signal-ignoring
+      // upstreams.
+      await providerPromise.catch(() => undefined);
+      throw new Error(message);
+    }
+    throw error;
   } finally {
     if (timer) clearTimeout(timer);
   }

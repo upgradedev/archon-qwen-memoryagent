@@ -1,4 +1,4 @@
-// Grounded-answer accuracy benchmark — the measured number for our OWN pipeline.
+// Objective figure-hit / traceability benchmark for our own frozen fixture.
 //
 //   npm run bench:accuracy          # replay the committed answers, print the table
 //   npm run bench:accuracy -- --gate  # also FAIL if below the enforced floors (CI)
@@ -8,20 +8,21 @@
 // NUMBER PRESENCE — no LLM-judge, no prose grading. Three measures:
 //
 //   RECALL      — did hybrid recall surface the gold memory into the top-5?
-//   CORRECTNESS — does the narrated answer state a gold figure?
-//   GROUNDING   — does EVERY euro figure in the answer trace to a recalled memory
-//                 (i.e. no invented figures)? This is the faithfulness number.
+//   GOLD EUR-TOKEN HIT — does the narrated answer state a labelled gold amount?
+//   COMPLETE EUR-LABELLED TRACEABILITY — does EVERY EUR-labelled amount in
+//                 the answer occur in a recalled memory?
 //
 // Why grading prose numbers is legitimate here (BENCHMARK.md expands): we do NOT
 // grade phrasing or use an LLM judge (brittle + circular). We grade whether a
-// specific, labelled FIGURE is present and whether every asserted figure is
-// grounded — both objective, reproducible string/number facts.
+// specific, labelled FIGURE is present and whether every asserted euro figure
+// is traceable — both objective, reproducible string/number facts. These narrow
+// metrics are not general answer correctness or semantic faithfulness scores.
 
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ACCURACY_SET } from "./accuracy-dataset.js";
-import { numbersIn, euroFiguresIn } from "./accuracy-common.js";
+import { euroFiguresIn } from "./accuracy-common.js";
 import { CORPUS } from "./dataset.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -42,8 +43,8 @@ interface AnswersFixture {
 // arithmetically-correct but not-stored figure. The grounding metric CORRECTLY
 // flags it (that is the metric working, not failing). We floor at what the shipped
 // narrator actually achieves and catch any regression below it.
-const GATE_CORRECTNESS = 1.0; // every labelled question answered with a gold figure
-const GATE_GROUNDING = 0.9; // ≤1 derived/ungrounded figure across all answers
+const GATE_GOLD_FIGURE_HIT = 1.0;
+const GATE_COMPLETE_EURO_FIGURE_TRACEABILITY = 0.9; // ≤1 derived/untraceable figure across all answers
 
 function main() {
   const gate = process.argv.slice(2).includes("--gate");
@@ -54,12 +55,12 @@ function main() {
   const fx = JSON.parse(readFileSync(FIXTURE, "utf8")) as AnswersFixture;
   const content = new Map(CORPUS.map((m) => [m.id, m.content]));
 
-  console.log(`\nArchon MemoryAgent — grounded-answer accuracy (${fx.model}, replayed from fixture)`);
+  console.log(`\nArchon MemoryAgent — objective figure traceability (${fx.model}, replayed from fixture)`);
   console.log(`Questions: ${ACCURACY_SET.length} · recall: hybrid top-${fx.recallK}\n`);
-  console.log(`Query  Recall  Correct  Grounded  Answer figures`);
+  console.log(`Query  Recall  Gold hit  Traceable  Answer figures`);
   console.log("-".repeat(78));
 
-  let recallHit = 0, correct = 0, grounded = 0;
+  let recallHit = 0, goldFigureHit = 0, completeTraceability = 0;
   for (const q of ACCURACY_SET) {
     const row = fx.answers[q.id];
     if (!row) {
@@ -69,40 +70,44 @@ function main() {
     // RECALL: any gold memory in the recalled set.
     const golds = q.goldMemory.split("/");
     const rHit = golds.some((g) => row.recalledIds.includes(g));
-    // CORRECTNESS: a gold figure present in the answer.
-    const ansNums = numbersIn(row.answer);
-    const isCorrect = q.goldFigures.some((f) => ansNums.has(f));
-    // GROUNDING: every euro figure in the answer is a number present in a recalled memory.
+    // GOLD EUR-TOKEN HIT: a developer-labelled amount appears with an explicit
+    // EUR/€ marker; dates and percentages cannot satisfy this check by accident.
+    const answerEuroFigures = euroFiguresIn(row.answer);
+    const hasGoldFigure = q.goldFigures.some((f) => answerEuroFigures.includes(f));
+    // TRACEABILITY: every EUR-labelled amount appears, also EUR-labelled, in a
+    // recalled memory. This is literal provenance—not prose or arithmetic truth.
     const recalledNums = new Set<number>();
-    for (const id of row.recalledIds) for (const n of numbersIn(content.get(id) ?? "")) recalledNums.add(n);
-    const figs = euroFiguresIn(row.answer);
-    const ungrounded = figs.filter((f) => !recalledNums.has(f));
-    const isGrounded = ungrounded.length === 0;
+    for (const id of row.recalledIds) for (const n of euroFiguresIn(content.get(id) ?? "")) recalledNums.add(n);
+    const figs = answerEuroFigures;
+    const untraceable = figs.filter((f) => !recalledNums.has(f));
+    const isCompletelyTraceable = untraceable.length === 0;
 
     recallHit += rHit ? 1 : 0;
-    correct += isCorrect ? 1 : 0;
-    grounded += isGrounded ? 1 : 0;
+    goldFigureHit += hasGoldFigure ? 1 : 0;
+    completeTraceability += isCompletelyTraceable ? 1 : 0;
 
     const mark = (b: boolean) => (b ? "  ✓  " : "  ✗  ");
     console.log(
-      `${q.id.padEnd(6)}${mark(rHit)}  ${mark(isCorrect)}  ${mark(isGrounded)}   ` +
-        `[${figs.join(", ")}]${ungrounded.length ? `  UNGROUNDED: ${ungrounded.join(", ")}` : ""}`
+      `${q.id.padEnd(6)}${mark(rHit)}  ${mark(hasGoldFigure)}  ${mark(isCompletelyTraceable)}   ` +
+        `[${figs.join(", ")}]${untraceable.length ? `  UNTRACEABLE: ${untraceable.join(", ")}` : ""}`
     );
   }
 
   const n = ACCURACY_SET.length;
-  const pRecall = recallHit / n, pCorrect = correct / n, pGrounded = grounded / n;
+  const pRecall = recallHit / n;
+  const pGoldFigureHit = goldFigureHit / n;
+  const pCompleteTraceability = completeTraceability / n;
   console.log("-".repeat(78));
   console.log(`Gold-memory recall@${fx.recallK} : ${recallHit}/${n}  (${(pRecall * 100).toFixed(1)}%)`);
-  console.log(`Answer correctness      : ${correct}/${n}  (${(pCorrect * 100).toFixed(1)}%)`);
-  console.log(`Answer grounding        : ${grounded}/${n}  (${(pGrounded * 100).toFixed(1)}%)  ← faithfulness`);
+  console.log(`Gold EUR-token hit      : ${goldFigureHit}/${n}  (${(pGoldFigureHit * 100).toFixed(1)}%)`);
+  console.log(`Complete EUR traceability: ${completeTraceability}/${n}  (${(pCompleteTraceability * 100).toFixed(1)}%)`);
 
   if (gate) {
-    const ok = pCorrect >= GATE_CORRECTNESS - 1e-9 && pGrounded >= GATE_GROUNDING - 1e-9;
-    console.log(`\nGate: correctness ≥ ${(GATE_CORRECTNESS * 100).toFixed(0)}% AND grounding ≥ ${(GATE_GROUNDING * 100).toFixed(0)}%`);
+    const ok = pGoldFigureHit >= GATE_GOLD_FIGURE_HIT - 1e-9 && pCompleteTraceability >= GATE_COMPLETE_EURO_FIGURE_TRACEABILITY - 1e-9;
+    console.log(`\nGate: gold EUR-token hit ≥ ${(GATE_GOLD_FIGURE_HIT * 100).toFixed(0)}% AND complete EUR traceability ≥ ${(GATE_COMPLETE_EURO_FIGURE_TRACEABILITY * 100).toFixed(0)}%`);
     if (!ok) {
       console.error(
-        `\nGATE FAILED — correctness ${(pCorrect * 100).toFixed(1)}%, grounding ${(pGrounded * 100).toFixed(1)}%.`
+        `\nGATE FAILED — gold EUR-token hit ${(pGoldFigureHit * 100).toFixed(1)}%, complete EUR traceability ${(pCompleteTraceability * 100).toFixed(1)}%.`
       );
       process.exit(1);
     }

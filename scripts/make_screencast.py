@@ -18,8 +18,8 @@ land frame-accurate.
 
 Env / args (all optional):
   TARGET_SECONDS   total screencast length; final frame is held to this (default 150)
-  OUTPUT           output mp4 path (default screencast.mp4)
-  TRANSCRIPT       transcript path (default docs/screencast_transcript.txt)
+  OUTPUT           repo-contained output mp4 path (default screencast.mp4)
+  TRANSCRIPT       repo-contained transcript path (default docs/screencast_transcript.txt)
   FPS              output framerate (default 30)
   FONT_MONO        terminal monospace .ttf
   FONT_MONO_BOLD   terminal monospace bold .ttf
@@ -36,8 +36,11 @@ import re
 import subprocess
 import sys
 import tempfile
+import atexit
+import shutil
 
 from PIL import Image, ImageDraw, ImageFont
+from repo_paths import REPO_ROOT, inside_repo
 
 # --------------------------------------------------------------------------- #
 # Canvas / layout
@@ -150,9 +153,13 @@ def wrap(text: str, font, max_px: int) -> list[str]:
 
 
 def main() -> int:
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    transcript = os.environ.get("TRANSCRIPT", os.path.join(here, "docs", "screencast_transcript.txt"))
-    output = os.environ.get("OUTPUT", os.path.join(os.getcwd(), "screencast.mp4"))
+    output = inside_repo(os.environ.get("OUTPUT", "screencast.mp4"), "OUTPUT")
+    transcript = inside_repo(
+        os.environ.get("TRANSCRIPT", "docs/screencast_transcript.txt"),
+        "TRANSCRIPT",
+        must_exist=True,
+    )
+    os.makedirs(os.path.dirname(output), exist_ok=True)
     target = float(os.environ.get("TARGET_SECONDS", "150"))
     fps = int(os.environ.get("FPS", "30"))
     ffmpeg = os.environ.get("FFMPEG", "ffmpeg")
@@ -197,7 +204,14 @@ def main() -> int:
         return img
 
     times = [r[0] for r in rows]
-    tmpdir = tempfile.mkdtemp(prefix="memagent_screencast_")
+    # Keep every intermediate inside the project so parallel agents can find the
+    # same workspace and no persistent artifact is lost in OS temp. The directory
+    # is ignored and removed on both normal and exceptional interpreter exit.
+    work_root = os.path.join(str(REPO_ROOT), ".artifacts", "work", "screencast")
+    os.makedirs(work_root, exist_ok=True)
+    tmpdir = tempfile.mkdtemp(prefix="run_", dir=work_root)
+    cleanup_tmp = lambda: shutil.rmtree(tmpdir, ignore_errors=True)
+    atexit.register(cleanup_tmp)
     concat_path = os.path.join(tmpdir, "concat.txt")
 
     keyframes = [(0.0, 0)]
@@ -237,6 +251,7 @@ def main() -> int:
     print("[screencast] " + " ".join(cmd))
     r = subprocess.run(cmd)
     if r.returncode != 0:
+        cleanup_tmp()
         return r.returncode
 
     try:
@@ -247,6 +262,7 @@ def main() -> int:
         print(f"[screencast] wrote {output} duration={dur}s (target {target}s)")
     except Exception as e:
         print(f"[screencast] wrote {output} (ffprobe check skipped: {e})")
+    cleanup_tmp()
     return 0
 
 

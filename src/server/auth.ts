@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 export const DEFAULT_PUBLIC_TENANT = "_public";
+export const DEFAULT_JUDGE_TENANT = "_judge_demo";
 
 export interface JudgePrincipal {
   tenantId: string;
@@ -51,6 +52,17 @@ export function loadJudgeAuth(options: JudgeAuthOptions = {}): JudgeAuthConfig {
     tenants.add(tenantId);
     secrets.add(key);
     apiKeys.push({ tenantId, digest: digest(key, digestKey) });
+  }
+  // A protected principal sharing the public read tenant would turn authenticated
+  // feedback/lifecycle/private writes into unauthenticated recall/list/P&L data.
+  // Fail at startup. The escape hatch is deliberately loud and intended only for
+  // isolated demo migration; production deployments should never enable it.
+  const allowSharedPublicTenant = envFlag("ALLOW_SHARED_PUBLIC_JUDGE_TENANT", false);
+  if (tenants.has(publicTenantId) && !allowSharedPublicTenant) {
+    throw new Error(
+      "judge tenant must differ from PUBLIC_TENANT_ID; set a private JUDGE_TENANT_ID " +
+      "(ALLOW_SHARED_PUBLIC_JUDGE_TENANT is an unsafe demo-only override)",
+    );
   }
   return { required, apiKeys, publicTenantId, digestKey };
 }
@@ -125,7 +137,7 @@ function readKeysFromEnvironment(): Record<string, string> {
     }
   }
   if (process.env.JUDGE_API_KEY) {
-    return { [process.env.JUDGE_TENANT_ID ?? DEFAULT_PUBLIC_TENANT]: process.env.JUDGE_API_KEY };
+    return { [process.env.JUDGE_TENANT_ID ?? DEFAULT_JUDGE_TENANT]: process.env.JUDGE_API_KEY };
   }
   return {};
 }

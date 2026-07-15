@@ -39,6 +39,7 @@ export interface ToolChatArgs {
   tools?: SkillToolDef[];
   tool_choice?: "auto" | "none";
   temperature?: number;
+  enable_thinking?: boolean;
 }
 export interface ToolChatResponse {
   choices: Array<{ message: { content: string | null; tool_calls?: SkillToolCall[] } }>;
@@ -106,6 +107,7 @@ export async function runSkillLoop(
       tools,
       tool_choice: "auto",
       temperature: 0.2,
+      enable_thinking: false,
     });
     const message = res.choices?.[0]?.message;
     const toolCalls = message?.tool_calls ?? [];

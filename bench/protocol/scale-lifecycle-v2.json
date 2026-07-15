@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "name": "scale-lifecycle-v2",
+  "corpus": {
+    "defaultMemories": 10000,
+    "minimumMemories": 200,
+    "maximumMemories": 10000,
+    "embeddingDimensions": 1024,
+    "companies": 8,
+    "synthetic": true,
+    "vectorGenerator": "Mulberry32 sparse unit vector; seed = 0x51a7e + index * 997; 16 draws"
+  },
+  "retrieval": {
+    "queries": 60,
+    "targetIndexFormula": "(queryIndex * 31) % corpusSize",
+    "goldTarget": "the exact stored memory selected by targetIndexFormula, matched by sourceRef",
+    "queryVector": "the exact gold memory embedding; controlled index/ranking correctness, not semantic generalization",
+    "queryText": "the gold memory's unique invoice reference plus 'approved total'",
+    "hybrid": true,
+    "topK": 5,
+    "qualityMetrics": ["goldTargetHitAt1Pct", "goldTargetHitAt5Pct", "meanReciprocalRank"]
+  },
+  "boundedContext": {
+    "scope": "all memories for the target memory's company",
+    "returnedContext": "retrieved top-k",
+    "tokenEstimator": "ceil(UTF-16 string length / 4)",
+    "interpretation": "directional context-size estimate only; not tokenizer-accurate quality, latency, cost, or savings evidence"
+  },
+  "lifecycle": {
+    "duplicateRows": 12,
+    "distinctRows": 18,
+    "consolidationThreshold": 0.99,
+    "feedbackScenario": "supersede a 12-month warranty fact with a 24-month correction"
+  },
+  "gate": {
+    "minimumGoldTargetHitAt1Pct": 99,
+    "minimumGoldTargetHitAt5Pct": 100,
+    "minimumMeanReciprocalRank": 0.99,
+    "minimumEstimatedContextReductionPctAtDefaultSize": 95,
+    "requireEveryQueryReturnsTopK": true,
+    "requireLifecycleInvariants": true,
+    "latencyIsNeverAGate": true
+  }
+}

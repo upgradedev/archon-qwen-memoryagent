@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS agent_memory (
     -- Scope / retrieval filters (exact-match, via the btree indexes below).
     kind          TEXT NOT NULL,            -- document | payroll_event | validation | insight
     company       TEXT NOT NULL DEFAULT '_global',
+    -- Stable lookup identity. `company` remains the original display label.
+    company_key   TEXT NOT NULL DEFAULT '_global',
     period        TEXT,
     source_ref    TEXT,
     -- The recallable content.
@@ -106,6 +108,15 @@ ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ;
 ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS superseded_by UUID;
 ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT '_public';
 ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS company_key TEXT;
+-- Backfill pre-migration rows with the same NFKC + collapsed-whitespace +
+-- case-fold policy used by the application. PostgreSQL's normalize() is
+-- available on the supported UTF-8 PostgreSQL 16 deployment.
+UPDATE agent_memory
+   SET company_key = lower(trim(regexp_replace(normalize(company, NFKC), '[[:space:]]+', ' ', 'g')))
+ WHERE company_key IS NULL;
+ALTER TABLE agent_memory ALTER COLUMN company_key SET DEFAULT '_global';
+ALTER TABLE agent_memory ALTER COLUMN company_key SET NOT NULL;
 
 -- HNSW cosine index — no training step, built incrementally as rows are inserted.
 -- `ORDER BY embedding <=> $q LIMIT k` is index-accelerated for semantic recall.
@@ -122,11 +133,12 @@ CREATE INDEX IF NOT EXISTS idx_agent_memory_content_fts
 CREATE INDEX IF NOT EXISTS idx_agent_memory_kind ON agent_memory (kind);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_company ON agent_memory (company);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_tenant_company ON agent_memory (tenant_id, company);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_tenant_company_key ON agent_memory (tenant_id, company_key);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_source_ref ON agent_memory (source_ref);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_period ON agent_memory (period);
 -- Recall skips superseded memories; this partial index keeps that filter cheap.
 CREATE INDEX IF NOT EXISTS idx_agent_memory_active
-    ON agent_memory (tenant_id, company) WHERE superseded_at IS NULL;
+    ON agent_memory (tenant_id, company_key) WHERE superseded_at IS NULL;
 
 -- A null key deliberately permits distinct memories about the same source. Only
 -- producer operations that opt into retry safety participate in this constraint.
@@ -153,3 +165,46 @@ CREATE TABLE IF NOT EXISTS memory_feedback (
 ALTER TABLE memory_feedback ADD COLUMN IF NOT EXISTS request_hash CHAR(64);
 CREATE INDEX IF NOT EXISTS idx_memory_feedback_memory
     ON memory_feedback (tenant_id, memory_id);
+
+-- Atomic human selection among EXISTING carriers of one field contradiction.
+-- Unlike free-text feedback this creates no duplicate correction memory: the
+-- selected row remains active and every other active carrier is superseded in
+-- the same transaction. The durable result makes lost-response retries safe.
+CREATE TABLE IF NOT EXISTS memory_conflict_resolution (
+    tenant_id          TEXT NOT NULL,
+    decision_id        VARCHAR(128) NOT NULL,
+    request_hash       CHAR(64) NOT NULL,
+    subject            TEXT NOT NULL,
+    attribute          TEXT NOT NULL,
+    selected_memory_id UUID NOT NULL,
+    target_memory_ids  UUID[] NOT NULL,
+    actor               TEXT,
+    reason              TEXT,
+    result             JSONB,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at       TIMESTAMPTZ,
+    PRIMARY KEY (tenant_id, decision_id)
+);
+ALTER TABLE memory_conflict_resolution ADD COLUMN IF NOT EXISTS actor TEXT;
+ALTER TABLE memory_conflict_resolution ADD COLUMN IF NOT EXISTS reason TEXT;
+CREATE INDEX IF NOT EXISTS idx_memory_conflict_resolution_selected
+    ON memory_conflict_resolution (tenant_id, selected_memory_id);
+
+-- Durable provenance for both reversible consolidation and irreversible
+-- forgetting. The record deliberately stores normalized parameters/counts, not
+-- deleted memory content. Confirmed retries replay `result` by operation id.
+CREATE TABLE IF NOT EXISTS memory_lifecycle_operation (
+    tenant_id      TEXT NOT NULL,
+    operation_id   VARCHAR(128) NOT NULL,
+    request_hash   CHAR(64) NOT NULL,
+    operation_type TEXT NOT NULL CHECK (operation_type IN ('consolidate', 'forget')),
+    actor           TEXT NOT NULL,
+    reason          TEXT NOT NULL,
+    parameters      JSONB NOT NULL,
+    result          JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at    TIMESTAMPTZ,
+    PRIMARY KEY (tenant_id, operation_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_lifecycle_operation_created
+    ON memory_lifecycle_operation (tenant_id, created_at DESC);

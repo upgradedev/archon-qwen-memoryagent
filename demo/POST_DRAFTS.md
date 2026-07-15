@@ -35,7 +35,7 @@ Technical write-up: [PUBLIC_BLOG_URL]
 
 **Title:** Memory that audits itself: a Qwen MemoryAgent you can actually trust
 
-**Subtitle:** Persistent recall is the easy half. Archon detects when cross-session memories conflict, recommends a resolution without mutating history, and backs the claim with reproducible benchmarks.
+**Subtitle:** Persistent recall is the easy half. Archon audits cross-session conflicts read-only, recommends a resolution, and lets a reviewer apply a separate atomic decision—with reproducible evidence for each claim.
 
 **Excerpt:**
 
@@ -51,12 +51,12 @@ Archon MemoryAgent is a Track 1 submission for the Global AI Hackathon Series wi
 
 Live: https://memory.43.106.13.19.sslip.io
 Source (MIT): https://github.com/upgradedev/archon-qwen-memoryagent
-Architecture: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/docs/architecture.png
+Architecture: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/docs/judge-architecture.svg
 Alibaba/Qwen code proof: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts
 Technical post: [PUBLIC_BLOG_URL]
 
-Models: `text-embedding-v4`, `qwen-plus`, `qwen-vl-max` via Alibaba Cloud Model Studio / DashScope.
+Models: `text-embedding-v4`, `qwen-plus` narration/rerank/skills, the health-visible configured semantic judge (`qwen-plus` rollback baseline), and `qwen-vl-max` via Alibaba Cloud Model Studio / DashScope.
 
 ## Devpost project update
 
-Final release update: Archon MemoryAgent now ships server-owned tenant isolation, authenticated mutations and semantic audit, durable two-tier Qwen quotas, exact invoice idempotency, explicit correction feedback, dry-run/confirm memory lifecycle, authenticated HTTP MCP, and mixed-currency-safe P&L. The final verified suite is 300 total / 285 pass / 0 fail / 15 real-DB skips, with 91.96% statement coverage. Demo: [PUBLIC_VIDEO_URL]
+Final release update: Archon MemoryAgent now ships server-owned tenant isolation, authenticated mutations and semantic audit, durable weighted Qwen quotas, exact invoice idempotency, explicit human conflict resolution, dry-run/confirm memory lifecycle, authenticated HTTP MCP, and mixed-currency-safe P&L. Exact test/coverage values are linked from the final immutable CI run. Demo: [PUBLIC_VIDEO_URL]

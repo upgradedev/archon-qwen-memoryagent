@@ -76,11 +76,17 @@ test("dispatch recall_memory → grounded answer + citations from stored memory"
   const res = (await dispatcher.dispatch("recall_memory", {
     company: "ByteCraft Software",
     question: "What was ByteCraft Software revenue?",
-  })) as { answer: string; citations: unknown[]; modelId: string; consistency: unknown };
+  })) as { answer: string; citations: unknown[]; modelId: string; consistency: unknown; retrieval: { strategy: string }; grounding?: { status: string } };
   assert.ok(res.answer.length > 0);
   assert.ok(Array.isArray(res.citations) && res.citations.length >= 1);
   assert.equal(res.modelId, "fake-narrator");
   assert.ok(res.consistency, "recall carries a best-effort self-audit");
+  assert.equal(res.retrieval.strategy, "hybrid");
+  assert.equal(
+    res.grounding,
+    undefined,
+    "the offline FakeNarrator does not run the model-output grounding repair stage",
+  );
 });
 
 test("dispatch audit_memory → returns a read-only consistency report", async () => {
@@ -216,6 +222,7 @@ test("runSkillLoop: qwen-plus invokes a skill then grounds its final answer", as
   assert.match(out.answer, /210000/);
   // The loop advertised the skills as tools to the model.
   assert.ok(client.calls[0]!.tools && client.calls[0]!.tools.length === SKILLS.length);
+  assert.equal(client.calls.every((call) => call.enable_thinking === false), true);
 });
 
 test("runSkillLoop: returns the model's answer directly when it calls no skill", async () => {

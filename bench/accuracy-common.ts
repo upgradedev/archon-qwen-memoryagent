@@ -9,9 +9,9 @@ import { retrieveHybrid, type Candidate } from "../src/memory/retrieval.js";
 
 export const RECALL_K = 5;
 
-// All numeric VALUES in a text, comma-grouping removed ("18,400" → 18400). Used to
-// grade grounding (every answer figure must be a number present in a recalled
-// memory) and correctness (a gold figure must appear in the answer).
+// All numeric TOKENS in a text, comma-grouping removed ("18,400" → 18400).
+// This intentionally has no semantic/context claim; dates and percentages are
+// numbers too. Currency-specific grading uses euroFiguresIn below.
 export function numbersIn(text: string): Set<number> {
   const cleaned = text.replace(/(\d),(?=\d)/g, "$1"); // strip thousands separators
   const out = new Set<number>();
@@ -22,14 +22,25 @@ export function numbersIn(text: string): Set<number> {
   return out;
 }
 
-// The euro FIGURES an answer asserts — numbers written with a € marker. These are
-// the claims that must be grounded; a bare year like "2026" is not a euro figure.
+const EN_AMOUNT = String.raw`[-+]?(?:\d{1,3}(?:[,\u00a0 ]\d{3})+|\d+)(?:\.\d+)?`;
+
+function parseEnglishAmount(raw: string): number | null {
+  const n = Number(raw.replace(/[,\u00a0 ]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+// The EUR-labelled monetary claims an answer asserts. Accept the symbol or ISO
+// code on either side ("€18,400", "EUR 18,400", "18,400 EUR", "18,400 €").
+// A bare year or percentage is therefore never accidentally graded as money.
 export function euroFiguresIn(answer: string): number[] {
-  const cleaned = answer.replace(/(\d),(?=\d)/g, "$1");
   const out: number[] = [];
-  for (const m of cleaned.matchAll(/€\s?(\d+(?:\.\d+)?)/g)) {
-    const n = Number(m[1]);
-    if (Number.isFinite(n)) out.push(n);
+  const labelled = new RegExp(
+    String.raw`(?:€|EUR)\s*(${EN_AMOUNT})|(${EN_AMOUNT})\s*(?:€|EUR)`,
+    "giu",
+  );
+  for (const match of answer.matchAll(labelled)) {
+    const n = parseEnglishAmount(match[1] ?? match[2] ?? "");
+    if (n !== null) out.push(n);
   }
   return out;
 }

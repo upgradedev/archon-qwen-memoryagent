@@ -96,14 +96,17 @@ jobs:
     needs: secret-scan
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memoryagent
+      DATABASE_URL: postgresql://memoryagent_app:ci-memoryagent-runtime-password-2026@localhost:5432/memoryagent
+      MEMORY_APP_DB_PASSWORD: ci-memoryagent-runtime-password-2026
+      CROSS_APP_DATABASE_NAME: postgres
     services:
       pgvector:
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_DB: memoryagent
         ports:
           - 5432:5432
         options: >-
@@ -131,6 +134,9 @@ jobs:
       - name: Apply schema (creates the vector(1024) memory table + HNSW index)
         run: npm run db:schema
 
+      - name: Verify DML-only runtime role and cross-database denial
+        run: npm run db:verify-role
+
       - name: Unit tests (no infra, no key)
         run: npm run test:unit
 
@@ -152,7 +158,10 @@ jobs:
     needs: secret-scan
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memoryagent
+      DATABASE_URL: postgresql://memoryagent_app:ci-memoryagent-runtime-password-2026@localhost:5432/memoryagent
+      MEMORY_APP_DB_PASSWORD: ci-memoryagent-runtime-password-2026
+      CROSS_APP_DATABASE_NAME: postgres
       # Keep the pen-test budget-exhaustion case fast (5 valid calls + 1 → 429),
       # instead of driving the default 100-call per-IP limit through the pipeline.
       INGEST_DAILY_LIMIT: "5"
@@ -162,7 +171,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_DB: memoryagent
         ports:
           - 5432:5432
         options: >-
@@ -180,12 +189,14 @@ jobs:
         run: npm ci
       - name: Apply schema (creates the vector(1024) memory table + HNSW index)
         run: npm run db:schema
+      - name: Verify DML-only runtime role and cross-database denial
+        run: npm run db:verify-role
       - name: Coverage gate (full pyramid under c8; fails below the src/ floor)
         run: >-
           npx c8 --check-coverage
           --statements=80 --branches=80 --functions=80 --lines=80
           node --import tsx --test --test-concurrency=1
-          tests/unit/embeddings.test.ts tests/unit/narrator.test.ts
+          tests/unit/db-least-privilege.test.ts tests/unit/embeddings.test.ts tests/unit/narrator.test.ts
           tests/unit/memory.test.ts tests/unit/retrieval.test.ts
           tests/unit/metrics.test.ts tests/unit/consolidation.test.ts
           tests/unit/consistency.test.ts tests/unit/semantic-consistency.test.ts tests/unit/rerank.test.ts
@@ -234,10 +245,14 @@ jobs:
         run: npm run bench:consistency -- --gate
       - name: Meaning-level semantic self-audit gate (90% recall, 100% precision, 0 FP)
         run: npm run bench:semantic -- --gate
+      - name: Broad held-out semantic gate (48 pairs, hard controls, all misses retained)
+        run: npm run bench:semantic:heldout -- --gate
       - name: Contradiction-resolution gate (structural invariants + policy-conformance)
         run: npm run bench:resolution -- --gate
       - name: Grounded-answer accuracy gate (replays committed qwen-plus answers; correctness + grounding)
         run: npm run bench:accuracy -- --gate
+      - name: External Mem0 evidence runner self-test (no provider call)
+        run: npm run bench:external:self-test
 
   # Stage 4 — submission READINESS GATE. Encodes the four judging criteria
   # (Technical 30 · Innovation 30 · Problem 25 · Presentation 15) as machine
@@ -277,7 +292,10 @@ jobs:
     needs: secret-scan
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memoryagent
+      DATABASE_URL: postgresql://memoryagent_app:ci-memoryagent-runtime-password-2026@localhost:5432/memoryagent
+      MEMORY_APP_DB_PASSWORD: ci-memoryagent-runtime-password-2026
+      CROSS_APP_DATABASE_NAME: postgres
       # Small budget so the 429 exhaustion case is fast (5 valid calls, then a 429).
       INGEST_DAILY_LIMIT: "5"
     services:
@@ -286,7 +304,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_DB: memoryagent
         ports:
           - 5432:5432
         options: >-
@@ -304,6 +322,8 @@ jobs:
         run: npm ci
       - name: Apply schema (creates the vector(1024) memory table + HNSW index)
         run: npm run db:schema
+      - name: Verify DML-only runtime role and cross-database denial
+        run: npm run db:verify-role
       - name: Pen-test suite (authz · injection · MCP boundary · exposure · SQLi)
         run: npm run test:security
 
@@ -317,7 +337,10 @@ jobs:
     needs: secret-scan
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memoryagent
+      DATABASE_URL: postgresql://memoryagent_app:ci-memoryagent-runtime-password-2026@localhost:5432/memoryagent
+      MEMORY_APP_DB_PASSWORD: ci-memoryagent-runtime-password-2026
+      CROSS_APP_DATABASE_NAME: postgres
       PORT: "9000"
     services:
       pgvector:
@@ -325,7 +348,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_DB: memoryagent
         ports:
           - 5432:5432
         options: >-
@@ -343,6 +366,8 @@ jobs:
         run: npm ci
       - name: Apply schema (creates the vector(1024) memory table + HNSW index)
         run: npm run db:schema
+      - name: Verify DML-only runtime role and cross-database denial
+        run: npm run db:verify-role
 
       - name: Install k6
         run: |

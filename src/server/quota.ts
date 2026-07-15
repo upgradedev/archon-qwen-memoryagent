@@ -1,5 +1,7 @@
 import { withClient } from "../db/client.js";
 
+export const QUOTA_RETENTION_DAYS = 30;
+
 export interface QuotaResult {
   ok: boolean;
   remaining: number;
@@ -11,6 +13,8 @@ export interface QuotaCharge {
   bucket: string;
   subject: string;
   limit: number;
+  /** Atomic work units reserved by this operation (defaults to one). */
+  units?: number;
 }
 
 /** Injectable seam; production defaults to the durable PostgreSQL backend. */
@@ -39,17 +43,18 @@ export class InMemoryDailyQuotaBackend implements DailyQuotaBackend {
     const normalized = charges.map((charge) => ({
       ...charge,
       limit: clampLimit(charge.limit),
+      units: clampUnits(charge.units),
       key: `${charge.bucket}:${charge.subject}`,
     }));
 
     for (const charge of normalized) {
       const state = this.buckets.get(charge.key);
       const currentCount = state?.day === day ? state.count : 0;
-      const proposed = currentCount + (pending.get(charge.key) ?? 0) + 1;
+      const proposed = currentCount + (pending.get(charge.key) ?? 0) + charge.units;
       if (proposed > charge.limit) {
         return { ok: false, remaining: 0, limit: charge.limit, resetAt: resetAt.toISOString() };
       }
-      pending.set(charge.key, (pending.get(charge.key) ?? 0) + 1);
+      pending.set(charge.key, (pending.get(charge.key) ?? 0) + charge.units);
     }
 
     for (const [key, increment] of pending) {
@@ -87,7 +92,15 @@ export class PgDailyQuotaBackend implements DailyQuotaBackend {
       bucket: charge.bucket.slice(0, 64),
       subject: charge.subject.slice(0, 128),
       limit: clampLimit(charge.limit),
+      units: clampUnits(charge.units),
     }));
+    // The INSERT arm of an upsert has no existing row against which to apply
+    // the ON CONFLICT limit predicate. Reject an oversized first-ever charge
+    // before opening a transaction so it cannot create an over-limit counter.
+    const oversized = normalized.find((charge) => charge.units > charge.limit);
+    if (oversized) {
+      return { ok: false, remaining: 0, limit: oversized.limit, resetAt: resetAt.toISOString() };
+    }
     // Stable lock order prevents two differently ordered batches deadlocking.
     const ordered = [...normalized].sort((a, b) =>
       `${a.bucket}\0${a.subject}`.localeCompare(`${b.bucket}\0${b.subject}`),
@@ -99,12 +112,12 @@ export class PgDailyQuotaBackend implements DailyQuotaBackend {
         for (const charge of ordered) {
           const rows = await client.query<{ count: number | string }>(
             `INSERT INTO api_daily_quota (quota_day, bucket, subject, count)
-             VALUES ($1::date, $2, $3, 1)
+             VALUES ($1::date, $2, $3, $5)
              ON CONFLICT (quota_day, bucket, subject) DO UPDATE
-               SET count = api_daily_quota.count + 1
-               WHERE api_daily_quota.count < $4
+               SET count = api_daily_quota.count + $5
+               WHERE api_daily_quota.count + $5 <= $4
              RETURNING count`,
-            [day, charge.bucket, charge.subject, charge.limit],
+            [day, charge.bucket, charge.subject, charge.limit, charge.units],
           );
           if (rows.rows.length === 0) {
             await client.query("ROLLBACK");
@@ -118,6 +131,20 @@ export class PgDailyQuotaBackend implements DailyQuotaBackend {
             resetAt: resetAt.toISOString(),
           });
         }
+        // Quota rows are operational counters, not a permanent audit log. Keep
+        // the table bounded while making cleanup best-effort: a cleanup failure
+        // rolls back only to its savepoint and never loses an accepted charge.
+        await client.query("SAVEPOINT quota_retention_cleanup");
+        try {
+          await client.query(
+            `DELETE FROM api_daily_quota
+              WHERE quota_day < ($1::date - $2::integer)`,
+            [day, QUOTA_RETENTION_DAYS],
+          );
+          await client.query("RELEASE SAVEPOINT quota_retention_cleanup");
+        } catch {
+          await client.query("ROLLBACK TO SAVEPOINT quota_retention_cleanup");
+        }
         await client.query("COMMIT");
         return results.get(normalized.length - 1)!;
       } catch (err) {
@@ -129,22 +156,34 @@ export class PgDailyQuotaBackend implements DailyQuotaBackend {
 }
 
 export interface QwenQuotaPolicy {
+  readinessPerSubject: number;
+  readinessJudgeReserve: number;
   recallPerSubject: number;
-  recallGlobal: number;
+  recallPublicGlobal: number;
+  recallJudgeReserve: number;
   ingestPerSubject: number;
-  ingestGlobal: number;
+  ingestPublicGlobal: number;
+  ingestJudgeReserve: number;
   semanticPerSubject: number;
-  semanticGlobal: number;
+  semanticPublicGlobal: number;
+  semanticJudgeReserve: number;
 }
+
+export type QuotaPool = "public" | "judge";
 
 export function loadQwenQuotaPolicy(): QwenQuotaPolicy {
   return {
+    readinessPerSubject: envLimit("DEEP_READINESS_DAILY_LIMIT", 30),
+    readinessJudgeReserve: envLimit("DEEP_READINESS_DAILY_LIMIT_GLOBAL", 300),
     recallPerSubject: envLimit("RECALL_DAILY_LIMIT", 200),
-    recallGlobal: envLimit("RECALL_DAILY_LIMIT_GLOBAL", 2_000),
+    recallPublicGlobal: envLimit("RECALL_DAILY_LIMIT_GLOBAL", 2_000),
+    recallJudgeReserve: envLimit("RECALL_DAILY_LIMIT_JUDGE_RESERVE", 400),
     ingestPerSubject: envLimit("INGEST_DAILY_LIMIT", 100),
-    ingestGlobal: envLimit("INGEST_DAILY_LIMIT_GLOBAL", 500),
-    semanticPerSubject: envLimit("SEMANTIC_AUDIT_DAILY_LIMIT", 20),
-    semanticGlobal: envLimit("SEMANTIC_AUDIT_DAILY_LIMIT_GLOBAL", 100),
+    ingestPublicGlobal: envLimit("INGEST_DAILY_LIMIT_GLOBAL", 500),
+    ingestJudgeReserve: envLimit("INGEST_DAILY_LIMIT_JUDGE_RESERVE", 200),
+    semanticPerSubject: envLimit("SEMANTIC_AUDIT_DAILY_LIMIT", 500),
+    semanticPublicGlobal: envLimit("SEMANTIC_AUDIT_DAILY_LIMIT_GLOBAL", 2_500),
+    semanticJudgeReserve: envLimit("SEMANTIC_AUDIT_DAILY_LIMIT_JUDGE_RESERVE", 2_500),
   };
 }
 
@@ -154,10 +193,12 @@ export async function consumeTwoTierQuota(
   subject: string,
   perSubject: number,
   global: number,
+  pool: QuotaPool = "public",
+  units = 1,
 ): Promise<QuotaResult> {
   return backend.consumeMany([
-    { bucket: `${bucket}:subject`, subject, limit: perSubject },
-    { bucket: `${bucket}:global`, subject: "global", limit: global },
+    { bucket: `${bucket}:${pool}:subject`, subject, limit: perSubject, units },
+    { bucket: `${bucket}:${pool}:global`, subject: pool, limit: global, units },
   ]);
 }
 
@@ -167,6 +208,12 @@ function envLimit(name: string, fallback: number): number {
 }
 
 function clampLimit(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(1, Math.min(Math.floor(value), 1_000_000));
+}
+
+function clampUnits(value: number | undefined): number {
+  if (value == null) return 1;
   if (!Number.isFinite(value)) return 1;
   return Math.max(1, Math.min(Math.floor(value), 1_000_000));
 }

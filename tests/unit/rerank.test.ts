@@ -50,11 +50,13 @@ test("retrieveHybridReranked promotes the doc the re-ranker scores highest", () 
 
 test("LlmReranker parses a JSON score map from the model (injected client)", async () => {
   let seen: Parameters<QwenChatClient["chat"]["completions"]["create"]>[0] | undefined;
+  let seenSignal: AbortSignal | undefined;
   const fakeClient: QwenChatClient = {
     chat: {
       completions: {
-        async create(args) {
+        async create(args, options) {
           seen = args;
+          seenSignal = options?.signal;
           return {
             choices: [
               { message: { content: '{"0":0.1,"1":0.95}' } },
@@ -65,14 +67,18 @@ test("LlmReranker parses a JSON score map from the model (injected client)", asy
     },
   };
   const rr = new LlmReranker(fakeClient, "qwen-plus-test");
+  const controller = new AbortController();
   const scored = await rr.rerank("q", [
     { id: "d0", content: "irrelevant" },
     { id: "d1", content: "the answer" },
-  ]);
+  ], controller.signal);
   const byId = new Map(scored.map((s) => [s.id, s.score]));
   assert.equal(byId.get("d0"), 0.1);
   assert.equal(byId.get("d1"), 0.95);
   assert.equal(seen?.response_format?.type, "json_object");
+  assert.equal(seen?.enable_thinking, false);
+  assert.equal("max_tokens" in seen!, false, "JSON mode must not risk truncating the score map");
+  assert.equal(seenSignal, controller.signal, "the request must receive the caller's cancellation signal");
   const envelope = JSON.parse(seen!.messages[1]!.content);
   assert.equal(envelope.query, "q");
   assert.deepEqual(envelope.candidates.map((c: { index: number }) => c.index), [0, 1]);

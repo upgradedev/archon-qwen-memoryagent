@@ -6,22 +6,25 @@ The canonical current sources are:
 
 - [`CLAIM_EVIDENCE_MATRIX.md`](./CLAIM_EVIDENCE_MATRIX.md) for every judge-facing claim and caveat;
 - [`JUDGE-GUIDE.md`](./JUDGE-GUIDE.md) for the public and authenticated click paths;
-- [`architecture.svg`](./architecture.svg) / [`architecture.png`](./architecture.png) for the submission diagram; and
+- [`judge-architecture.svg`](./judge-architecture.svg) / [`demo/final-media/judge-architecture.jpg`](../demo/final-media/judge-architecture.jpg) for the submission hero; and
 - [`../demo/FINAL_MEDIA_CHECKLIST.md`](../demo/FINAL_MEDIA_CHECKLIST.md) for the remaining human-owned work.
 
 ## Current verified engineering evidence
 
 | Evidence | Verified result |
 |---|---|
-| Full Node test/coverage surface | **300 total · 285 pass · 0 fail · 15 intentional real-DB skips** |
-| Coverage | **91.96% statements · 84.96% branches · 91.25% functions · 91.96% lines** |
+| Full Node test/coverage surface | Exact values come from the final immutable CI artifact; real-DB skips are explicit. |
 | Field-level self-audit | **5/5 injected problems detected · 0 false positives** |
-| Resolution policy | **4/4 winners and 4/4 rules correct** on the labelled policy set |
+| Resolution policy | **4/4 declared-policy conformance (selected memory + rule)** |
 | Meaning-level self-audit | **90% recall · 100% precision · 0 false positives** on the committed offline labelled set |
+| Historical online meaning-level evidence | **97.92% accuracy · 100% precision · 95.83% recall** per frozen developer-labelled synthetic-set stability repetition; one embedding timeout retained as an inconclusive false negative; immutable metadata records a dirty tree, so final promotion uses the new clean-source A/B artifact |
 | Reranked hybrid retrieval | **MRR 0.911 · nDCG@5 0.938 · Recall@3 96.7%** |
-| Grounded-answer evaluation | **100% correctness · 90.9% grounding/faithfulness** |
+| Answer fixture EUR-token checks | **11/11 gold EUR-token hit · 10/11 complete EUR-labelled amount traceability** |
 
-The semantic figures measure the deterministic offline judge, not live-Qwen accuracy. The 15 skipped tests are the real-PostgreSQL slices when no integration database is supplied; they are not failures.
+The 90%/100% semantic figures measure the deterministic offline judge; the
+separate online row is the frozen `text-embedding-v4` + `qwen-plus` result. None
+is a production-prevalence estimate. Real-PostgreSQL slices skip when no
+integration database is supplied; they are not failures.
 
 ## Current trust and scope contract
 

@@ -85,8 +85,7 @@ export interface SkillDefinition {
 const kindProperty = {
   type: "string",
   enum: MEMORY_KINDS,
-  description:
-    "Memory kind: document | payroll_event | validation | insight.",
+  description: `Memory kind: ${MEMORY_KINDS.join(" | ")}.`,
 } as const;
 
 // The canonical skill catalogue. recall / ingest / audit are the three

@@ -13,6 +13,9 @@
 
 import type { ExtractedDocument } from "./models.js";
 import type { EmployeePayslip, PayrollEvent } from "../types.js";
+import { normalizePayrollEvent } from "./payroll-integrity.js";
+import { normalizeIso4217Currency } from "./currency.js";
+import { canonicalIdentifier } from "./identity.js";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
@@ -53,7 +56,7 @@ export function linkEvents(docs: ExtractedDocument[]): PayrollEvent[] {
     const eventRef = group
       .map((doc) => displayEventRef(doc.event_ref))
       .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[0]!;
-    const register = mergeConsistentDocuments(
+    const mergedRegister = mergeConsistentDocuments(
       group.filter((d) => d.doc_type === "payroll_register"),
       ["gross_pay_total", "employer_cost_total", "employer_social_security_total", "employee_count"],
     );
@@ -62,25 +65,38 @@ export function linkEvents(docs: ExtractedDocument[]): PayrollEvent[] {
       ["net_pay_total", "employee_count", "payment_date"],
     );
     const payslips = group.filter((d) => d.doc_type === "payslip" && d.payslip);
-    if (!register && !bank && payslips.length === 0) {
+    if (!mergedRegister && !bank && payslips.length === 0) {
       throw new EventLinkError(`No recognized financial evidence for ${company} ${period}.`);
     }
-    if (!register || !bank) {
+    if (!mergedRegister || !bank) {
       throw new EventLinkError(
         `A complete payroll event for ${company} ${period} requires both a payroll register and bank confirmation.`,
       );
     }
+    const register = completeRegisterTotals(mergedRegister, company, period);
+    if (bank.net_pay_total == null) {
+      throw new EventLinkError(
+        `Bank confirmation for ${company} ${period} requires net_pay_total.`,
+      );
+    }
+
+    const knownCurrencies = [...new Set(group
+      .map((doc) => normalizedCurrency(doc.currency))
+      .filter((value): value is string => value != null))];
+    if (knownCurrencies.length > 1) {
+      throw new EventLinkError(
+        `Conflicting payroll currencies for ${company} ${period}: ${knownCurrencies.sort().join(", ")}.`,
+      );
+    }
+    const currency = knownCurrencies[0];
 
     const employees = uniquePayslips(payslips);
 
     // gross: register total, else sum of payslip gross.
-    const gross_total = register?.gross_pay_total ?? sum(employees.map((e) => e.gross));
+    const gross_total = register.gross_pay_total!;
     // employer social security: register field, else register(cost-gross), else payslip sum.
     const employer_social_security_total =
-      register?.employer_social_security_total ??
-      (register?.employer_cost_total != null
-        ? register.employer_cost_total - gross_total
-        : sum(employees.map((e) => e.employer_social_security)));
+      register.employer_social_security_total!;
     if (employer_social_security_total < 0) {
       throw new EventLinkError(
         `Employer cost is below gross pay for ${company} ${period}; refusing a negative contribution total.`,
@@ -88,32 +104,29 @@ export function linkEvents(docs: ExtractedDocument[]): PayrollEvent[] {
     }
     // true employer cost: register total, else gross + employer SS.
     const employer_cost_total =
-      register?.employer_cost_total ?? gross_total + employer_social_security_total;
+      register.employer_cost_total!;
     // net cash that actually left the bank: bank confirmation, else payslip net sum.
-    const bank_net_total = bank?.net_pay_total ?? sum(employees.map((e) => e.net));
+    const bank_net_total = bank.net_pay_total;
 
     const employee_social_security_total = sum(employees.map((e) => e.employee_social_security));
     const tax_withheld_total = sum(employees.map((e) => e.tax));
     if (
-      register?.employee_count != null &&
-      bank?.employee_count != null &&
+      register.employee_count != null &&
+      bank.employee_count != null &&
       register.employee_count !== bank.employee_count
     ) {
       throw new EventLinkError(
         `Conflicting employee counts for ${company} ${period}: register ${register.employee_count}, bank ${bank.employee_count}.`,
       );
     }
-    const employee_count = register?.employee_count ?? bank?.employee_count ?? employees.length;
+    const employee_count = register.employee_count ?? bank.employee_count ?? employees.length;
 
     // Derived display fields (per the PayrollEvent field docs in src/types.ts).
-    const cost_gap_amount = employer_social_security_total; // the off-bank employer wedge
-    const cost_gap_pct = bank_net_total > 0 ? (cost_gap_amount / bank_net_total) * 100 : 0;
-    const off_bank_cost = employer_cost_total - bank_net_total;
-
-    events.push({
+    events.push(normalizePayrollEvent({
       event_id: stableEventId(company, period, eventRef),
       company,
       period,
+      currency,
       event_ref: eventRef,
       employee_count,
       bank_net_total,
@@ -122,14 +135,54 @@ export function linkEvents(docs: ExtractedDocument[]): PayrollEvent[] {
       employee_social_security_total,
       tax_withheld_total,
       employer_cost_total,
-      cost_gap_amount,
-      cost_gap_pct: Number(cost_gap_pct.toFixed(1)),
-      off_bank_cost,
+      cost_gap_amount: 0,
+      cost_gap_pct: 0,
+      off_bank_cost: 0,
       employees,
       linked_docs: [...new Set(group.map((d) => d.doc_id))].sort(),
-    });
+    }));
   }
   return events;
+}
+
+function completeRegisterTotals(
+  register: ExtractedDocument,
+  company: string,
+  period: string,
+): ExtractedDocument {
+  let gross = register.gross_pay_total;
+  let cost = register.employer_cost_total;
+  let employerSs = register.employer_social_security_total;
+  const supplied = [gross, cost, employerSs].filter((value) => value != null).length;
+  if (supplied < 2) {
+    throw new EventLinkError(
+      `Payroll register for ${company} ${period} requires any two of gross, employer cost, and employer social-security totals.`,
+    );
+  }
+  if (gross != null && cost != null && employerSs != null && Math.abs(cost - (gross + employerSs)) > 0.01) {
+    throw new EventLinkError(
+      `Payroll register totals are inconsistent for ${company} ${period}: employer cost must equal gross + employer social security.`,
+    );
+  }
+  if (gross == null) gross = cost! - employerSs!;
+  if (employerSs == null) employerSs = cost! - gross;
+  if (cost == null) cost = gross + employerSs;
+  if (gross < 0 || employerSs < 0) {
+    throw new EventLinkError(`Payroll register derived totals are negative for ${company} ${period}.`);
+  }
+  return {
+    ...register,
+    gross_pay_total: gross,
+    employer_cost_total: cost,
+    employer_social_security_total: employerSs,
+  };
+}
+
+function normalizedCurrency(value: string | null | undefined): string | null {
+  if (value == null || value.trim() === "") return null;
+  const currency = normalizeIso4217Currency(value);
+  if (!currency) throw new EventLinkError("Payroll currency must be a supported ISO 4217 code.");
+  return currency;
 }
 
 type MergeField =
@@ -168,13 +221,14 @@ function uniquePayslips(docs: ExtractedDocument[]): EmployeePayslip[] {
   const byEmployee = new Map<string, EmployeePayslip>();
   for (const doc of [...docs].sort((a, b) => (a.doc_id < b.doc_id ? -1 : 1))) {
     const employee = doc.payslip!;
-    const previous = byEmployee.get(employee.employee_id);
+    const employeeKey = canonicalIdentifier(employee.employee_id);
+    const previous = byEmployee.get(employeeKey);
     if (previous && !samePayslip(previous, employee)) {
       throw new EventLinkError(
         `Conflicting payslips for employee ${employee.employee_id} (${doc.company} ${doc.period}).`,
       );
     }
-    if (!previous) byEmployee.set(employee.employee_id, employee);
+    if (!previous) byEmployee.set(employeeKey, employee);
   }
   return [...byEmployee.values()];
 }
@@ -212,7 +266,7 @@ function sameMergeValue(field: MergeField, a: unknown, b: unknown): boolean {
 
 function samePayslip(a: EmployeePayslip, b: EmployeePayslip): boolean {
   return (
-    a.employee_id === b.employee_id &&
+    canonicalIdentifier(a.employee_id) === canonicalIdentifier(b.employee_id) &&
     a.name === b.name &&
     Math.abs(a.gross - b.gross) <= 0.01 &&
     Math.abs(a.employee_social_security - b.employee_social_security) <= 0.01 &&

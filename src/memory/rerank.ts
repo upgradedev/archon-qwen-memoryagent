@@ -37,7 +37,9 @@ export interface RerankScore {
 
 export interface Reranker {
   readonly modelId: string;
-  rerank(query: string, docs: RerankDoc[]): Promise<RerankScore[]>;
+  // Implementations that perform I/O must reject promptly after abort. The
+  // caller waits for that settlement before releasing its Qwen admission slot.
+  rerank(query: string, docs: RerankDoc[], signal?: AbortSignal): Promise<RerankScore[]>;
 }
 
 // Re-order a candidate id pool by a relevance score map, highest first. Ties and
@@ -69,7 +71,7 @@ export class LlmReranker implements Reranker {
     this.modelId = modelId;
   }
 
-  async rerank(query: string, docs: RerankDoc[]): Promise<RerankScore[]> {
+  async rerank(query: string, docs: RerankDoc[], signal?: AbortSignal): Promise<RerankScore[]> {
     if (docs.length === 0) return [];
     if (docs.length > 20) throw new Error("reranker candidate limit exceeded");
     const safeQuery = query.slice(0, 4_000);
@@ -85,16 +87,19 @@ export class LlmReranker implements Reranker {
       "pair jointly; reward exact identifiers, figures, entities and periods that " +
       "match the query. Return only a JSON object with exactly one key for every supplied " +
       'candidate index and numeric values, e.g. {"0":0.9,"1":0.1}. No prose.';
-    const res = await this.client.chat.completions.create({
-      model: this.modelId,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: data },
-      ],
-      temperature: 0,
-      max_tokens: 512,
-      response_format: { type: "json_object" },
-    });
+    const res = await this.client.chat.completions.create(
+      {
+        model: this.modelId,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: data },
+        ],
+        temperature: 0,
+        enable_thinking: false,
+        response_format: { type: "json_object" },
+      },
+      { signal },
+    );
     const raw = res.choices?.[0]?.message?.content ?? "";
     const map = parseScoreMap(raw, docs.length);
     return docs.map((d, i) => ({ id: d.id, score: map.get(i)! }));

@@ -1,22 +1,26 @@
-name: Generate Demo Video
+name: Generate Authenticated Demo Video
 
-# ~3-minute demo video for the Global AI Hackathon (Qwen Cloud) — MemoryAgent track.
+# Authenticated <3-minute demo-video builder for the MemoryAgent track. It needs
+# the private MEMORYAGENT_JUDGE_API_KEY Actions secret and never renders/logs it.
 # No local recording needed:
-#   1. scripts/capture_live.sh drives the LIVE Alibaba Cloud box
+#   1. scripts/capture_live.sh drives the LIVE Alibaba Cloud box with protected
+#      mutations scoped by the private reviewer credential
 #      (https://memory.43.106.13.19.sslip.io): GET /health -> real Qwen proof; SESSION A
 #      POST /ingest -> writes memories to pgvector on Alibaba; a FRESH SESSION B
 #      POST /recall (x2) -> recalls them by meaning with real qwen-plus answers +
 #      real pgvector cosine scores. Structured jq HARD-CHECKS: a box that is down,
 #      or silently on the offline Fakes, or a blank recall, FAILS the job.
 #   2. The voiceover is synthesized from docs/narration.txt: ElevenLabs when the
-#      ELEVEN_LABS_KEY secret is set, otherwise (or on any ElevenLabs error) the
-#      free edge-tts Neural voice — so the demo is ALWAYS narrated.
+#      ELEVEN_LABS_KEY secret is set, otherwise (or on any ElevenLabs error) an
+#      explicitly rights-attested edge-tts voice — so the demo stays narrated
+#      without treating free access as publication permission.
 #   3. scripts/make_screencast.py renders the captured real run as a terminal
 #      screencast (docs/screencast_transcript.txt is written by step 1).
 #   4. ffmpeg composes a title card + burned captions + screencast + outro, then
-#      muxes the voiceover -> archon-memoryagent-demo.mp4 (uploaded as an artifact).
+#      muxes the voiceover -> demo/final-media/memoryagent-demo.mp4 (uploaded as an artifact).
 #
-# Run: Actions -> "Generate Demo Video" -> Run workflow  (or gh workflow run demo-video.yml).
+# Run: configure MEMORYAGENT_JUDGE_API_KEY, then Actions ->
+# "Generate Authenticated Demo Video" -> Run workflow. Review before publishing.
 on:
   workflow_dispatch:
     inputs:
@@ -36,6 +40,11 @@ on:
         description: "Repo URL shown on the outro card."
         required: false
         default: "github.com/upgradedev/archon-qwen-memoryagent"
+      voice_rights_attested:
+        description: "I confirm the selected generated voice is authorized for public competition use."
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -49,6 +58,34 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Fail closed unless every media artifact is repo-contained
+        run: |
+          set -euo pipefail
+          while IFS='|' read -r label path; do
+            [ -n "$label" ] || continue
+            python3 scripts/repo_paths.py "$path" --label "$label" >/dev/null
+          done <<'PATHS'
+          TRANSCRIPT|docs/screencast_transcript.txt
+          WEB_SHOTS_DIR|web_shots
+          REQUEST_BODY|body.json
+          NARRATION_MAIN|narration_main.txt
+          NARRATION_WEB|narration_web.txt
+          VOICE_MAIN|vo_main.mp3
+          VOICE_WEB|vo_web.mp3
+          VOICEOVER|voiceover.mp3
+          SCREENCAST|screencast.mp4
+          WEB_CAPTION|web_cap.txt
+          WEB_VIDEO|web.mp4
+          CAPS_DIR|caps
+          CAPTION_WINDOWS_JSON|caption_windows.json
+          TITLE_VIDEO|title.mp4
+          OUTRO_VIDEO|outro.mp4
+          CAPTIONED_SCREENCAST|tour_cap.mp4
+          COMPOSITE_VIDEO|full.mp4
+          VIDEO_MANIFEST|video_manifest.json
+          FINAL_VIDEO|demo/final-media/memoryagent-demo.mp4
+          PATHS
 
       - name: Ensure ffmpeg + fonts + Pillow
         run: |
@@ -68,6 +105,7 @@ jobs:
       - name: Capture live two-session run (Alibaba Cloud)
         env:
           DEMO_BASE_URL: ${{ github.event.inputs.base_url }}
+          DEMO_JUDGE_API_KEY: ${{ secrets.MEMORYAGENT_JUDGE_API_KEY }}
         run: |
           set -euo pipefail
           bash scripts/capture_live.sh
@@ -104,8 +142,12 @@ jobs:
           XI_API_KEY: ${{ secrets.ELEVEN_LABS_KEY }}
           VOICE_ID: ${{ github.event.inputs.voice_id }}
           MODEL_ID: ${{ github.event.inputs.model_id }}
+          VOICE_RIGHTS_ATTESTED: ${{ github.event.inputs.voice_rights_attested }}
         run: |
           set -euo pipefail
+          [ "${VOICE_RIGHTS_ATTESTED}" = "true" ] || {
+            echo "::error::voice publication rights were not attested"; exit 1;
+          }
           # Split narration.txt on blank lines: last paragraph -> web beat, rest -> main.
           python3 - <<'PY'
           import re
@@ -116,8 +158,8 @@ jobs:
           print(f"main paragraphs: {len(paras)-1} · web beat chars: {len(paras[-1])}")
           PY
 
-          # Synthesize one text file to one mp3. ElevenLabs (premium) when the secret
-          # is set; edge-tts (free Neural voice) is the guaranteed fallback so a
+          # Synthesize one text file to one mp3. ElevenLabs when the secret is set;
+          # the explicitly rights-attested edge-tts voice is the fallback so a
           # missing/expired key or an ElevenLabs error can NEVER leave the demo silent.
           synth() {
             local IN="$1" OUT="$2" have=false HTTP
@@ -136,7 +178,7 @@ jobs:
                 rm -f "$OUT"
               fi
             else
-              echo "::warning::ELEVEN_LABS_KEY not set — using the free edge-tts voice for ${IN}."
+              echo "::warning::ELEVEN_LABS_KEY not set — using the rights-attested edge-tts voice for ${IN}."
             fi
             if [ "$have" != "true" ]; then
               python -m pip install --quiet "edge-tts>=7"
@@ -185,7 +227,7 @@ jobs:
           ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 screencast.mp4
 
       # Assemble the three live-UI screenshots into the browser segment. Length is
-      # SELF-CAPPED so title(3) + screencast + web + outro(3) <= 180, and must be at
+      # SELF-CAPPED so title(3) + screencast + web + outro(3) < 175, and must be at
       # least as long as the spoken web beat. A one-line caption is burned on directly
       # (same style as the terminal captions) — scripts/captions.txt is untouched, so
       # the caption-driven screencast target is unaffected.
@@ -213,9 +255,10 @@ jobs:
           # are SCALED to this window (scripts/build_caption_filter.py), so the closing
           # caption is never clipped and never floored past the voice — which removes the
           # old CAP_END+1 floor that could leave a silent frozen seam on a fast run.
-          # Hard-capped at SCAP so title+screencast+web+outro is ALWAYS <= 180 no matter
+          # Hard-capped at SCAP so title+screencast+web+outro stays below the 175s
+          # publication safety limit no matter
           # how long the (pacing-variable) narration ran.
-          SCAP=$(python3 -c "print(round(180.0 - 3.0 - 3.0 - ${WEB} - 0.3, 3))")
+          SCAP=$(python3 -c "print(round(175.0 - 3.0 - 3.0 - ${WEB} - 0.3, 3))")
           S_EFF=$(python3 -c "print(round(min(float('${S}'), ${SCAP}, float('${A_MAIN}')+0.3), 3))")
           echo "screencast=${S}s · web=${WEB}s · cap_end=${CAP_END}s · main=${A_MAIN}s · SCAP=${SCAP}s -> S_EFF=${S_EFF}s"
           echo "web_secs=${WEB}"   >> "$GITHUB_OUTPUT"
@@ -223,7 +266,7 @@ jobs:
           # Frame split: home (typed query + count), answer (hero, cited), browse.
           # Use per-image `-loop 1 -t D` inputs + the concat FILTER, whose output is
           # EXACTLY D1+D2+D3 (the concat demuxer's trailing-frame handling inflates the
-          # duration and would blow the 180s budget). One burned caption after concat.
+          # duration and would blow the 175s safety budget). One burned caption after concat.
           D1=$(python3 -c "print(round(${WEB}*0.24, 3))")
           D2=$(python3 -c "print(round(${WEB}*0.46, 3))")
           D3=$(python3 -c "print(round(${WEB} - ${WEB}*0.24 - ${WEB}*0.46, 3))")
@@ -311,7 +354,7 @@ jobs:
 
           # ---- Burn captions onto the screencast, trimmed to S_EFF ----
           # S_EFF is the hard-capped screencast length that guarantees the total stays
-          # <= 180s. It sits past the last caption end (157s), so this only ever trims
+          # <175s. It sits past the last caption end (157s), so this only ever trims
           # surplus held-final-frame tail — never a caption reveal or terminal content.
           S_EFF="${S_EFF}"
           ffmpeg -y -i "$VID" -vf "$FILTER" -t "$S_EFF" -c:v libx264 -preset veryfast -pix_fmt yuv420p -r 30 -an tour_cap.mp4
@@ -329,17 +372,17 @@ jobs:
             # web beat nor the outro is truncated.
             ffmpeg -y -i full.mp4 -i voiceover.mp3 \
               -filter_complex "[1:a]adelay=3000:all=1,apad[a]" \
-              -map 0:v:0 -map "[a]" -c:v copy -c:a aac -b:a 192k -shortest archon-memoryagent-demo.mp4
+              -map 0:v:0 -map "[a]" -c:v copy -c:a aac -b:a 192k -shortest demo/final-media/memoryagent-demo.mp4
           else
-            cp full.mp4 archon-memoryagent-demo.mp4
+            cp full.mp4 demo/final-media/memoryagent-demo.mp4
           fi
-          ls -la archon-memoryagent-demo.mp4
+          ls -la demo/final-media/memoryagent-demo.mp4
           echo "final duration:"
-          FINAL=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 archon-memoryagent-demo.mp4)
+          FINAL=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 demo/final-media/memoryagent-demo.mp4)
           echo "${FINAL}s"
-          # Hard budget gate: the hackathon cap is 180s. Fail loudly rather than ship over.
-          python3 -c "import sys; sys.exit(0 if float('${FINAL}') <= 180.0 else 1)" \
-            || { echo "::error::final video ${FINAL}s exceeds the 180s cap"; exit 1; }
+          # Publication gate leaves five seconds of margin below the contest's <180s rule.
+          python3 -c "import sys; sys.exit(0 if float('${FINAL}') < 175.0 else 1)" \
+            || { echo "::error::final video ${FINAL}s reaches the 175s safety limit"; exit 1; }
 
           # ---- Segment manifest for the sync gate (concat order + measured durations) ----
           # segments[] is the EXACT concat order used above: title -> screencast -> web -> outro.
@@ -367,14 +410,14 @@ jobs:
       - name: Verify A/V/caption sync (permanent gate)
         run: |
           set -euo pipefail
-          python3 scripts/verify_video_sync.py archon-memoryagent-demo.mp4
+          python3 scripts/verify_video_sync.py demo/final-media/memoryagent-demo.mp4
 
       - name: Upload demo video
         uses: actions/upload-artifact@v4
         with:
           name: archon-memoryagent-demo-video
           path: |
-            archon-memoryagent-demo.mp4
+            demo/final-media/memoryagent-demo.mp4
             voiceover.mp3
             screencast.mp4
             web.mp4

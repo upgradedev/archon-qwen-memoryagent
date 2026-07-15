@@ -42,7 +42,6 @@ EXPOSE 9000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:9000/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
 
-# Function Compute has no external schema-migration job inside the private VPC.
-# Its manifest sets APPLY_SCHEMA_ON_START=true; ECS keeps schema-first deployment
-# in redeploy.sh and leaves this false. Only compiled runtime files are invoked.
-CMD ["sh", "-c", "if [ \"${APPLY_SCHEMA_ON_START:-false}\" = \"true\" ]; then node dist/scripts/apply-schema.js; fi; exec node dist/src/server.js"]
+# Schema migration is an explicit privileged one-shot job. The long-lived
+# container never receives migration credentials and cannot execute DDL.
+CMD ["node", "dist/src/server.js"]

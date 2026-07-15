@@ -72,6 +72,27 @@ test("PgVectorStore applies the company + kind pre-filters in SQL", { skip: !HAS
   assert.equal(await store.count("Acme"), 2);
 });
 
+test("PgVectorStore canonicalizes company scope and exact-scans a selective filtered set", { skip: !HAS_DB }, async () => {
+  await store.clear();
+  const displayCompany = "Ａcme   Labs";
+  await remember(embedder, store, {
+    kind: "insight", company: displayCompany, content: "selective target cash-flow fact",
+  });
+  // Out-of-scope rows dominate the global ANN graph. The scoped query must not
+  // underfill after HNSW post-filtering, and must keep the original display name.
+  await Promise.all(Array.from({ length: 40 }, (_, index) => remember(embedder, store, {
+    kind: "insight", company: `Distractor ${index}`, content: `selective target cash-flow distractor ${index}`,
+  })));
+
+  const hits = await recall(embedder, store, "selective target cash-flow fact", {
+    company: "  acme labs ", kind: "insight", limit: 5,
+  });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]!.company, displayCompany);
+  assert.equal(await store.count("ACME LABS"), 1);
+  assert.equal((await store.listForAudit({ company: "acme    labs" })).length, 1);
+});
+
 test("PgVectorStore hybrid recall fuses dense + full-text (lexical rescue)", { skip: !HAS_DB }, async () => {
   await store.clear();
   await remember(embedder, store, { kind: "payroll_event", company: "Acme", content: "Elena Dimitriou (id E-03) net €9,700 employer cost €14,700." });
@@ -168,16 +189,26 @@ test("PgVectorStore consolidate supersedes duplicates and recall hides them", { 
   await agent.remember("insight", fact, { company: "Acme" });
   assert.equal(await store.count("Acme"), 3);
 
-  const res = await agent.consolidate({ company: "Acme", threshold: 0.99 });
+  const consolidateOptions = {
+    company: "Acme", threshold: 0.99, operationId: `pg-consolidate-${randomUUID()}`,
+    actor: "test:pg", reason: "collapse integration-test duplicates",
+  };
+  const res = await agent.consolidate(consolidateOptions);
   assert.equal(res.superseded, 2, "two of three identical memories superseded");
+  assert.deepEqual(await agent.consolidate(consolidateOptions), res, "confirmed lifecycle retry replays durable audit result");
+  assert.equal(res.audit.persisted, true);
 
   // Active recall now hides the superseded rows (count still 3 until forgotten).
   const active = await recall(embedder, store, fact, { company: "Acme", limit: 10 });
   assert.equal(active.filter((h) => h.content === fact).length, 1);
   assert.equal(await store.count("Acme"), 3);
 
-  const { forgotten } = await agent.forget({ deleteSuperseded: true }, "Acme");
+  const { forgotten, audit } = await agent.forget(
+    { deleteSuperseded: true }, "Acme", undefined, false,
+    { operationId: `pg-forget-${randomUUID()}`, actor: "test:pg", reason: "delete superseded integration rows" },
+  );
   assert.equal(forgotten, 2);
+  assert.equal(audit.persisted, true);
   assert.equal(await store.count("Acme"), 1);
 });
 
@@ -203,6 +234,26 @@ test("PgDailyQuotaBackend rolls back subject charge when the global tier is full
     true,
     "global rejection must roll back the subject increment",
   );
+});
+
+test("PgDailyQuotaBackend rejects an oversized first charge without creating a counter", { skip: !HAS_DB }, async () => {
+  const quota = new PgDailyQuotaBackend(() => new Date("2026-07-14T12:00:00Z"));
+  const bucket = `oversized-first-${randomUUID()}`;
+  const subject = `subject-${randomUUID()}`;
+  assert.equal((await quota.consumeMany([{ bucket, subject, limit: 10, units: 25 }])).ok, false);
+  const exact = await quota.consumeMany([{ bucket, subject, limit: 10, units: 10 }]);
+  assert.equal(exact.ok, true, "the rejected first charge must leave no row behind");
+  assert.equal(exact.remaining, 0);
+});
+
+test("PgDailyQuotaBackend preflights a whole batch before writing any tier", { skip: !HAS_DB }, async () => {
+  const quota = new PgDailyQuotaBackend(() => new Date("2026-07-14T12:00:00Z"));
+  const first = { bucket: `batch-first-${randomUUID()}`, subject: `subject-${randomUUID()}`, limit: 10, units: 5 };
+  const oversized = { bucket: `batch-second-${randomUUID()}`, subject: `subject-${randomUUID()}`, limit: 10, units: 25 };
+  assert.equal((await quota.consumeMany([first, oversized])).ok, false);
+  const untouched = await quota.consumeMany([{ ...first, units: 10 }]);
+  assert.equal(untouched.ok, true, "an invalid later tier must not debit an earlier tier");
+  assert.equal(untouched.remaining, 0);
 });
 
 test("PgVectorStore applies incorrect feedback atomically and idempotently", { skip: !HAS_DB }, async () => {
@@ -238,4 +289,61 @@ test("PgVectorStore applies incorrect feedback atomically and idempotently", { s
   );
   await store.clear();
   assert.equal(await store.getFeedback(feedbackId, "_public"), null, "clear removes feedback provenance before memories");
+});
+
+test("PgVectorStore resolves a 3-way conflict transactionally, replays retries, and serializes competing decisions", { skip: !HAS_DB }, async () => {
+  await store.clear();
+  const tenantId = `resolution-${randomUUID()}`;
+  const agent = new MemoryAgent(embedder, store, new FakeNarrator(), undefined, undefined, tenantId);
+  const seed = async (record: string, amount: number, suffix: string) => agent.remember(
+    "document",
+    `Invoice ${record} amount ${amount}.`,
+    {
+      tenantId, company: "Atomic Resolution Co", period: "2026-05", sourceRef: suffix,
+      metadata: { record, amount }, idempotencyKey: `${record}:${suffix}`,
+    },
+  );
+  const nonCarrierIds = await Promise.all([
+    seed("INV-PG-NONCARRIER", 100, "noncarrier-a"),
+    seed("INV-PG-NONCARRIER", 200, "noncarrier-b"),
+  ]);
+  const nonCarrier = await agent.remember("insight", "INV-PG-NONCARRIER was reviewed.", {
+    tenantId, company: "Atomic Resolution Co", period: "2026-05", sourceRef: "noncarrier-note",
+    metadata: { record: "INV-PG-NONCARRIER", review_status: "reviewed" },
+    idempotencyKey: "INV-PG-NONCARRIER:note",
+  });
+  await assert.rejects(
+    agent.resolveConflict("INV-PG-NONCARRIER", "amount", nonCarrier, nonCarrierIds, {
+      tenantId, decisionId: `noncarrier-${randomUUID()}`,
+    }),
+    /does not carry the disputed attribute/i,
+  );
+  assert.equal((await store.listForAudit({ tenantId, company: "Atomic Resolution Co" })).length, 3);
+  await store.clear();
+
+  const ids = await Promise.all([
+    seed("INV-PG-3WAY", 100, "a"),
+    seed("INV-PG-3WAY", 200, "b"),
+    seed("INV-PG-3WAY", 300, "c"),
+  ]);
+  const decisionId = `decision-${randomUUID()}`;
+  const first = await agent.resolveConflict("INV-PG-3WAY", "amount", ids[2]!, [ids[0]!, ids[1]!], { tenantId, decisionId });
+  const retry = await agent.resolveConflict("INV-PG-3WAY", "amount", ids[2]!, [ids[1]!, ids[0]!], { tenantId, decisionId });
+  assert.deepEqual(retry, first);
+  assert.equal(await store.count("Atomic Resolution Co", tenantId), 3, "atomic selection creates no correction row");
+  assert.deepEqual((await store.listForAudit({ tenantId, company: "Atomic Resolution Co" })).map((row) => row.id), [ids[2]!]);
+
+  await store.clear();
+  const raceIds = await Promise.all([
+    seed("INV-PG-RACE", 100, "race-a"),
+    seed("INV-PG-RACE", 200, "race-b"),
+    seed("INV-PG-RACE", 300, "race-c"),
+  ]);
+  const race = await Promise.allSettled([
+    agent.resolveConflict("INV-PG-RACE", "amount", raceIds[0]!, [raceIds[1]!, raceIds[2]!], { tenantId, decisionId: `race-a-${randomUUID()}` }),
+    agent.resolveConflict("INV-PG-RACE", "amount", raceIds[2]!, [raceIds[0]!, raceIds[1]!], { tenantId, decisionId: `race-c-${randomUUID()}` }),
+  ]);
+  assert.equal(race.filter((outcome) => outcome.status === "fulfilled").length, 1);
+  assert.equal(race.filter((outcome) => outcome.status === "rejected").length, 1);
+  assert.equal((await store.listForAudit({ tenantId, company: "Atomic Resolution Co" })).length, 1);
 });

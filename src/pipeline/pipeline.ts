@@ -7,7 +7,7 @@
 //   raw docs ──▶ Extractor (qwen-vl-max / qwen-plus)   normalize each document
 //            ──▶ ClassifierAgent   rule-based doc_type refinement (no LLM)
 //            ──▶ EventLinkerAgent   fuse the payroll triplet → PayrollEvent
-//            ──▶ ValidatorAgent     R1–R4 cross-document consistency
+//            ──▶ ValidatorAgent     R1–R6 cross-document consistency
 //            ──▶ PnL math           employer cost / cash-out / per-employee
 //            ──▶ MemoryAgent.ingestPipelineBatch()   atomically WRITE event + findings
 //
@@ -62,15 +62,19 @@ export async function runPipeline(
     // recover it from the linked extracted documents.
     const paymentDate =
       linked.find((d) => d.doc_type === "bank_confirmation")?.payment_date ?? null;
+    const hasDeclaredEmployeeCount = linked.some(
+      (d) =>
+        (d.doc_type === "payroll_register" || d.doc_type === "bank_confirmation") &&
+        d.employee_count != null,
+    );
+    const hasPayslips = linked.some((d) => d.doc_type === "payslip" && d.payslip != null);
     const evidence = {
       hasBankConfirmation: linked.some((d) => d.doc_type === "bank_confirmation"),
       hasPayrollRegister: linked.some((d) => d.doc_type === "payroll_register"),
-      hasPayslips: linked.some((d) => d.doc_type === "payslip" && d.payslip != null),
-      hasDeclaredEmployeeCount: linked.some(
-        (d) =>
-          (d.doc_type === "payroll_register" || d.doc_type === "bank_confirmation") &&
-          d.employee_count != null,
-      ),
+      hasPayslips,
+      hasDeclaredEmployeeCount,
+      hasCompletePayslips:
+        hasPayslips && hasDeclaredEmployeeCount && event.employee_count === event.employees.length,
     };
     return {
       event,

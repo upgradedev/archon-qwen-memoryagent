@@ -43,7 +43,7 @@ The service is **TypeScript on Fastify**, deployed live on **Alibaba Cloud ECS**
 
 ### Recall — meaning *and* exact tokens
 
-A single-vector cosine search is the default of virtually every RAG demo, and it has a blind spot: dense embeddings blur the exact tokens agent memories are full of — document numbers like `INV-2043`, currency figures, company names, period codes.
+A single-vector cosine condition is a useful reproducible baseline, but dense embeddings can blur the exact tokens agent memories are full of — document numbers like `INV-2043`, currency figures, company names, period codes.
 
 Recall starts from cosine similarity over the embedding space:
 
@@ -63,24 +63,24 @@ $$
 \operatorname{nDCG}@k = \frac{\operatorname{DCG}@k}{\operatorname{IDCG}@k}, \qquad \operatorname{DCG}@k = \sum_{i=1}^{k} \frac{2^{\text{rel}_i} - 1}{\log_2(i + 1)}
 $$
 
-### Self-audit — detect, then recommend, never mutate
+### Self-audit — detect and recommend; human resolution is separate
 
 The headline capability. `POST /consistency` scans the agent's own memories, groups them by the record they describe, and flags two failure modes:
 
 - **Cross-session contradictions** — same record and attribute, different value across write events.
 - **Dangling references** — a memory points at a record that no memory stores.
 
-Detecting a conflict is the easy half. The hard half is *what to do about it*. Rewriting memory at conflict time — the approach taken by systems that silently ADD/UPDATE/DELETE — throws away information and hides the disagreement. So instead of mutating, the audit returns a **recommendation** under a fixed, domain-neutral priority ladder evaluated lexicographically:
+Detecting a conflict is the easy half. The hard half is *what to do about it*. The audit therefore remains read-only and returns a **recommendation** under a fixed, domain-neutral priority ladder evaluated lexicographically:
 
 $$
 \text{winner} = \operatorname*{arg\,max}_{m \in \text{conflict}} \; \big\langle\, \text{importance}(m),\; \text{authority}(m),\; \text{recency}(m) \,\big\rangle
 $$
 
-Higher importance wins; ties break on source authority; remaining ties break on recency (the later write wins). The result carries `rule + confidence + rationale`, so a human or agent can accept or override it. It is a **recommender, not ground truth** — the memory is never overwritten.
+Higher importance wins; ties break on source authority; remaining ties break on recency (the later write wins). The result carries `rule + confidence + rationale`. An authenticated reviewer can accept, override, or defer; accept/override atomically protects one existing carrier and supersedes every other active carrier, with no correction row.
 
 ### The audit sees *meaning*, not just fields
 
-`POST /consistency` compares metadata fields, so it is blind to a whole class of real contradiction: two memories that oppose each other in *meaning* while sharing no comparable key — *"vendor always pays on time"* vs *"vendor is chronically late"*. A companion **semantic** audit (`POST /consistency/semantic`, `src/memory/semantic-consistency.ts`) closes that gap, additively. It embeds each memory with the same recall path, keeps only same-subject pairs by cosine, then asks a judge whether they directly contradict — **qwen-plus** online, a deterministic polarity/negation heuristic offline. It reuses the same read-only resolution ladder and never mutates memory. Honest scope: the committed labelled-set score (**9/10 contradictions, 0 false positives**) measures the deterministic offline judge and protects CI from regressions; it is not presented as a live-Qwen accuracy estimate. Live runs expose their model, completion status, errors and truncation separately.
+`POST /consistency` compares metadata fields, so it is blind to a whole class of real contradiction: two memories that oppose each other in *meaning* while sharing no comparable key — *"vendor always pays on time"* vs *"vendor is chronically late"*. A companion **semantic** audit (`POST /consistency/semantic`, `src/memory/semantic-consistency.ts`) closes that gap, additively. It embeds each memory with the same recall path, keeps only same-subject pairs by cosine, then asks the configured `QWEN_JUDGE_MODEL` whether they directly contradict; offline it uses a deterministic polarity/negation heuristic. `qwen-plus` is the online rollback baseline, and a candidate changes only the judge setting after passing the versioned promotion gate. It reuses the same read-only resolution ladder and never mutates memory. Honest scope: the committed labelled-set score (**9/10 contradictions, 0 false positives**) measures the deterministic offline judge and protects CI from regressions; it is not presented as a live-Qwen accuracy estimate. Live runs expose their model, completion status, errors and truncation separately.
 
 ### Offline-first engineering
 
@@ -92,24 +92,24 @@ Every external dependency has an injectable seam. With no `DASHSCOPE_API_KEY`, l
 - **Domain-neutral contradiction detection.** The self-audit had to be a *pure, general* engine — no finance rulebook baked in — so it groups and compares on structure alone. Keeping it domain-neutral while still catching real conflicts was the core design tension.
 - **Resolving without mutating.** The tempting shortcut is to overwrite the "loser" at conflict time. Designing a resolution that *recommends* — with a rule, a confidence, and a rationale — while leaving the memory intact took several iterations of the priority ladder.
 - **Measuring honestly.** Reproducibility meant freezing labelled fixtures and committing real embeddings, then adding a *sensitivity control* — a meaning-shuffled retriever that must score near chance — to prove the benchmark actually discriminates rather than rewarding noise.
-- **A fair head-to-head.** To compare against Mem0 credibly we installed it (`mem0ai`), drove it with the *same* Qwen models and the *same* conflict pairs, and reported the honest result: retrieval at parity, but no contradiction/resolution API.
+- **A bounded head-to-head.** We installed pinned `mem0ai`, drove the same Qwen models and conflict fixture, and report retrieval parity plus the exact public-name observation: no separately named contradiction/resolution method matched the disclosed `dir()` filter. This says nothing about internal, differently named, or newer behavior.
 - **Deploying on Alibaba under a deadline.** We chose an ECS + `pgvector`-container topology for a single always-reachable URL, and — because the store speaks the Postgres wire protocol — kept a managed-RDS path as a drop-in `DATABASE_URL` swap rather than a rewrite.
 
 ## Accomplishments that we're proud of
 
-- **A memory that audits itself — and it's measured.** Cross-session contradiction detection at **5/5 with 0 false positives** on a labelled control set (100% precision), and a resolution recommender that is **4/4 correct** on a labelled set — while *never* mutating memory.
-- **A retrieval win over the field default, not a strawman.** The `reranked-hybrid` retriever beats the single-vector cosine baseline that LangChain and most pgvector demos ship: **MRR 0.883 → 0.911**, **nDCG@5 0.903 → 0.938**, **Recall@3 90.0% → 96.7%**.
-- **An honest accuracy number on our own answers.** Gold-memory **recall@5 100%**, answer **correctness 100%**, and answer **grounding 90.9%** — we report the 90.9%, not a suspicious 100%, because one answer cites a *derived* figure the metric correctly refuses to credit.
-- **A real, reproducible comparison to Mem0.** Installed and driven with the same models on the same conflict pairs; result stated plainly (retrieval parity; no conflict/resolution API in Mem0), with Zep cited honestly.
+- **A memory that audits itself — and it's measured.** Cross-session field-issue detection at **5/5 with 0 false positives** on a labelled control set, and **4/4 declared-policy conformance** for the resolution recommender. The audit stays read-only; reviewer application is a separate atomic action.
+- **A measured retrieval result on an explicit baseline.** On the frozen corpus, `reranked-hybrid` improves the single-vector cosine condition: **MRR 0.883 → 0.911**, **nDCG@5 0.903 → 0.938**, **Recall@3 90.0% → 96.7%**.
+- **Objective answer-fixture checks.** Gold-memory recall@5 **11/11**, developer-labelled gold EUR-token hit **11/11**, and complete EUR-labelled amount traceability **10/11**. These literal checks do not grade prose, truth, arithmetic, or general semantic quality.
+- **A real, bounded comparison to Mem0.** Installed and driven with the same models on the same conflict pairs; result stated narrowly (retrieval parity; no separately named method matched the disclosed pinned name probe), with Zep cited honestly and a hardened versioned runner for future attempts.
 - **Reproducible with zero cloud credentials.** Deterministic Fakes and committed fixtures cover model seams in local/CI runs; real-database slices are explicit rather than silently mocked.
-- **A complete engineering package.** The verified run is **300 total, 285 pass, 0 fail, 15 real-DB skips**, with **91.96% statement / 84.96% branch / 91.25% function / 91.96% line coverage**, plus benchmark gates, k6, OpenAPI, CodeQL, and secret scanning.
+- **A complete engineering package.** The final CI artifact is the source of truth for exact test/coverage values, alongside benchmark gates, k6, OpenAPI, CodeQL, and secret scanning.
 
 ## What we learned
 
 - **Dense retrieval alone is a trap for agent memory.** The moment memories carry identifiers and figures, you need a lexical channel and a re-ranker. Hybrid + re-rank wasn't gold-plating; it was the difference between recalling the right fact and a plausible neighbour.
 - **Detecting a contradiction is easy; deciding what to do is the real design problem.** The valuable move was refusing to mutate — surfacing the disagreement and *recommending*, rather than quietly picking a winner and erasing the evidence.
-- **"Better than baseline" only means something if the baseline is what people actually ship.** We benchmarked against the single-vector cosine retriever that is the field default, not a strawman — so the win reflects real practice.
-- **Honesty is a feature.** Reporting the 90.9% grounding miss, the retrieval *parity* (not a win) against Mem0, and Zep's genuine strengths makes every other number we report believable.
+- **“Better than baseline” requires a precisely defined baseline.** We report the exact single-vector cosine condition and corpus instead of generalizing it to every product.
+- **Narrow claims survive scrutiny.** We report the 10/11 EUR-labelled traceability result, retrieval parity in the pinned Mem0 probe, and Zep's genuine strengths without turning fixture evidence into universal claims.
 
 ## What's next for Archon MemoryAgent : self-auditing memory for AI agents
 

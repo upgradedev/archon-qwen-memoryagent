@@ -7,9 +7,9 @@
 #   NEW_POSTGRES_PASSWORD='<32+ URL-safe random chars>' \
 #     bash deploy/rotate-compose-db-password.sh
 #
-# Keep DB_ROLE/DB_NAME at postgres for the existing hackathon volume unless it
-# was initialized differently. After this succeeds, put the same values in
-# POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB and COMPOSE_DATABASE_URL in .env.
+# Keep DB_ROLE/DB_NAME at the bootstrap role/database that initialized an old
+# volume. This rotates only that migration role. The backend's independent
+# memoryagent_app password and runtime URLs must not be changed to this value.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/root/memoryagent}"
@@ -17,6 +17,7 @@ DB_SVC="${DB_SVC:-db}"
 DB_ROLE="${DB_ROLE:-postgres}"
 DB_NAME="${DB_NAME:-postgres}"
 NEW_POSTGRES_PASSWORD="${NEW_POSTGRES_PASSWORD:-}"
+MEMORY_APP_DB_PASSWORD="${MEMORY_APP_DB_PASSWORD:-}"
 
 die() { printf 'ABORT: %s\n' "$*" >&2; exit 1; }
 
@@ -26,6 +27,8 @@ die() { printf 'ABORT: %s\n' "$*" >&2; exit 1; }
   || die "DB_NAME is not a safe PostgreSQL identifier."
 [[ "$NEW_POSTGRES_PASSWORD" =~ ^[A-Za-z0-9._~-]{32,128}$ ]] \
   || die "NEW_POSTGRES_PASSWORD must be 32-128 URL-safe characters (letters, digits, . _ ~ -)."
+[[ "$MEMORY_APP_DB_PASSWORD" =~ ^[A-Za-z0-9._~-]{32,128}$ ]] \
+  || die "load the independent 32-128 character MEMORY_APP_DB_PASSWORD from the private .env first."
 
 if docker compose version >/dev/null 2>&1; then
   COMPOSE=(docker compose)
@@ -44,8 +47,9 @@ cd "$APP_DIR" 2>/dev/null || die "app dir '$APP_DIR' not found."
 export POSTGRES_USER="$DB_ROLE"
 export POSTGRES_PASSWORD="$NEW_POSTGRES_PASSWORD"
 export POSTGRES_DB="$DB_NAME"
-export COMPOSE_DATABASE_URL="postgresql://${DB_ROLE}:${NEW_POSTGRES_PASSWORD}@db:5432/${DB_NAME}"
-export JUDGE_API_KEY="${JUDGE_API_KEY:-db-rotation-only-not-a-live-credential}"
+export MIGRATION_DATABASE_URL="postgresql://${DB_ROLE}:${NEW_POSTGRES_PASSWORD}@db:5432/${DB_NAME}"
+export MEMORY_APP_DB_PASSWORD
+export COMPOSE_DATABASE_URL="postgresql://memoryagent_app:${MEMORY_APP_DB_PASSWORD}@db:5432/${DB_NAME}"
 
 compose config --services | grep -qx "$DB_SVC" \
   || die "Compose service '$DB_SVC' does not exist."
@@ -71,4 +75,4 @@ compose exec -T -e PGPASSWORD="$NEW_POSTGRES_PASSWORD" "$DB_SVC" \
   -c 'SELECT 1;' >/dev/null \
   || die "rotation command ran, but TCP password verification failed."
 
-printf 'Database password rotated and verified. Update .env with the same value, then run deploy/redeploy.sh.\n'
+printf 'Bootstrap password rotated and verified. Update POSTGRES_PASSWORD and MIGRATION_DATABASE_URL only, then run deploy/redeploy.sh.\n'

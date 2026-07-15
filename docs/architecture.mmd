@@ -1,6 +1,6 @@
 %% Archon MemoryAgent — submission architecture (render with Mermaid CLI)
 flowchart LR
-    DOCS["Payroll evidence<br/>PDF · image · text"]
+    DOCS["Payroll evidence<br/>scanned image · PDF-extracted text · text"]
     BROWSER["Judge / browser<br/>public demo + public-tenant reads"]
     OPERATOR["Reviewer / operator<br/>Bearer or x-api-key"]
     MCP["MCP client<br/>trusted stdio · authenticated HTTP"]
@@ -20,7 +20,7 @@ flowchart LR
       end
 
       subgraph PIPE["Evidence-aware ingestion pipeline"]
-        EX["Extractor<br/>qwen-vl-max / qwen-plus"]
+        EX["Extractor<br/>image → qwen-vl-max<br/>supplied text → qwen-plus"]
         CL["Classifier"]
         LINK["Event linker<br/>company + period + event_ref"]
         VAL["Cross-document validator<br/>conflicts stay visible"]
@@ -39,7 +39,8 @@ flowchart LR
     subgraph QWEN["Alibaba Cloud Model Studio / DashScope"]
       VL["qwen-vl-max<br/>document vision"]
       EMB["text-embedding-v4<br/>1024-d embeddings"]
-      PLUS["qwen-plus<br/>narration · rerank · semantic judge · skills"]
+      PLUS["qwen-plus<br/>narration · rerank · skills"]
+      JUDGE["Configured Qwen semantic judge<br/>qwen-plus rollback · dated Qwen 3.7 candidate"]
     end
 
     DOCS --> TLS
@@ -64,7 +65,7 @@ flowchart LR
     RETRIEVE --> RERANK
     RERANK --> PLUS
     AGENT --> AUDIT
-    AUDIT --> PLUS
+    AUDIT --> JUDGE
     AGENT --> STORE
     AGENT --> EMB
     EX --> VL
@@ -79,4 +80,4 @@ flowchart LR
     class TLS,PROTECTED,QUOTA,MCP_BOUNDARY boundary;
     class HEALTH,PUBLIC_READ,PUBLIC_QWEN,EX,CL,LINK,VAL,PNL,AGENT,RETRIEVE,RERANK,AUDIT core;
     class STORE memory;
-    class VL,EMB,PLUS qwen;
+    class VL,EMB,PLUS,JUDGE qwen;

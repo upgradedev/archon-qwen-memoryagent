@@ -13,11 +13,20 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import type { FastifyInstance } from "fastify";
-import { buildServer, INGEST_DAILY_LIMIT } from "../../src/server.js";
+import {
+  buildServer,
+  DOCUMENT_INGEST_WORK_UNITS_PER_DOCUMENT,
+  INGEST_DAILY_LIMIT,
+} from "../../src/server.js";
 import { InMemoryStore, type MemoryStore } from "../../src/memory/store.js";
 import { FakeEmbedder } from "../../src/memory/embeddings.js";
 import { FakeNarrator } from "../../src/agents/narrator.js";
 import { FakeJudge } from "../../src/memory/semantic-consistency.js";
+import {
+  DEFAULT_JUDGE_TENANT,
+  DEFAULT_PUBLIC_TENANT,
+  loadJudgeAuth,
+} from "../../src/server/auth.js";
 
 function offlineServer(store: MemoryStore): Promise<FastifyInstance> {
   delete process.env.DASHSCOPE_API_KEY;
@@ -49,7 +58,7 @@ const EVENT = {
   event_id: "evt-secure-1",
   company: "Acme",
   period: "2026-05",
-  employee_count: 0,
+  employee_count: 1,
   bank_net_total: 800,
   gross_total: 1000,
   employer_social_security_total: 200,
@@ -59,9 +68,62 @@ const EVENT = {
   cost_gap_amount: 200,
   cost_gap_pct: 25,
   off_bank_cost: 400,
-  employees: [],
+  employees: [{
+    employee_id: "E-1", name: "Alex Doe", gross: 1000,
+    employee_social_security: 80, tax: 120, net: 800,
+    employer_social_security: 200, employer_cost: 1200,
+  }],
   linked_docs: [],
 };
+
+test("default reviewer tenant is private and startup refuses a reviewer/public tenant collision", () => {
+  assert.notEqual(DEFAULT_JUDGE_TENANT, DEFAULT_PUBLIC_TENANT);
+  assert.doesNotThrow(() => loadJudgeAuth({
+    required: true,
+    publicTenantId: DEFAULT_PUBLIC_TENANT,
+    apiKeys: { [DEFAULT_JUDGE_TENANT]: JUDGE_KEY },
+  }));
+  assert.throws(() => loadJudgeAuth({
+    required: true,
+    publicTenantId: DEFAULT_PUBLIC_TENANT,
+    apiKeys: { [DEFAULT_PUBLIC_TENANT]: JUDGE_KEY },
+  }), /judge tenant must differ/i);
+});
+
+test("credentialed demo seed stays private; removing the token switches to a separate public synthetic tenant", async () => {
+  const store = new InMemoryStore();
+  const app = await buildServer({
+    store,
+    embedder: new FakeEmbedder(),
+    narrator: new FakeNarrator(),
+    judge: new FakeJudge(),
+    auth: { required: true, publicTenantId: DEFAULT_PUBLIC_TENANT, apiKeys: { [DEFAULT_JUDGE_TENANT]: JUDGE_KEY } },
+  });
+  await app.ready();
+  try {
+    const privateSeed = await app.inject({
+      method: "POST", url: "/demo/seed", headers: { authorization: `Bearer ${JUDGE_KEY}` },
+    });
+    assert.equal(privateSeed.statusCode, 200);
+    assert.equal(privateSeed.json().tenantMode, "reviewer");
+    const privateCount = await app.inject({ method: "GET", url: "/memory/count", headers: { authorization: `Bearer ${JUDGE_KEY}` } });
+    const publicBefore = await app.inject({ method: "GET", url: "/memory/count" });
+    const publicListBefore = await app.inject({ method: "GET", url: "/memory/list?limit=100" });
+    assert.ok(privateCount.json().count > 0);
+    assert.equal(publicBefore.json().count, 0, "private reviewer seed must not be visible without a credential");
+    assert.deepEqual(publicListBefore.json().items, []);
+
+    const publicSeed = await app.inject({ method: "POST", url: "/demo/seed" });
+    assert.equal(publicSeed.statusCode, 200);
+    assert.equal(publicSeed.json().tenantMode, "public-synthetic");
+    const publicAfter = await app.inject({ method: "GET", url: "/memory/count" });
+    const privateAfter = await app.inject({ method: "GET", url: "/memory/count", headers: { "x-api-key": JUDGE_KEY } });
+    assert.ok(publicAfter.json().count > 0);
+    assert.equal(privateAfter.json().count, privateCount.json().count, "public seed must not alter the reviewer tenant");
+  } finally {
+    await app.close();
+  }
+});
 
 describe("AuthZ: production mutations are authenticated and tenant-derived", () => {
   test("missing/invalid credentials cannot write; valid credentials write only their mapped tenant", async () => {
@@ -90,13 +152,13 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
         method: "POST", url: "/ingest", headers: { authorization: `Bearer ${JUDGE_KEY}` }, payload: { event: EVENT },
       });
       assert.equal(allowed.statusCode, 200);
-      assert.equal(await store.count("Acme", "tenant-a"), 2);
+      assert.equal(await store.count("Acme", "tenant-a"), 3);
       assert.equal(await store.count("Acme", "tenant-b"), 0);
       assert.equal(await store.count("Acme"), 0, "private writes never leak into the public tenant");
 
       const tenantARead = await app.inject({ method: "GET", url: "/memory/count", headers: { "x-api-key": JUDGE_KEY } });
       const tenantBRead = await app.inject({ method: "GET", url: "/memory/count", headers: { "x-api-key": OTHER_KEY } });
-      assert.equal(tenantARead.json().count, 2);
+      assert.equal(tenantARead.json().count, 3);
       assert.equal(tenantBRead.json().count, 0);
     } finally {
       await app.close();
@@ -109,7 +171,7 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
       await store.remember({
         tenantId: "tenant-a", kind: "insight", company: "Acme", period: "2026-05",
         content: "same duplicate fact", sourceRef: suffix, metadata: null,
-        embedding: [1, 0, 0], embedModel: "fake", importance: 0.5,
+        embedding: [1, 0, 0], embedModel: "fake-hash-embedder", importance: 0.5,
       });
     }
     const app = await buildServer({
@@ -119,10 +181,14 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
     });
     await app.ready();
     try {
-      const denied = await app.inject({ method: "POST", url: "/consolidate", payload: {} });
+      const denied = await app.inject({
+        method: "POST", url: "/consolidate",
+        payload: { operationId: "auth-denied-preview", reason: "review duplicate scope" },
+      });
       assert.equal(denied.statusCode, 401);
       const preview = await app.inject({
-        method: "POST", url: "/consolidate", headers: { "x-api-key": JUDGE_KEY }, payload: { threshold: 0.99 },
+        method: "POST", url: "/consolidate", headers: { "x-api-key": JUDGE_KEY },
+        payload: { threshold: 0.99, operationId: "auth-preview", reason: "review duplicate scope" },
       });
       assert.equal(preview.statusCode, 200);
       assert.equal(preview.json().dryRun, true);
@@ -132,11 +198,11 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
       // coerced into the destructive confirmation flag by Fastify/Ajv.
       const coercedConsolidate = await app.inject({
         method: "POST", url: "/consolidate", headers: { "x-api-key": JUDGE_KEY },
-        payload: { threshold: "0.99", confirm: "true" },
+        payload: { threshold: "0.99", confirm: "true", operationId: "coerced-consolidate", reason: "test strict types" },
       });
       const coercedForget = await app.inject({
         method: "POST", url: "/forget", headers: { "x-api-key": JUDGE_KEY },
-        payload: { deleteSuperseded: "true", confirm: "true" },
+        payload: { deleteSuperseded: "true", confirm: "true", operationId: "coerced-forget", reason: "test strict types" },
       });
       assert.equal(coercedConsolidate.statusCode, 400);
       assert.equal(coercedForget.statusCode, 400);
@@ -144,11 +210,58 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
 
       const applied = await app.inject({
         method: "POST", url: "/consolidate", headers: { "x-api-key": JUDGE_KEY },
-        payload: { threshold: 0.99, confirm: true },
+        payload: { threshold: 0.99, confirm: true, operationId: "auth-apply", reason: "remove exact duplicates" },
       });
       assert.equal(applied.statusCode, 200);
       assert.equal(applied.json().superseded, 1);
+      assert.equal(applied.json().audit.actor, "judge:tenant-a");
+      assert.equal(applied.json().audit.reason, "remove exact duplicates");
+      assert.equal(applied.json().audit.persisted, true);
       assert.equal((await store.listForAudit({ tenantId: "tenant-a" })).length, 1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("conflict decisions require a reason and persist a server-derived actor", async () => {
+    const store = new InMemoryStore();
+    const ids = await Promise.all([100, 200].map((amount, index) => store.remember({
+      tenantId: "tenant-a", kind: "document", company: "Acme", period: "2026-05",
+      sourceRef: `source-${index}`, content: `Invoice INV-AUTH amount ${amount}.`,
+      metadata: { record: "INV-AUTH", amount }, embedding: [1, 0, 0], embedModel: "fake",
+    })));
+    const app = await buildServer({
+      store,
+      embedder: new FakeEmbedder(), narrator: new FakeNarrator(), judge: new FakeJudge(),
+      auth: { required: true, apiKeys: { "tenant-a": JUDGE_KEY } },
+    });
+    await app.ready();
+    const base = {
+      decisionId: "auth-conflict-001", subject: "INV-AUTH", attribute: "amount",
+      selectedMemoryId: ids[1]!, targetMemoryIds: [ids[0]!],
+    };
+    try {
+      const missingReason = await app.inject({
+        method: "POST", url: "/resolve-conflict", headers: { "x-api-key": JUDGE_KEY }, payload: base,
+      });
+      assert.equal(missingReason.statusCode, 400);
+      const forgedActor = await app.inject({
+        method: "POST", url: "/resolve-conflict", headers: { "x-api-key": JUDGE_KEY },
+        payload: { ...base, actor: "attacker", reason: "reviewed invoice evidence" },
+      });
+      assert.equal(forgedActor.statusCode, 400, "caller identity is not accepted by the contract");
+      const first = await app.inject({
+        method: "POST", url: "/resolve-conflict", headers: { "x-api-key": JUDGE_KEY },
+        payload: { ...base, reason: "reviewed invoice evidence" },
+      });
+      assert.equal(first.statusCode, 200);
+      assert.equal(first.json().actor, "judge:tenant-a");
+      assert.equal(first.json().reason, "reviewed invoice evidence");
+      const retry = await app.inject({
+        method: "POST", url: "/resolve-conflict", headers: { "x-api-key": JUDGE_KEY },
+        payload: { ...base, reason: "reviewed invoice evidence" },
+      });
+      assert.deepEqual(retry.json(), first.json());
     } finally {
       await app.close();
     }
@@ -269,8 +382,8 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
   });
 });
 
-describe("AuthZ: exact company scoping rejects substring/wildcard overreach", () => {
-  test("company filters are exact inside a tenant", async () => {
+describe("AuthZ: canonical company scoping rejects substring/wildcard overreach", () => {
+  test("company filters are canonical-exact inside a tenant", async () => {
     const store = new InMemoryStore();
     for (const company of ["Acme", "Acme Holdings"]) {
       await store.remember({
@@ -280,7 +393,7 @@ describe("AuthZ: exact company scoping rejects substring/wildcard overreach", ()
     }
     assert.equal((await store.listForAudit({ tenantId: "tenant-a", company: "Acme" })).length, 1);
     assert.equal((await store.listForAudit({ tenantId: "tenant-a", company: "%" })).length, 0);
-    assert.equal((await store.recall([1, 0, 0], { tenantId: "tenant-a", company: "acme" })).length, 0);
+    assert.equal((await store.recall([1, 0, 0], { tenantId: "tenant-a", company: " acme " })).length, 1);
   });
 });
 
@@ -332,15 +445,17 @@ describe("AuthZ: mutating routes enforce their input contract (no silent partial
 
 // ── Resource-consumption authorization — the daily SPEND budget (API4) ──────────
 describe("AuthZ: the metered ingest route authorizes consumption via a daily budget", () => {
-  test("POST /ingest/documents returns 429 once the per-IP daily budget is exhausted", async () => {
-    // Drive the REAL budget: INGEST_DAILY_LIMIT valid calls succeed, the next is
-    // rejected 429. We read the limit from the exported const so this holds whether
-    // it is the default (100) or lowered via env in CI (INGEST_DAILY_LIMIT=…).
+  test("POST /ingest/documents meters every document and returns 429 once the per-IP work-unit budget is exhausted", async () => {
+    // Drive the real weighted budget. Each document reserves extraction plus a
+    // conservative share of the downstream event/finding memory writes.
     assert.ok(INGEST_DAILY_LIMIT >= 1 && INGEST_DAILY_LIMIT <= 200, `unexpected budget ${INGEST_DAILY_LIMIT}`);
+    const workUnits = minimalDocs.length * DOCUMENT_INGEST_WORK_UNITS_PER_DOCUMENT;
+    const allowedBatches = Math.floor(INGEST_DAILY_LIMIT / workUnits);
+    assert.ok(allowedBatches >= 1, "fixture must fit at least once in the configured budget");
     const app = await offlineServer(new InMemoryStore());
     await app.ready();
     try {
-      for (let i = 0; i < INGEST_DAILY_LIMIT; i++) {
+      for (let i = 0; i < allowedBatches; i++) {
         const ok = await app.inject({ method: "POST", url: "/ingest/documents", payload: { documents: minimalDocs } });
         assert.equal(ok.statusCode, 200, `call ${i + 1} within budget must be 200`);
       }

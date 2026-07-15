@@ -39,7 +39,7 @@ import {
 // contradictions. The one miss is CUE-FREE ("ahead of schedule" vs "behind
 // schedule") — no lexical polarity cue the offline judge can see. That is not a
 // bug to paper over with a 100% target: it is the documented reason the ONLINE
-// qwen-plus judge exists. We floor at what the shipped offline judge actually
+// configured online Qwen judge exists. We floor at what the shipped offline judge actually
 // achieves and catch any regression below it.
 export const GATE_PRECISION_PCT = 100;
 export const GATE_RECALL_PCT = 90;
@@ -114,7 +114,7 @@ async function main() {
   console.log(`${"-".repeat(64)}`);
   console.log(`Labelled contradictions : ${r.gold}`);
   console.log(`Detected (true positives): ${r.truePositives}/${r.gold}`);
-  console.log(`Offline misses (cue-free): ${r.offlineMisses}  (the qwen-plus judge closes these online)`);
+  console.log(`Offline misses (cue-free): ${r.offlineMisses}  (the configured Qwen judge handles these online)`);
   console.log(`False positives (control): ${r.falsePositives}`);
   console.log(`Recall                   : ${r.recallPct.toFixed(1)}%`);
   console.log(`Precision                : ${r.precisionPct.toFixed(1)}%`);

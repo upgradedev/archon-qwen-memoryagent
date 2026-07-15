@@ -13,7 +13,7 @@
 // pure detector used by production while repeating the non-deterministic judge.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,7 @@ import { FakeJudge, QwenJudge, detectSemanticContradictions, type JudgeVerdict, 
 import { QwenEmbedder } from "../src/memory/embeddings.js";
 import { hasQwenCreds } from "../src/qwen/client.js";
 import { cosineSimilarity } from "../src/memory/retrieval.js";
+import { sanitizedOperationalFailure } from "../src/server/error-sanitization.js";
 import { HELDOUT_SEMANTIC_CASES, assertHeldoutDatasetInvariant, type HeldoutSemanticCase } from "./semantic-heldout-dataset.js";
 
 const DATASET_NAME = "semantic-heldout-v1";
@@ -389,6 +390,9 @@ async function main(): Promise<void> {
   }
   if (online && repetitions !== protocol.onlineRepetitions) throw new Error(`v1.1 online protocol requires exactly ${protocol.onlineRepetitions} repetitions`);
   if (online && !write) throw new Error("v1.1 online protocol requires --write so partial runs and every failure are preserved");
+  if (online && existsSync(OUTPUT)) {
+    throw new Error("the committed v1.1 online artifact is immutable; use a new versioned attempt runner and output path");
+  }
 
   console.log(`Archon MemoryAgent — ${DATASET_NAME}`);
   console.log(`protocol version: ${protocol.version} (reporting-only revision of v1)`);
@@ -450,7 +454,10 @@ const isDirect = (() => {
     return false;
   }
 })();
-if (isDirect) main().catch((err) => { console.error(err instanceof Error ? err.message : String(err)); process.exit(1); });
+if (isDirect) main().catch((error) => {
+  console.error("semantic held-out run failed", sanitizedOperationalFailure("semantic_heldout", error));
+  process.exit(1);
+});
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

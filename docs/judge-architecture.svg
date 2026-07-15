@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Archon MemoryAgent judge architecture</title>
+  <desc id="desc">Tenant-scoped evidence is admitted through strict deterministic boundaries, embedded with Qwen text-embedding-v4, and persisted with audited provenance in pgvector. Hybrid recall and qwen-plus reranking feed a citation-validated Qwen answer. A separate read-only self-audit uses a configured Qwen semantic judge to detect field and meaning-level contradictions; an authenticated human accepts, overrides, or defers a recommendation without silently rewriting history.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#090b14"/>
+      <stop offset="0.56" stop-color="#11152a"/>
+      <stop offset="1" stop-color="#17102b"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="memory" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#21164a"/>
+      <stop offset="1" stop-color="#12223e"/>
+    </linearGradient>
+    <linearGradient id="human" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#12352d"/>
+      <stop offset="1" stop-color="#13293c"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
+      <path d="M0 0L11 5.5L0 11z" fill="#7dd3fc"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
+      <path d="M0 0L11 5.5L0 11z" fill="#a78bfa"/>
+    </marker>
+    <style>
+      .h1{font:700 42px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#f8fafc}.sub{font:400 19px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#aeb8cf}.cap{font:700 14px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#c4b5fd;letter-spacing:1.25px}.title{font:700 22px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#f8fafc}.body{font:400 16px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#d2d8e5}.small{font:400 13.5px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#9ca9c0}.mono{font:600 14px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#7dd3fc}.box{fill:#141827;stroke:#34405a;stroke-width:2}.flow{fill:none;stroke:#7dd3fc;stroke-width:3.5;marker-end:url(#arrow)}.auditflow{fill:none;stroke:#a78bfa;stroke-width:3.5;marker-end:url(#arrowPurple)}
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" rx="28" fill="url(#bg)"/>
+  <circle cx="1430" cy="-15" r="270" fill="#6d28d9" opacity="0.08"/>
+  <circle cx="1530" cy="690" r="230" fill="#0ea5e9" opacity="0.05"/>
+
+  <text x="68" y="70" class="h1">Archon MemoryAgent</text>
+  <text x="68" y="106" class="sub">Track 1 · persistent agent memory that recalls, cites — and challenges its own contradictions</text>
+  <rect x="1268" y="48" width="264" height="54" rx="27" fill="url(#brand)"/>
+  <text x="1400" y="82" text-anchor="middle" class="title" style="font-size:18px">Qwen · Alibaba Cloud</text>
+
+  <!-- Ingress / trust plane -->
+  <rect class="box" x="68" y="154" width="246" height="166" rx="18"/>
+  <text x="94" y="188" class="cap">EVIDENCE IN</text>
+  <text x="94" y="228" class="title">REST · MCP · skills</text>
+  <text x="94" y="261" class="body">facts · events · images</text>
+  <text x="94" y="289" class="small">pre-extracted text for PDF flows</text>
+
+  <rect class="box" x="360" y="154" width="288" height="166" rx="18"/>
+  <text x="386" y="188" class="cap">DETERMINISTIC TRUST EDGE</text>
+  <text x="386" y="228" class="title">Tenant + admission</text>
+  <text x="386" y="261" class="body">auth · strict schema · quotas</text>
+  <text x="386" y="289" class="small">bounded provider pools · fail closed</text>
+
+  <rect class="box" x="694" y="154" width="260" height="166" rx="18"/>
+  <text x="720" y="188" class="cap">QWEN ENCODE</text>
+  <text x="720" y="228" class="title">text-embedding-v4</text>
+  <text x="720" y="261" class="mono">1024-dimensional vector</text>
+  <text x="720" y="289" class="small">bounded batch · abort + drain</text>
+
+  <rect x="1000" y="138" width="532" height="198" rx="22" fill="url(#memory)" stroke="#8b5cf6" stroke-width="3" filter="url(#glow)"/>
+  <text x="1030" y="177" class="cap">PERSISTENT MEMORY CORE</text>
+  <text x="1030" y="219" class="title">PostgreSQL + pgvector</text>
+  <text x="1030" y="252" class="body">tenant facts · audited provenance</text>
+  <text x="1030" y="281" class="body">vectors · idempotent + atomic batches</text>
+  <rect x="1342" y="181" width="156" height="90" rx="16" fill="#111827" stroke="#6d5bd0"/>
+  <text x="1420" y="215" text-anchor="middle" class="mono">cross-session</text>
+  <text x="1420" y="244" text-anchor="middle" class="mono">source-linked</text>
+
+  <path class="flow" d="M314 237H349"/>
+  <path class="flow" d="M648 237H683"/>
+  <path class="flow" d="M954 237H989"/>
+
+  <!-- Recall path -->
+  <rect class="box" x="68" y="390" width="368" height="205" rx="20"/>
+  <text x="96" y="426" class="cap">HYBRID RECALL</text>
+  <text x="96" y="467" class="title">Meaning + exact language</text>
+  <text x="96" y="501" class="mono">cosine + BM25 → RRF → MMR</text>
+  <text x="96" y="534" class="body">tenant / company / kind filters</text>
+  <text x="96" y="563" class="small">qwen-plus cross-encoder rerank</text>
+
+  <rect x="482" y="390" width="396" height="205" rx="20" fill="#10263a" stroke="#0ea5e9" stroke-width="2.5"/>
+  <text x="510" y="426" class="cap" style="fill:#7dd3fc">GROUNDED ANSWER</text>
+  <text x="510" y="467" class="title">qwen-plus narrator</text>
+  <text x="510" y="501" class="body">claim-local citation binding</text>
+  <text x="510" y="534" class="body">repair or evidence-only fallback</text>
+  <text x="510" y="563" class="small">retrieval + degradation telemetry exposed</text>
+
+  <path d="M1138 336C1138 365 290 349 254 380" class="flow"/>
+  <path class="flow" d="M436 492H471"/>
+
+  <!-- Audit path -->
+  <rect x="930" y="390" width="602" height="205" rx="20" fill="#211a36" stroke="#8b5cf6" stroke-width="2.5"/>
+  <text x="960" y="426" class="cap">READ-ONLY SELF-AUDIT</text>
+  <text x="960" y="467" class="title">Contradictions stay visible</text>
+  <text x="960" y="501" class="body">field invariants + subject gate + configured Qwen semantic judge</text>
+  <text x="960" y="534" class="body">candidate pair, evidence IDs, confidence and policy recommendation</text>
+  <text x="960" y="563" class="small">audit returns status; it never silently edits memory</text>
+  <path d="M1266 336V379" class="auditflow"/>
+
+  <!-- Human / lifecycle path -->
+  <rect x="68" y="657" width="544" height="132" rx="20" fill="url(#human)" stroke="#22c55e" stroke-width="2.5"/>
+  <text x="98" y="694" class="cap" style="fill:#86efac">AUTHENTICATED HUMAN CONTROL</text>
+  <text x="98" y="735" class="title">Accept · override · defer</text>
+  <text x="98" y="766" class="body">one atomic resolution · explicit reason · provenance preserved</text>
+
+  <rect class="box" x="662" y="657" width="390" height="132" rx="20"/>
+  <text x="692" y="694" class="cap">CONTROLLED LIFECYCLE</text>
+  <text x="692" y="735" class="title">Consolidate · supersede · forget</text>
+  <text x="692" y="766" class="body">bounded reads and auditable state transitions</text>
+
+  <rect x="1102" y="657" width="430" height="132" rx="20" fill="#171d2b" stroke="#f59e0b" stroke-width="2"/>
+  <text x="1132" y="694" class="cap" style="fill:#fbbf24">MODEL PROMOTION EVIDENCE</text>
+  <text x="1132" y="735" class="title">Same-commit Qwen A/B</text>
+  <text x="1132" y="766" class="small">3×/arm · AB/BA/AB · clean-tree result pending</text>
+
+  <path d="M1180 595C1140 625 600 622 506 647" class="auditflow"/>
+  <path class="flow" d="M612 723H651"/>
+  <path d="M857 657C856 621 1064 622 1100 595" class="flow"/>
+
+  <rect x="68" y="827" width="1464" height="42" rx="14" fill="#2a1828" stroke="#f472b6" stroke-width="1.5"/>
+  <text x="92" y="854" class="body">BOUNDARY  ·  Qwen extracts supplied evidence, embeds, scores and narrates  ·  code owns arithmetic, tenancy, citations and transactions  ·  humans resolve conflicts</text>
+</svg>

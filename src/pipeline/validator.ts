@@ -6,6 +6,8 @@
 //   R2  configurable employer_cost/net anomaly band (demo default [1.25,1.45])
 //   R3  configurable payment-date grace after period end (default 7 days)
 //   R4  employee_count == number of payslips      (when both present)
+//   R5  register gross ≈ complete payslip gross    within 0.1%
+//   R6  register employer cost ≈ complete payslip employer cost within 0.1%
 // The findings are written to memory as `validation` memories, so the agent can
 // later recall (and self-audit) the checks that were run.
 
@@ -29,6 +31,9 @@ export interface ValidationEvidence {
   hasPayrollRegister: boolean;
   hasPayslips: boolean;
   hasDeclaredEmployeeCount: boolean;
+  // True only when a declared count exists and equals the unique payslip count.
+  // Partial payslip sets must not be misreported as register mismatches.
+  hasCompletePayslips?: boolean;
 }
 
 export interface ValidationPolicy {
@@ -69,8 +74,13 @@ function lastDayOfPeriod(period: string): Date | null {
 
 function r1(event: PayrollEvent, evidence: ValidationEvidence): ValidationResult {
   const rule = "R1: bank net ≈ sum(payslip net) ±2%";
-  if (!evidence.hasBankConfirmation || !evidence.hasPayslips) {
-    return result(rule, "not_evaluated", "info", "Not evaluated — bank confirmation or payslips absent.");
+  if (!evidence.hasBankConfirmation || !evidence.hasCompletePayslips) {
+    return result(
+      rule,
+      "not_evaluated",
+      "info",
+      "Not evaluated — bank confirmation or a complete declared payslip set is absent.",
+    );
   }
   const slipsTotal = event.employees.reduce((s, e) => s + e.net, 0);
   if (slipsTotal === 0) {
@@ -157,6 +167,53 @@ function r4(event: PayrollEvent, evidence: ValidationEvidence): ValidationResult
   );
 }
 
+function registerVsPayslips(
+  rule: string,
+  label: string,
+  registerTotal: number,
+  payslipTotal: number,
+  evidence: ValidationEvidence,
+): ValidationResult {
+  if (!evidence.hasPayrollRegister || !evidence.hasCompletePayslips) {
+    return result(
+      rule,
+      "not_evaluated",
+      "info",
+      "Not evaluated — payroll register or a complete declared payslip set is absent.",
+    );
+  }
+  const denominator = Math.max(Math.abs(registerTotal), Math.abs(payslipTotal), 1);
+  const deviation = Math.abs(registerTotal - payslipTotal) / denominator;
+  const passed = Math.abs(registerTotal - payslipTotal) <= 0.01 || deviation <= 0.001;
+  return result(
+    rule,
+    passed ? "passed" : "failed",
+    passed ? "info" : "error",
+    `Register ${label} ${money(registerTotal)} vs complete payslips ${money(payslipTotal)} ` +
+      `(${(deviation * 100).toFixed(2)}% deviation — threshold 0.1%)`,
+  );
+}
+
+function r5(event: PayrollEvent, evidence: ValidationEvidence): ValidationResult {
+  return registerVsPayslips(
+    "R5: register gross ≈ complete payslip gross ±0.1%",
+    "gross",
+    event.gross_total,
+    event.employees.reduce((sum, employee) => sum + employee.gross, 0),
+    evidence,
+  );
+}
+
+function r6(event: PayrollEvent, evidence: ValidationEvidence): ValidationResult {
+  return registerVsPayslips(
+    "R6: register employer cost ≈ complete payslip employer cost ±0.1%",
+    "employer cost",
+    event.employer_cost_total,
+    event.employees.reduce((sum, employee) => sum + employee.employer_cost, 0),
+    evidence,
+  );
+}
+
 // Validate one fused event. `paymentDate` (bank confirmation value date) is
 // carried separately because the fused PayrollEvent shape does not store it.
 export function validateEvent(
@@ -167,6 +224,7 @@ export function validateEvent(
     hasPayrollRegister: event.employer_cost_total > 0,
     hasPayslips: event.employees.length > 0,
     hasDeclaredEmployeeCount: event.employee_count > 0,
+    hasCompletePayslips: event.employee_count > 0 && event.employee_count === event.employees.length,
   },
   policy: Partial<ValidationPolicy> = {},
 ): ValidationResult[] {
@@ -176,6 +234,8 @@ export function validateEvent(
     r2(event, evidence, normalized),
     r3(event, paymentDate, evidence, normalized),
     r4(event, evidence),
+    r5(event, evidence),
+    r6(event, evidence),
   ];
 }
 

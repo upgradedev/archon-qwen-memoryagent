@@ -23,6 +23,7 @@ export interface PayrollEvent {
   event_id: string;
   company: string;
   period: string; // YYYY-MM
+  currency?: string; // ISO 4217 when evidence states it; absent means unknown
   event_ref?: string; // payroll run/batch identity within the period
   employee_count: number;
   bank_net_total: number; // from bank_confirmation
@@ -31,12 +32,15 @@ export interface PayrollEvent {
   employee_social_security_total: number;
   tax_withheld_total: number;
   employer_cost_total: number; // THE accurate number (gross + employer social-security)
-  // One insight the platform surfaces: employer social-security contributions are
-  // invisible on the bank salary-transfer confirmation, yet are ~35% of the net figure
-  // (the employer wedge). The bank line understates the full employer payroll cost by ~72%.
-  cost_gap_amount: number; // the employer-contribution wedge not shown on the bank line
-  cost_gap_pct: number; // cost_gap_amount / bank_net_total * 100  (58% in the demo event)
+  // Two different, explicitly named comparisons. They must never be presented as
+  // the same ratio: the contribution wedge is only one part of the full difference
+  // between employer cost and the net salary transfer.
+  cost_gap_amount: number; // employer_social_security_total
+  cost_gap_pct: number; // employer_social_security_total / bank_net_total * 100
   off_bank_cost: number; // employer_cost_total - bank_net_total
+  off_bank_cost_pct?: number; // off_bank_cost / bank_net_total * 100; populated by trusted ingestion
   employees: EmployeePayslip[];
   linked_docs: string[]; // doc_ids fused into this event
 }
+
+export type NormalizedPayrollEvent = PayrollEvent & { off_bank_cost_pct: number };

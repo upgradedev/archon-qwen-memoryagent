@@ -294,7 +294,10 @@ describe("JOURNEY: error + edge cases stay graceful and correctly-shaped", () =>
     await app.ready();
     await app.inject({ method: "POST", url: "/ingest", payload: { event: { event_id: "keep-1", company: "Keep Co", period: "2026-05", employee_count: 1, bank_net_total: 1000, gross_total: 1200, employer_social_security_total: 200, employee_social_security_total: 80, tax_withheld_total: 120, employer_cost_total: 1400, cost_gap_amount: 400, cost_gap_pct: 40, off_bank_cost: 400, employees: [{ employee_id: "E-01", name: "Kit Lane", gross: 1200, employee_social_security: 80, tax: 120, net: 1000, employer_social_security: 200, employer_cost: 1400 }], linked_docs: [] } } });
     const before = (await app.inject({ method: "GET", url: "/memory/count" })).json().count;
-    const res = await app.inject({ method: "POST", url: "/forget", payload: {} });
+    const res = await app.inject({
+      method: "POST", url: "/forget",
+      payload: { operationId: "journey-forget-preview", reason: "preview safe retention policy" },
+    });
     const after = (await app.inject({ method: "GET", url: "/memory/count" })).json().count;
     await app.close();
     assert.equal(res.statusCode, 200);

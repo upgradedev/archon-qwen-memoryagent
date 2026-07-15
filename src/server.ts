@@ -16,28 +16,52 @@
 // deterministic Fakes otherwise. The store is pgvector (DATABASE_URL). Function
 // Compute listens on the container's CAPort — default 9000, overridable via PORT.
 
-import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
+import Fastify, {
+  type FastifyBaseLogger,
+  type FastifyReply,
+  type FastifyRequest,
+  type FastifyServerOptions,
+} from "fastify";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
+import { isIP } from "node:net";
 import { defaultEmbedder, type Embedder } from "./memory/embeddings.js";
-import { defaultNarrator, type Narrator } from "./agents/narrator.js";
+import {
+  classifyNarratorFailure,
+  defaultNarrator,
+  type Narrator,
+  type NarratorFailureCode,
+} from "./agents/narrator.js";
 import { defaultSemanticJudge, type SemanticJudge } from "./memory/semantic-consistency.js";
-import { PgVectorStore, type MemoryKind, type MemoryStore } from "./memory/store.js";
+import { PgVectorStore, type MemoryKind, type MemoryStore, type RecallHit } from "./memory/store.js";
 import { defaultReranker, type Reranker } from "./memory/rerank.js";
 import { MemoryAgent } from "./agents/memory-agent.js";
+import { MAX_MEMORY_BATCH } from "./memory/memory.js";
 import { UI_HTML } from "./ui.js";
 import type { PayrollEvent } from "./types.js";
 import { ingestPipeline } from "./pipeline/pipeline.js";
 import { aggregatePnl } from "./pipeline/pnl.js";
+import { normalizePayrollEvent } from "./pipeline/payroll-integrity.js";
+import { isSupportedIso4217Currency } from "./pipeline/currency.js";
 import type { RawDocument } from "./pipeline/models.js";
 import { Extractor } from "./pipeline/extractor.js";
+import { DEFAULT_MAX_PAIRS } from "./memory/semantic-consistency.js";
 import { FakeExtractionClient } from "./pipeline/vision.js";
-import { DEMO_DOCUMENTS, DEMO_CONTRADICTION, DEMO_COMPANY, DEMO_INVOICE_RECORD, DEMO_SALES, DEMO_SEMANTIC } from "./demo-data.js";
+import {
+  DEMO_DOCUMENTS,
+  DEMO_CONTRADICTION,
+  DEMO_COMPANY,
+  DEMO_INVOICE_RECORD,
+  DEMO_SALES,
+  DEMO_SEMANTIC,
+  DEMO_SEED_SENTINEL_SOURCE_REF,
+  DEMO_SEED_VERSION,
+} from "./demo-data.js";
 import {
   authenticateJudge,
   loadJudgeAuth,
@@ -50,6 +74,8 @@ import {
   PgDailyQuotaBackend,
   loadQwenQuotaPolicy,
   type DailyQuotaBackend,
+  type QuotaPool,
+  type QuotaResult,
 } from "./server/quota.js";
 import {
   companySchema,
@@ -60,6 +86,12 @@ import {
   questionSchema,
   rawDocumentSchema,
 } from "./server/validation.js";
+import {
+  PROCESS_QWEN_ADMISSION,
+  type QwenAdmission,
+  type QwenAdmissionPool,
+} from "./server/admission.js";
+import { sanitizedOperationalFailure } from "./server/error-sanitization.js";
 
 interface InvoiceIngest {
   type: "purchase" | "sales";
@@ -77,6 +109,13 @@ interface InvoiceIngest {
 }
 
 const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
+
+// Fixed preflight policy weights, not a claim that one unit equals one provider
+// call. They are charged before the first model call so amplified requests are
+// rejected before starting paid work. Recall reserves its maximum logical path:
+// query embedding + listwise rerank + narration + one bounded citation repair.
+export const DOCUMENT_INGEST_WORK_UNITS_PER_DOCUMENT = 5;
+export const RECALL_WORK_UNITS = 4;
 
 // Documented (not enforced) memory-kind values — mirrors the store's MemoryKind
 // union. Kept as a description hint rather than an ajv `enum` so the pass-through
@@ -100,8 +139,10 @@ const errorResponse = {
 } as const;
 
 // Legacy standalone limiter retained for focused unit coverage. Runtime routes
-// use the durable, atomic request-quota backend below. One accepted request is
-// one unit (not an estimate of internal model-call fan-out). Two tiers reset at
+// use the durable, atomic work-unit quota backend below. Work units are disclosed
+// policy weights rather than exact provider-call counts: document batches use a
+// fixed per-document cost, recall reserves its bounded worst-case logical path,
+// and semantic audits reserve their maximum judge-pair count. Two tiers reset at
 // 00:00 UTC:
 //
 //   INGEST_DAILY_LIMIT         PER-IP cap (default 100). Generous headroom so a
@@ -129,7 +170,48 @@ export const INGEST_DAILY_LIMIT_GLOBAL = Number(process.env.INGEST_DAILY_LIMIT_G
 export const DEFAULT_JSON_BODY_LIMIT_BYTES = 10 * 1024 * 1024;
 export const MAX_JSON_BODY_LIMIT_BYTES = 20 * 1024 * 1024;
 export const DEFAULT_HTTP_RATE_LIMIT_MAX = 300;
+export const LOGGER_REDACT_PATHS = Object.freeze([
+  "req.headers.authorization",
+  'req.headers["x-api-key"]',
+  "req.headers.cookie",
+  "request.headers.authorization",
+  'request.headers["x-api-key"]',
+  "headers.authorization",
+  'headers["x-api-key"]',
+] as const);
 export const HTTP_RATE_LIMIT_WINDOW_MS = 60_000;
+export const DEEP_READINESS_SUCCESS_TTL_MS = 10 * 60_000;
+export const DEEP_READINESS_FAILURE_TTL_MS = 60_000;
+export const DEEP_READINESS_WORK_UNITS = 3;
+export const PNL_MEMORY_CAP = 1_000;
+
+type DeepReadinessStage = "configuration" | "database" | "embedder" | "narrator";
+
+class DeepReadinessError extends Error {
+  readonly name = "DeepReadinessError";
+  constructor(
+    readonly stage: DeepReadinessStage,
+    readonly failureCode: NarratorFailureCode | "fake_provider" | "invalid_probe_result" | "database_unavailable",
+    readonly cached = false,
+  ) {
+    // Content-free by design: safe for structured operational logs.
+    super(`deep readiness failed at ${stage}: ${failureCode}`);
+  }
+}
+
+class DeepReadinessQuotaError extends Error {
+  readonly name = "DeepReadinessQuotaError";
+  constructor(readonly result: QuotaResult) {
+    super("deep readiness quota rejected");
+  }
+}
+
+class DeepReadinessAdmissionError extends Error {
+  readonly name = "DeepReadinessAdmissionError";
+  constructor() {
+    super("deep readiness provider capacity unavailable");
+  }
+}
 
 export function configuredJsonBodyLimit(raw = process.env.MAX_JSON_BODY_BYTES): number {
   if (raw == null || raw.trim() === "") return DEFAULT_JSON_BODY_LIMIT_BYTES;
@@ -183,6 +265,9 @@ export interface ServerDeps {
   trustProxy?: boolean | number | string | string[];
   bodyLimitBytes?: number;
   requestRateLimitMax?: number;
+  qwenAdmission?: QwenAdmission;
+  /** Test/embedding seam. Production uses the built-in redacting Pino logger. */
+  loggerInstance?: FastifyBaseLogger;
 }
 
 export async function buildServer(deps: ServerDeps = {}) {
@@ -191,8 +276,20 @@ export async function buildServer(deps: ServerDeps = {}) {
   // arrives in X-Forwarded-For. Trusting it makes `req.ip` the real client IP,
   // which is what the per-IP ingest limiter buckets on. With no proxy (local
   // dev), req.ip is just the socket address — the limiter still works, per host.
+  const loggerOptions: Pick<FastifyServerOptions, "logger" | "loggerInstance"> = deps.loggerInstance
+    ? { loggerInstance: deps.loggerInstance }
+    : {
+        logger: {
+          // Defense in depth: Fastify/Pino must never serialize reviewer credentials,
+          // even when a framework/plugin logs request headers during an error path.
+          redact: {
+            paths: [...LOGGER_REDACT_PATHS],
+            censor: "[REDACTED]",
+          },
+        },
+      };
   const app = Fastify({
-    logger: true,
+    ...loggerOptions,
     trustProxy: deps.trustProxy ?? configuredTrustProxy(),
     bodyLimit: deps.bodyLimitBytes ?? configuredJsonBodyLimit(),
     // Every mutation schema is a contract, not a sanitizing suggestion. Reject
@@ -241,11 +338,13 @@ export async function buildServer(deps: ServerDeps = {}) {
     reply.header("x-frame-options", "DENY");
     reply.header("referrer-policy", "no-referrer");
     reply.header("permissions-policy", "camera=(), microphone=(), geolocation=()");
-    reply.header(
-      "content-security-policy",
-      "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; " +
-        "img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
-    );
+    if (!reply.hasHeader("content-security-policy")) {
+      reply.header(
+        "content-security-policy",
+        "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; " +
+          "img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
+      );
+    }
     if (process.env.NODE_ENV === "production") {
       reply.header("strict-transport-security", "max-age=31536000; includeSubDomains");
     }
@@ -253,18 +352,25 @@ export async function buildServer(deps: ServerDeps = {}) {
 
   // A single, typed error envelope for anything that throws past a route handler.
   // Server-side failures are deliberately opaque: the public response contains a
-  // stable generic message plus correlation ids, while the actual exception is
-  // emitted only to the structured server log. Client errors keep their useful
-  // 4xx validation message. The ids let operators find the detailed log event
-  // without exposing DB URLs, provider payloads, file paths, or stack frames.
+  // stable generic message plus correlation ids. Operator logs deliberately
+  // contain only a fixed failure category and the registered route: exception
+  // messages/stacks can themselves contain DB URLs, provider payloads, file
+  // paths, or secrets. Client errors keep their useful 4xx validation message.
   const sendServiceUnavailable = (
     req: FastifyRequest,
     reply: FastifyReply,
-    err: unknown,
   ) => {
     const requestId = String(req.id);
     const errorId = randomUUID();
-    req.log.error({ err, requestId, errorId }, "request failed");
+    req.log.error(
+      {
+        requestId,
+        errorId,
+        failureCategory: "internal_error",
+        operation: `${req.method} ${req.routeOptions.url ?? "unmatched-route"}`,
+      },
+      "request failed",
+    );
     return reply.code(503).send({
       error: "service temporarily unavailable",
       requestId,
@@ -276,7 +382,7 @@ export async function buildServer(deps: ServerDeps = {}) {
     if (typeof err.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 500) {
       return reply.code(err.statusCode).send({ error: err.message || "invalid request" });
     }
-    return sendServiceUnavailable(req, reply, err);
+    return sendServiceUnavailable(req, reply);
   });
 
   await app.register(swagger, {
@@ -319,8 +425,20 @@ export async function buildServer(deps: ServerDeps = {}) {
   // origin, and render the grounded answer + citations + a /memory/count badge.
   // Hidden from the OpenAPI spec (it is a page, not an API route). Both `/` and
   // `/ui` serve it.
-  const serveUi = async (_req: unknown, reply: import("fastify").FastifyReply) =>
-    reply.type("text/html").send(UI_HTML);
+  const serveUi = async (_req: unknown, reply: import("fastify").FastifyReply) => {
+    const nonce = randomBytes(18).toString("base64url");
+    const html = UI_HTML
+      .replace("<style>", `<style nonce="${nonce}" id="appStyles">`)
+      .replace("<script>", `<script nonce="${nonce}">`);
+    reply.header(
+      "content-security-policy",
+      "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; " +
+        `img-src 'self' data:; style-src 'nonce-${nonce}'; style-src-attr 'none'; ` +
+        `script-src 'nonce-${nonce}'; connect-src 'self'`,
+    );
+    reply.header("cache-control", "no-store");
+    return reply.type("text/html").send(html);
+  };
   app.get("/", { schema: { hide: true } }, serveUi);
   app.get("/ui", { schema: { hide: true } }, serveUi);
 
@@ -334,7 +452,9 @@ export async function buildServer(deps: ServerDeps = {}) {
   const quota = deps.quotaBackend ??
     (process.env.DATABASE_URL && !deps.store ? new PgDailyQuotaBackend() : new InMemoryDailyQuotaBackend());
   const quotaPolicy = loadQwenQuotaPolicy();
+  const qwenAdmission = deps.qwenAdmission ?? PROCESS_QWEN_ADMISSION;
   const principals = new WeakMap<object, JudgePrincipal>();
+  const requestAdmissionPools = new WeakMap<object, QwenAdmissionPool>();
   const fakeQwen =
     embedder.modelId.startsWith("fake-") ||
     narrator.modelId.startsWith("fake-") ||
@@ -343,11 +463,7 @@ export async function buildServer(deps: ServerDeps = {}) {
 
   const providerGuard = async (req: FastifyRequest, reply: FastifyReply) => {
     if (process.env.NODE_ENV === "production" && fakeQwen && !allowFakeQwen) {
-      return sendServiceUnavailable(
-        req,
-        reply,
-        new Error("Qwen provider is not configured; fake models are disabled in production"),
-      );
+      return sendServiceUnavailable(req, reply);
     }
   };
 
@@ -355,11 +471,39 @@ export async function buildServer(deps: ServerDeps = {}) {
     const result = authenticateJudge(req.headers, auth);
     if (!result.ok) {
       if (result.statusCode >= 500) {
-        return sendServiceUnavailable(req, reply, new Error(result.error));
+        return sendServiceUnavailable(req, reply);
       }
       return reply.code(result.statusCode).send({ error: result.error });
     }
     principals.set(req, result.principal);
+    // Auth-disabled local/CI calls without a credential stay in the public
+    // physical/quota pool. A protected route name alone must never grant the
+    // reviewer reserve.
+    requestAdmissionPools.set(
+      req,
+      auth.required || Boolean(req.headers.authorization || req.headers["x-api-key"])
+        ? "judge"
+        : "public",
+    );
+  };
+  // Public read/demo routes support an optional reviewer credential. Validate
+  // it before admission control: the mere presence of a bogus header must never
+  // let an attacker acquire or saturate the physically isolated judge reserve.
+  const optionalReadGuard = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!hasPresentedCredential(req)) {
+      principals.set(req, { tenantId: auth.publicTenantId, role: "judge" });
+      requestAdmissionPools.set(req, "public");
+      return;
+    }
+    const result = authenticateJudge(req.headers, auth);
+    if (!result.ok) {
+      if (result.statusCode >= 500) {
+        return sendServiceUnavailable(req, reply);
+      }
+      return reply.code(result.statusCode).send({ error: result.error });
+    }
+    principals.set(req, result.principal);
+    requestAdmissionPools.set(req, "judge");
   };
   const protectedSecurity: readonly Record<string, readonly string[]>[] = [
     { JudgeBearer: [] },
@@ -371,6 +515,8 @@ export async function buildServer(deps: ServerDeps = {}) {
     return principal;
   };
   const readPrincipal = (req: FastifyRequest): JudgePrincipal => {
+    const preauthenticated = principals.get(req);
+    if (preauthenticated) return preauthenticated;
     const hasCredential = Boolean(req.headers.authorization || req.headers["x-api-key"]);
     if (!hasCredential) return { tenantId: auth.publicTenantId, role: "judge" };
     const result = authenticateJudge(req.headers, auth);
@@ -381,25 +527,212 @@ export async function buildServer(deps: ServerDeps = {}) {
     new MemoryAgent(embedder, store, narrator, judge, reranker, tenantId);
   const quotaSubject = (req: FastifyRequest, principal: JudgePrincipal) =>
     auth.required ? principal.tenantId : req.ip;
+  const principalActor = (principal: JudgePrincipal) => `${principal.role}:${principal.tenantId}`;
+  const hasPresentedCredential = (req: FastifyRequest) =>
+    Boolean(req.headers.authorization || req.headers["x-api-key"]);
+  // In production protected routes reach their handler only after a valid
+  // credential. Auth-disabled local/CI calls without a credential remain in
+  // the public pool; merely using a protected route never grants the reserve.
+  const protectedQuotaPool = (req: FastifyRequest): QuotaPool =>
+    requestAdmissionPools.get(req) === "judge" ? "judge" : "public";
+  const admissionReleases = new WeakMap<object, () => void>();
+  const releaseAdmission = (req: FastifyRequest) => {
+    const release = admissionReleases.get(req);
+    if (!release) return;
+    admissionReleases.delete(req);
+    release();
+  };
+  const setQuotaHeaders = (reply: FastifyReply, result: QuotaResult, pool: QuotaPool) => {
+    reply.header("x-ratelimit-limit", result.limit);
+    reply.header("x-ratelimit-remaining", result.remaining);
+    reply.header("x-ratelimit-reset", result.resetAt);
+    reply.header("x-ratelimit-pool", pool);
+  };
+  const qwenAdmissionGuard = async (req: FastifyRequest, reply: FastifyReply) => {
+    const pool: QwenAdmissionPool = requestAdmissionPools.get(req) ?? "public";
+    const release = qwenAdmission.tryAcquire(pool);
+    if (release) {
+      admissionReleases.set(req, release);
+      return;
+    }
+    reply.header("retry-after", "2");
+    return reply.code(503).send({
+      error: "model capacity temporarily unavailable",
+      retryAfterSeconds: 2,
+    });
+  };
+  // Fastify runs onError for thrown failures and onResponse for every completed
+  // response. The idempotent WeakMap handoff gives finally-style release on both
+  // paths without letting a second hook double-release a slot.
+  app.addHook("onError", async (req) => releaseAdmission(req));
+  app.addHook("onResponse", async (req) => releaseAdmission(req));
   const enforceQuota = async (
     req: FastifyRequest,
     reply: FastifyReply,
     bucket: "recall" | "ingest" | "semantic",
     subject: string,
+    pool: QuotaPool,
+    units = 1,
   ): Promise<boolean> => {
     const limits =
       bucket === "recall"
-        ? [quotaPolicy.recallPerSubject, quotaPolicy.recallGlobal]
+        ? [quotaPolicy.recallPerSubject, pool === "judge" ? quotaPolicy.recallJudgeReserve : quotaPolicy.recallPublicGlobal]
         : bucket === "semantic"
-          ? [quotaPolicy.semanticPerSubject, quotaPolicy.semanticGlobal]
-          : [quotaPolicy.ingestPerSubject, quotaPolicy.ingestGlobal];
-    const result = await consumeTwoTierQuota(quota, bucket, subject || req.ip, limits[0]!, limits[1]!);
-    reply.header("x-ratelimit-limit", result.limit);
-    reply.header("x-ratelimit-remaining", result.remaining);
-    reply.header("x-ratelimit-reset", result.resetAt);
+          ? [quotaPolicy.semanticPerSubject, pool === "judge" ? quotaPolicy.semanticJudgeReserve : quotaPolicy.semanticPublicGlobal]
+          : [quotaPolicy.ingestPerSubject, pool === "judge" ? quotaPolicy.ingestJudgeReserve : quotaPolicy.ingestPublicGlobal];
+    const result = await consumeTwoTierQuota(quota, bucket, subject || req.ip, limits[0]!, limits[1]!, pool, units);
+    setQuotaHeaders(reply, result, pool);
     if (result.ok) return true;
     reply.code(429).send({ error: `Daily ${bucket} limit of ${result.limit} reached`, resetAt: result.resetAt });
     return false;
+  };
+
+  type DeepReadinessValue = {
+    status: "ready";
+    checkedAt: string;
+    cacheTtlSeconds: number;
+    checks: {
+      database: "operational";
+      qwen: "operational";
+      embedder: { status: "operational"; modelId: string; dimensions: number };
+      narrator: {
+        status: "operational";
+        modelId: string;
+        grounding: "passed" | "repaired" | "not-reported";
+      };
+    };
+  };
+  type DeepReadinessCache =
+    | { expiresAt: number; value: DeepReadinessValue }
+    | { expiresAt: number; failure: DeepReadinessError };
+  let deepReadinessCache: DeepReadinessCache | undefined;
+  let deepReadinessInFlight: Promise<DeepReadinessValue> | undefined;
+
+  const runDeepReadinessProbe = async (): Promise<DeepReadinessValue> => {
+    let stage: DeepReadinessStage = "configuration";
+    try {
+      if (fakeQwen) throw new DeepReadinessError(stage, "fake_provider");
+      stage = "database";
+      await store.ready();
+
+      stage = "embedder";
+      const vector = await embedder.embed("Archon MemoryAgent operational readiness probe.");
+      if (
+        !Array.isArray(vector) ||
+        vector.length !== embedder.dim ||
+        vector.some((value) => !Number.isFinite(value))
+      ) {
+        throw new DeepReadinessError(stage, "invalid_probe_result");
+      }
+
+      stage = "narrator";
+      const probeHit: RecallHit = {
+        id: "00000000-0000-4000-8000-000000000001",
+        tenantId: "_readiness",
+        kind: "insight",
+        company: "Archon readiness probe",
+        period: null,
+        sourceRef: "deep-readiness",
+        content: "The Archon MemoryAgent narrator readiness sentinel is operational.",
+        metadata: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        distance: 0,
+        score: 1,
+      };
+      const narrated = await narrator.narrate(
+        "What is the Archon MemoryAgent narrator readiness sentinel status?",
+        [probeHit],
+      );
+      if (
+        narrated.modelId.startsWith("fake-") ||
+        narrated.citations.length !== 1 ||
+        !narrated.answer.includes("[1]")
+      ) {
+        throw new DeepReadinessError(stage, "invalid_probe_result");
+      }
+      return {
+        status: "ready",
+        checkedAt: new Date().toISOString(),
+        cacheTtlSeconds: Math.floor(DEEP_READINESS_SUCCESS_TTL_MS / 1_000),
+        checks: {
+          database: "operational",
+          qwen: "operational",
+          embedder: { status: "operational", modelId: embedder.modelId, dimensions: vector.length },
+          narrator: {
+            status: "operational",
+            modelId: narrated.modelId,
+            grounding: narrated.grounding?.status ?? "not-reported",
+          },
+        },
+      };
+    } catch (err) {
+      if (err instanceof DeepReadinessError) throw err;
+      if (stage === "database") throw new DeepReadinessError(stage, "database_unavailable");
+      throw new DeepReadinessError(stage, classifyNarratorFailure(err));
+    }
+  };
+
+  const deepReadiness = async (
+    acquireAdmission: () => (() => void) | null,
+    reserveQuota: () => Promise<QuotaResult>,
+  ): Promise<DeepReadinessValue & { cached: boolean; shared?: boolean }> => {
+    const now = Date.now();
+    if (deepReadinessCache && deepReadinessCache.expiresAt > now) {
+      if ("failure" in deepReadinessCache) {
+        throw new DeepReadinessError(
+          deepReadinessCache.failure.stage,
+          deepReadinessCache.failure.failureCode,
+          true,
+        );
+      }
+      return { ...deepReadinessCache.value, cached: true };
+    }
+    if (deepReadinessInFlight) {
+      return { ...(await deepReadinessInFlight), cached: false, shared: true };
+    }
+    // Publish the pending promise before awaiting the durable reservation. This
+    // makes exactly one same-process cache-miss owner reserve work units; every
+    // concurrent follower shares that result and starts no extra provider work.
+    const pending = (async () => {
+      const release = acquireAdmission();
+      if (!release) throw new DeepReadinessAdmissionError();
+      try {
+        let reservation: QuotaResult;
+        try {
+          reservation = await reserveQuota();
+        } catch {
+          throw new DeepReadinessError("database", "database_unavailable");
+        }
+        if (!reservation.ok) throw new DeepReadinessQuotaError(reservation);
+        return await runDeepReadinessProbe();
+      } finally {
+        // Provider work (including any bounded repair) is fully settled before
+        // the cache-miss owner releases capacity. Cache hits/followers never
+        // acquire a slot.
+        release();
+      }
+    })();
+    deepReadinessInFlight = pending;
+    try {
+      const value = await pending;
+      deepReadinessCache = {
+        value,
+        expiresAt: Date.now() + DEEP_READINESS_SUCCESS_TTL_MS,
+      };
+      return { ...value, cached: false };
+    } catch (err) {
+      if (err instanceof DeepReadinessQuotaError || err instanceof DeepReadinessAdmissionError) throw err;
+      const failure = err instanceof DeepReadinessError
+        ? err
+        : new DeepReadinessError("configuration", "unexpected_narrator_failure");
+      deepReadinessCache = {
+        failure,
+        expiresAt: Date.now() + DEEP_READINESS_FAILURE_TTL_MS,
+      };
+      throw failure;
+    } finally {
+      if (deepReadinessInFlight === pending) deepReadinessInFlight = undefined;
+    }
   };
 
   app.get(
@@ -407,7 +740,7 @@ export async function buildServer(deps: ServerDeps = {}) {
     {
       schema: {
         summary: "Liveness probe",
-        description: "Reports service liveness and the live embedder/narrator model ids + embedding dimension. No DB, no key.",
+        description: "Reports service liveness and the configured embedder/narrator/semantic-judge model ids + embedding dimension. No DB, no key.",
         tags: ["health"],
         response: {
           200: {
@@ -417,6 +750,7 @@ export async function buildServer(deps: ServerDeps = {}) {
               status: { type: "string" },
               embedder: { type: "string" },
               narrator: { type: "string" },
+              judge: { type: "string" },
               embedDim: { type: "integer" },
             },
           },
@@ -427,6 +761,7 @@ export async function buildServer(deps: ServerDeps = {}) {
       status: "ok",
       embedder: embedder.modelId,
       narrator: narrator.modelId,
+      judge: judge.modelId,
       embedDim: embedder.dim,
     }),
   );
@@ -436,7 +771,9 @@ export async function buildServer(deps: ServerDeps = {}) {
     {
       schema: {
         summary: "Dependency readiness probe",
-        description: "Checks the memory database and required production authentication configuration.",
+        description:
+          "Cheap readiness: probes the memory database and verifies production provider/auth configuration. " +
+          "It does not spend Qwen tokens; use authenticated GET /ready/deep for a cached end-to-end model probe.",
         tags: ["health"],
         response: { 200: looseObject, 503: errorResponse },
       },
@@ -451,10 +788,83 @@ export async function buildServer(deps: ServerDeps = {}) {
         status: "ready",
         checks: {
           database: "ok",
-          qwen: embedder.modelId.startsWith("fake-") ? "offline" : "configured",
+          qwen: embedder.modelId.startsWith("fake-") ? "offline" : "configured-not-probed",
+          embedder: "configured-not-probed",
+          narrator: "configured-not-probed",
+          judge: "configured-not-probed",
           judgeAuth: auth.required ? "configured" : "disabled-local-only",
         },
       };
+    },
+  );
+
+  app.get(
+    "/ready/deep",
+    {
+      schema: {
+        summary: "Authenticated cached Qwen readiness probe",
+        description:
+          "End-to-end probe of database readiness, one real embedding, and one grounded/cited narrator answer. " +
+          "Successful results are cached for 10 minutes and failures for 60 seconds to bound model spend and " +
+          "avoid amplifying provider contention. Only the cache-miss/in-flight owner acquires provider capacity and " +
+          "atomically reserves three durable readiness work units; cache hits/followers do neither. The response includes the exact probe time and cache status.",
+        tags: ["health"],
+        security: protectedSecurity,
+        response: { 200: looseObject, 401: errorResponse, 429: errorResponse, 503: errorResponse },
+      },
+      preHandler: [judgeGuard, providerGuard],
+    },
+    async (req, reply) => {
+      // Ensures the pre-handler authenticated a concrete reviewer before any
+      // model-spending work; the value itself is deliberately not logged.
+      const principal = protectedPrincipal(req);
+      const pool = protectedQuotaPool(req);
+      let reservation: QuotaResult | undefined;
+      try {
+        const value = await deepReadiness(() => qwenAdmission.tryAcquire(pool), async () => {
+          reservation = await consumeTwoTierQuota(
+            quota,
+            "readiness",
+            quotaSubject(req, principal),
+            quotaPolicy.readinessPerSubject,
+            quotaPolicy.readinessJudgeReserve,
+            pool,
+            DEEP_READINESS_WORK_UNITS,
+          );
+          return reservation;
+        });
+        if (reservation) setQuotaHeaders(reply, reservation, pool);
+        reply.header("x-qwen-work-units", reservation ? DEEP_READINESS_WORK_UNITS : 0);
+        return value;
+      } catch (err) {
+        if (err instanceof DeepReadinessAdmissionError) {
+          reply.header("retry-after", "2");
+          return reply.code(503).send({
+            error: "model capacity temporarily unavailable",
+            retryAfterSeconds: 2,
+          });
+        }
+        if (err instanceof DeepReadinessQuotaError) {
+          setQuotaHeaders(reply, err.result, pool);
+          reply.header("x-qwen-work-units", 0);
+          return reply.code(429).send({
+            error: `Daily readiness limit of ${err.result.limit} reached`,
+            resetAt: err.result.resetAt,
+          });
+        }
+        const failure = err instanceof DeepReadinessError
+          ? err
+          : new DeepReadinessError("configuration", "unexpected_narrator_failure");
+        req.log.warn(
+          {
+            deepReadinessStage: failure.stage,
+            deepReadinessFailure: failure.failureCode,
+            cacheHit: failure.cached,
+          },
+          "deep readiness probe failed",
+        );
+        return sendServiceUnavailable(req, reply);
+      }
     },
   );
 
@@ -513,7 +923,7 @@ export async function buildServer(deps: ServerDeps = {}) {
           503: errorResponse,
         },
       },
-      preHandler: [judgeGuard, providerGuard],
+      preHandler: [judgeGuard, providerGuard, qwenAdmissionGuard],
     },
     async (req, reply) => {
       const event = req.body?.event;
@@ -521,8 +931,20 @@ export async function buildServer(deps: ServerDeps = {}) {
         return reply.code(400).send({ error: "body.event (a PayrollEvent) is required" });
       }
       const principal = protectedPrincipal(req);
-      if (!(await enforceQuota(req, reply, "ingest", quotaSubject(req, principal)))) return;
-      const ids = await agent.ingestEvent(event, { tenantId: principal.tenantId });
+      const verifiedEvent = normalizePayrollEvent(event, { requireCompleteEmployees: true });
+      const memoryUnits = verifiedEvent.employees.length + 2;
+      if (memoryUnits > MAX_MEMORY_BATCH) {
+        return reply.code(413).send({ error: `event exceeds memory batch cap ${MAX_MEMORY_BATCH}` });
+      }
+      if (!(await enforceQuota(
+        req,
+        reply,
+        "ingest",
+        quotaSubject(req, principal),
+        protectedQuotaPool(req),
+        memoryUnits,
+      ))) return;
+      const ids = await agent.ingestEvent(verifiedEvent, { tenantId: principal.tenantId });
       return { written: ids.length, ids };
     },
   );
@@ -561,7 +983,7 @@ export async function buildServer(deps: ServerDeps = {}) {
           503: errorResponse,
         },
       },
-      preHandler: [judgeGuard, providerGuard],
+      preHandler: [judgeGuard, providerGuard, qwenAdmissionGuard],
     },
     async (req, reply) => {
       const invoice = req.body?.invoice;
@@ -570,7 +992,7 @@ export async function buildServer(deps: ServerDeps = {}) {
       if (validationError) return reply.code(400).send({ error: validationError });
 
       const principal = protectedPrincipal(req);
-      if (!(await enforceQuota(req, reply, "ingest", quotaSubject(req, principal)))) return;
+      if (!(await enforceQuota(req, reply, "ingest", quotaSubject(req, principal), protectedQuotaPool(req)))) return;
 
       const company = normalizedInvoiceText(invoice.company);
       const reference = normalizedInvoiceText(invoice.invoice_ref);
@@ -665,7 +1087,7 @@ export async function buildServer(deps: ServerDeps = {}) {
           503: errorResponse,
         },
       },
-      preHandler: [judgeGuard, providerGuard],
+      preHandler: [judgeGuard, providerGuard, qwenAdmissionGuard],
     },
     async (req, reply) => {
       const documents = req.body?.documents;
@@ -673,7 +1095,8 @@ export async function buildServer(deps: ServerDeps = {}) {
         return reply.code(400).send({ error: "body.documents (a non-empty array) is required" });
       }
       const principal = protectedPrincipal(req);
-      if (!(await enforceQuota(req, reply, "ingest", quotaSubject(req, principal)))) return;
+      const workUnits = documents.length * DOCUMENT_INGEST_WORK_UNITS_PER_DOCUMENT;
+      if (!(await enforceQuota(req, reply, "ingest", quotaSubject(req, principal), protectedQuotaPool(req), workUnits))) return;
       const out = await ingestPipeline(scopedAgent(principal.tenantId), documents);
       return {
         events: out.events.length,
@@ -711,8 +1134,19 @@ export async function buildServer(deps: ServerDeps = {}) {
     async (req) => {
       const { company, period } = req.query ?? {};
       const principal = readPrincipal(req);
-      const memories = await store.listForAudit({ tenantId: principal.tenantId, company, period });
-      return aggregatePnl(memories);
+      const memories = await store.listForAudit({
+        tenantId: principal.tenantId, company, period, limit: PNL_MEMORY_CAP + 1,
+      });
+      if (memories.length > PNL_MEMORY_CAP) {
+        throw Object.assign(
+          new Error(`P&L scope exceeds memory cap ${PNL_MEMORY_CAP}; use a narrower company or period scope`),
+          { statusCode: 409 },
+        );
+      }
+      return {
+        ...aggregatePnl(memories),
+        scope: { scanned: memories.length, candidateCap: PNL_MEMORY_CAP, truncated: false },
+      };
     },
   );
 
@@ -749,10 +1183,8 @@ export async function buildServer(deps: ServerDeps = {}) {
       const { company, kind, limit } = req.query ?? {};
       const principal = readPrincipal(req);
       const cap = Math.min(Math.max(Number(limit ?? 20) || 20, 1), 100);
-      const rows = await store.listForAudit({ tenantId: principal.tenantId, company, kind });
-      const items = [...rows]
-        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
-        .slice(0, cap)
+      const rows = await store.listForAudit({ tenantId: principal.tenantId, company, kind, limit: cap });
+      const items = rows
         .map((m) => ({
           id: m.id,
           kind: m.kind,
@@ -777,26 +1209,62 @@ export async function buildServer(deps: ServerDeps = {}) {
         summary: "Seed the demo memories",
         description: "Idempotently seeds only the fixed built-in public demo dataset. It accepts no caller-controlled memory content.",
         tags: ["memory"],
-        response: { 200: looseObject, 429: errorResponse, 503: errorResponse },
+        response: { 200: looseObject, 401: errorResponse, 429: errorResponse, 503: errorResponse },
       },
-      preHandler: providerGuard,
+      preHandler: [optionalReadGuard, providerGuard, qwenAdmissionGuard],
     },
     async (req, reply) => {
-      // Idempotent: if the demo company is already seeded, do NOT re-write (a
-      // judge clicking "Run demo" twice must not double the P&L or pile up
-      // duplicate contradictions). Return the already-seeded signal instead.
+      // The payload is always the same fixed synthetic dataset. A valid optional
+      // reviewer credential switches both storage and quota to the isolated
+      // reviewer tenant/reserve; missing credentials use the public synthetic
+      // tenant/pool. Invalid credentials fail before quota or state disclosure.
+      const seedPrincipal = readPrincipal(req);
+      const seedPool: QuotaPool = hasPresentedCredential(req) ? "judge" : "public";
+      const seedSubject = seedPool === "judge" ? seedPrincipal.tenantId : `public:${req.ip}`;
+      // Credentialed judges seed/read their private server-mapped tenant. An
+      // unauthenticated visitor seeds only the fixed synthetic public tenant.
+      // This makes the UI's token switch a real isolation-boundary switch, not
+      // privileged writes into data later visible without credentials.
+      const seedTenantId = seedPool === "judge" ? seedPrincipal.tenantId : auth.publicTenantId;
+      // A versioned completion sentinel — written LAST below — is the only safe
+      // already-seeded test. A crash after the atomic pipeline batch but before
+      // the contradiction/sales/semantic writes otherwise leaves a partial demo.
+      // With no sentinel we reconcile every component; their stable idempotency
+      // keys return original rows, so retry completes the story without duplicates.
       const existing = await store.listForAudit({
-        tenantId: auth.publicTenantId,
+        tenantId: seedTenantId,
         company: DEMO_COMPANY,
-        kind: "payroll_event",
       });
-      if (existing.length > 0) {
-        return { seeded: 0, alreadySeeded: true, company: DEMO_COMPANY, events: 0 };
+      const completed = existing.some((memory) =>
+        memory.sourceRef === DEMO_SEED_SENTINEL_SOURCE_REF &&
+        memory.metadata?.demoSeedVersion === DEMO_SEED_VERSION &&
+        memory.metadata?.status === "complete"
+      );
+      if (completed) {
+        return { seeded: 0, alreadySeeded: true, reconciled: false, seedVersion: DEMO_SEED_VERSION, company: DEMO_COMPANY, events: 0 };
       }
-      if (!(await enforceQuota(req, reply, "ingest", `public:${req.ip}`))) return;
-      const demoAgent = scopedAgent(auth.publicTenantId);
+      const seedWorkUnits = DEMO_DOCUMENTS.length * DOCUMENT_INGEST_WORK_UNITS_PER_DOCUMENT;
+      if (!(await enforceQuota(req, reply, "ingest", seedSubject, seedPool, seedWorkUnits))) return;
+      const demoAgent = scopedAgent(seedTenantId);
       const fakeExtractor = new Extractor(new FakeExtractionClient());
       const out = await ingestPipeline(demoAgent, DEMO_DOCUMENTS, { extractor: fakeExtractor });
+      const currentEventId = out.events[0]?.event.event_id;
+      if (!currentEventId) throw new Error("built-in demo pipeline produced no event");
+      const currentRows = await store.listForAudit({ tenantId: seedTenantId, company: DEMO_COMPANY });
+      const currentSummary = currentRows.find((memory) =>
+        memory.kind === "payroll_event" && memory.sourceRef === currentEventId
+      );
+      if (!currentSummary) throw new Error("built-in demo event summary is missing");
+      // v3 corrects the former off-bank percentage wording and adds evidenced
+      // currency. Deactivate only recognizable older built-in payroll rows so a
+      // pre-v3 seed can never keep serving the stale sentence or pollute P&L as
+      // an unknown-currency event. This is idempotent and tenant-scoped.
+      const legacyDemoIds = existing
+        .filter((memory) => isLegacyDemoPayrollMemory(memory, currentEventId))
+        .map((memory) => memory.id);
+      if (legacyDemoIds.length > 0) {
+        await store.supersede(legacyDemoIds, currentSummary.id, seedTenantId);
+      }
       // Seed the cross-session contradiction (two writes, same record, different amount).
       for (const [index, c] of DEMO_CONTRADICTION.entries()) {
         await demoAgent.remember("document", c.content, {
@@ -825,12 +1293,23 @@ export async function buildServer(deps: ServerDeps = {}) {
           idempotencyKey: `demo:semantic:${index}`,
         });
       }
+      // Completion is committed only after every headline component above. If
+      // this final write fails, the next click reconciles again; if the response
+      // is lost after it succeeds, the next click observes this exact sentinel.
+      await demoAgent.remember("action", `Built-in demo seed ${DEMO_SEED_VERSION} completed.`, {
+        company: DEMO_COMPANY,
+        period: "2026-05",
+        sourceRef: DEMO_SEED_SENTINEL_SOURCE_REF,
+        metadata: { demoSeedVersion: DEMO_SEED_VERSION, status: "complete" },
+        idempotencyKey: DEMO_SEED_SENTINEL_SOURCE_REF,
+      });
+      const after = await store.listForAudit({ tenantId: seedTenantId, company: DEMO_COMPANY });
       return {
-        seeded:
-          out.memoryIds.length +
-          DEMO_CONTRADICTION.length +
-          DEMO_SALES.length +
-          DEMO_SEMANTIC.length,
+        seeded: Math.max(0, after.length - existing.length),
+        alreadySeeded: false,
+        reconciled: existing.length > 0,
+        seedVersion: DEMO_SEED_VERSION,
+        tenantMode: seedPool === "judge" ? "reviewer" : "public-synthetic",
         company: DEMO_COMPANY,
         events: out.events.length,
       };
@@ -863,7 +1342,7 @@ export async function buildServer(deps: ServerDeps = {}) {
         },
         response: { 200: looseObject, 400: errorResponse, 401: errorResponse, 429: errorResponse, 503: errorResponse },
       },
-      preHandler: providerGuard,
+      preHandler: [optionalReadGuard, providerGuard, qwenAdmissionGuard],
     },
     async (req, reply) => {
       const { question, company, kind, limit, hybrid, rerank } = req.body ?? {};
@@ -871,8 +1350,9 @@ export async function buildServer(deps: ServerDeps = {}) {
         return reply.code(400).send({ error: "body.question is required" });
       }
       const principal = readPrincipal(req);
-      const subject = req.headers.authorization || req.headers["x-api-key"] ? principal.tenantId : req.ip;
-      if (!(await enforceQuota(req, reply, "recall", String(subject)))) return;
+      const recallPool: QuotaPool = requestAdmissionPools.get(req) === "judge" ? "judge" : "public";
+      const subject = recallPool === "judge" ? principal.tenantId : req.ip;
+      if (!(await enforceQuota(req, reply, "recall", String(subject), recallPool, RECALL_WORK_UNITS))) return;
       const result = await agent.recallAnswer(question.trim(), {
         tenantId: principal.tenantId,
         company,
@@ -881,7 +1361,74 @@ export async function buildServer(deps: ServerDeps = {}) {
         hybrid,
         rerank,
       });
+      if (result.degradationCode) {
+        // Intentionally log only the stable classification and request-scoped
+        // retrieval metadata. Never log the question, memories, model output,
+        // provider exception, credentials, or tenant id.
+        req.log.warn(
+          {
+            narratorFailure: result.degradationCode,
+            narratorAttempts: result.degradationAttempts,
+            narratorModel: narrator.modelId,
+            rerankerStatus: result.retrieval.reranker.status,
+            candidateCount: result.retrieval.candidateCount,
+          },
+          "narrator degraded after successful retrieval",
+        );
+      }
       return result;
+    },
+  );
+
+  app.post<{
+    Body: {
+      decisionId: string;
+      subject: string;
+      attribute: string;
+      selectedMemoryId: string;
+      targetMemoryIds: string[];
+      reason: string;
+    };
+  }>(
+    "/resolve-conflict",
+    {
+      schema: {
+        summary: "Atomically apply a human conflict decision",
+        description:
+          "Authenticated and idempotent: validates one complete active field-conflict scope, protects the selected existing memory, " +
+          "and supersedes every non-selected carrier in one transaction. Creates no correction rows or model calls.",
+        tags: ["memory", "audit"],
+        security: protectedSecurity,
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["decisionId", "subject", "attribute", "selectedMemoryId", "targetMemoryIds", "reason"],
+          properties: {
+            decisionId: { type: "string", minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_.:-]+$" },
+            subject: { type: "string", minLength: 1, maxLength: 512 },
+            attribute: { type: "string", minLength: 1, maxLength: 256 },
+            selectedMemoryId: { type: "string", format: "uuid" },
+            targetMemoryIds: {
+              type: "array", minItems: 1, maxItems: 100, uniqueItems: true,
+              items: { type: "string", format: "uuid" },
+            },
+            reason: { type: "string", minLength: 1, maxLength: 500 },
+          },
+        },
+        response: { 200: looseObject, 400: errorResponse, 401: errorResponse, 404: errorResponse, 409: errorResponse, 503: errorResponse },
+      },
+      preHandler: judgeGuard,
+    },
+    async (req) => {
+      const principal = protectedPrincipal(req);
+      const { decisionId, subject, attribute, selectedMemoryId, targetMemoryIds, reason } = req.body;
+      return scopedAgent(principal.tenantId).resolveConflict(
+        subject,
+        attribute,
+        selectedMemoryId,
+        targetMemoryIds,
+        { tenantId: principal.tenantId, decisionId, actor: principalActor(principal), reason },
+      );
     },
   );
 
@@ -934,7 +1481,9 @@ export async function buildServer(deps: ServerDeps = {}) {
       if (outcome === "incorrect") {
         const unavailable = await providerGuard(req, reply);
         if (unavailable) return;
-        if (!(await enforceQuota(req, reply, "ingest", quotaSubject(req, principal)))) return;
+        const saturated = await qwenAdmissionGuard(req, reply);
+        if (saturated) return;
+        if (!(await enforceQuota(req, reply, "ingest", quotaSubject(req, principal), protectedQuotaPool(req)))) return;
       }
       return scopedAgent(principal.tenantId).applyFeedback(memoryId, outcome, correctedFact, {
         tenantId: principal.tenantId,
@@ -983,7 +1532,7 @@ export async function buildServer(deps: ServerDeps = {}) {
   // sharing no comparable metadata key (e.g. "vendor always pays on time" vs
   // "vendor is chronically late") — the class the rule-based /consistency audit is
   // blind to. Embeds each memory (same recall path), keeps same-subject pairs by
-  // cosine, and asks the judge (qwen-plus online, a deterministic polarity
+  // cosine, and asks the configured Qwen judge (deterministic polarity
   // heuristic offline) whether they contradict. Read-only; each finding carries a
   // resolution recommending which side to trust.
   app.post<{
@@ -992,6 +1541,7 @@ export async function buildServer(deps: ServerDeps = {}) {
       period?: string;
       kind?: MemoryKind;
       similarityThreshold?: number;
+      maxPairs?: number;
     };
   }>(
     "/consistency/semantic",
@@ -1017,40 +1567,55 @@ export async function buildServer(deps: ServerDeps = {}) {
               maximum: 1,
               description: "Override the subject-similarity gate (0..1).",
             },
+            maxPairs: {
+              type: "integer",
+              minimum: 1,
+              maximum: DEFAULT_MAX_PAIRS,
+              description: "Maximum Qwen judge pairs; quota reserves this many work units (default 25).",
+            },
           },
         },
         response: { 200: looseObject, 401: errorResponse, 429: errorResponse, 503: errorResponse },
       },
-      preHandler: [judgeGuard, providerGuard],
+      preHandler: [judgeGuard, providerGuard, qwenAdmissionGuard],
     },
     async (req, reply) => {
-      const { company, period, kind, similarityThreshold } = req.body ?? {};
+      const { company, period, kind, similarityThreshold, maxPairs } = req.body ?? {};
       const principal = protectedPrincipal(req);
-      if (!(await enforceQuota(req, reply, "semantic", quotaSubject(req, principal)))) return;
+      const reservedPairs = maxPairs ?? DEFAULT_MAX_PAIRS;
+      if (!(await enforceQuota(req, reply, "semantic", quotaSubject(req, principal), protectedQuotaPool(req), reservedPairs))) return;
       const report = await agent.auditSemanticConsistency(
         { tenantId: principal.tenantId, company, period, kind },
-        similarityThreshold != null ? { similarityThreshold } : {},
+        {
+          ...(similarityThreshold != null ? { similarityThreshold } : {}),
+          maxPairs: reservedPairs,
+        },
       );
       return report;
     },
   );
 
   // Memory lifecycle: collapse near-duplicate memories (consolidation).
-  app.post<{ Body: { company?: string; threshold?: number; confirm?: boolean } }>(
+  app.post<{ Body: {
+    company?: string; threshold?: number; confirm?: boolean; operationId: string; reason: string;
+  } }>(
     "/consolidate",
     {
       schema: {
         summary: "Consolidate near-duplicate memories",
-        description: "Authenticated tenant-scoped consolidation. Defaults to a dry-run; confirm=true is required to mutate memory.",
+        description: "Authenticated tenant-scoped consolidation with an explicit reason and idempotent operation id. Defaults to a dry-run; confirm=true is required to mutate memory.",
         tags: ["lifecycle"],
         security: protectedSecurity,
         body: {
           type: "object",
           additionalProperties: false,
+          required: ["operationId", "reason"],
           properties: {
             company: companySchema,
             threshold: { type: "number", minimum: 0.8, maximum: 1, description: "Similarity threshold for collapsing." },
             confirm: { type: "boolean", description: "Must be true to apply the previewed consolidation plan." },
+            operationId: { type: "string", minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_.:-]+$" },
+            reason: { type: "string", minLength: 1, maxLength: 500 },
           },
         },
         response: { 200: looseObject, 401: errorResponse, 503: errorResponse },
@@ -1058,38 +1623,47 @@ export async function buildServer(deps: ServerDeps = {}) {
       preHandler: judgeGuard,
     },
     async (req) => {
-      const { company, threshold, confirm } = req.body ?? {};
+      const { company, threshold, confirm, operationId, reason } = req.body;
       const principal = protectedPrincipal(req);
       return agent.consolidate({
         tenantId: principal.tenantId,
         company,
         threshold,
         dryRun: confirm !== true,
+        operationId,
+        actor: principalActor(principal),
+        reason,
       });
     },
   );
 
   // Memory lifecycle: forget superseded (and optionally stale, low-importance) memories.
   app.post<{
-    Body: { company?: string; deleteSuperseded?: boolean; olderThanDays?: number; maxImportance?: number; confirm?: boolean };
+    Body: {
+      company?: string; deleteSuperseded?: boolean; olderThanDays?: number; maxImportance?: number;
+      confirm?: boolean; operationId: string; reason: string;
+    };
   }>(
     "/forget",
     {
       schema: {
         summary: "Forget superseded / stale memories",
         description:
-          "Authenticated tenant-scoped retention operation. Defaults to a dry-run; confirm=true is required to delete.",
+          "Authenticated tenant-scoped retention operation with an explicit reason and idempotent operation id. Defaults to a dry-run; confirm=true is required to delete.",
         tags: ["lifecycle"],
         security: protectedSecurity,
         body: {
           type: "object",
           additionalProperties: false,
+          required: ["operationId", "reason"],
           properties: {
             company: companySchema,
             deleteSuperseded: { type: "boolean", description: "Drop memories marked superseded." },
             olderThanDays: { type: "integer", minimum: 1, maximum: 3650, description: "Drop low-importance memories older than N days." },
             maxImportance: { type: "number", minimum: 0, maximum: 1, description: "Only prune memories at or below this importance." },
             confirm: { type: "boolean", description: "Must be true to apply the previewed deletion plan." },
+            operationId: { type: "string", minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_.:-]+$" },
+            reason: { type: "string", minLength: 1, maxLength: 500 },
           },
         },
         response: { 200: looseObject, 401: errorResponse, 503: errorResponse },
@@ -1097,13 +1671,14 @@ export async function buildServer(deps: ServerDeps = {}) {
       preHandler: judgeGuard,
     },
     async (req) => {
-      const { company, deleteSuperseded, olderThanDays, maxImportance, confirm } = req.body ?? {};
+      const { company, deleteSuperseded, olderThanDays, maxImportance, confirm, operationId, reason } = req.body;
       const principal = protectedPrincipal(req);
       return agent.forget(
         { deleteSuperseded, olderThanDays, maxImportance },
         company,
         principal.tenantId,
         confirm !== true,
+        { operationId, actor: principalActor(principal), reason },
       );
     },
   );
@@ -1115,11 +1690,35 @@ function parseCsv(value: string | undefined): string[] {
   return value?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
 }
 
-function configuredTrustProxy(): boolean | number | string | string[] {
-  const addresses = parseCsv(process.env.TRUST_PROXY_ADDRESSES);
-  if (addresses.length > 0) return addresses;
-  if (process.env.TRUST_PROXY_HOPS) {
-    const hops = Number(process.env.TRUST_PROXY_HOPS);
+function isExactIpOrCidr(value: string): boolean {
+  if (isIP(value) !== 0) return true;
+  const pieces = value.split("/");
+  if (pieces.length !== 2) return false;
+  const [address, prefixRaw] = pieces;
+  const version = isIP(address ?? "");
+  if (version === 0 || !/^(?:0|[1-9][0-9]*)$/.test(prefixRaw ?? "")) return false;
+  const prefix = Number(prefixRaw);
+  return prefix <= (version === 4 ? 32 : 128);
+}
+
+export function configuredTrustProxy(
+  addressesRaw: string | undefined = process.env.TRUST_PROXY_ADDRESSES,
+  hopsRaw: string | undefined = process.env.TRUST_PROXY_HOPS,
+): boolean | number | string[] {
+  const addressSetting = addressesRaw?.trim() ?? "";
+  const hopSetting = hopsRaw?.trim() ?? "";
+  if (addressSetting && hopSetting) {
+    throw new Error("configure only one of TRUST_PROXY_ADDRESSES or TRUST_PROXY_HOPS");
+  }
+  if (addressSetting) {
+    const addresses = addressSetting.split(",").map((item) => item.trim());
+    if (addresses.length > 16 || addresses.some((item) => !item || !isExactIpOrCidr(item))) {
+      throw new Error("TRUST_PROXY_ADDRESSES must contain 1-16 exact IP or CIDR entries");
+    }
+    return addresses;
+  }
+  if (hopSetting) {
+    const hops = Number(hopSetting);
     if (Number.isInteger(hops) && hops >= 1 && hops <= 3) return hops;
     throw new Error("TRUST_PROXY_HOPS must be an integer from 1 to 3");
   }
@@ -1135,6 +1734,9 @@ function validateInvoice(invoice: InvoiceIngest): string | null {
   const customer = invoice.customer == null ? "" : normalizedInvoiceText(invoice.customer);
   if (!company) return "invoice.company must not be blank";
   if (!reference) return "invoice.invoice_ref must not be blank";
+  if (!isSupportedIso4217Currency(invoice.currency)) {
+    return "invoice.currency must be a supported ISO 4217 code";
+  }
   if (invoice.type === "purchase") {
     if (!vendor) return "purchase invoices require vendor";
     if (invoice.customer !== undefined) return "purchase invoices must not include customer";
@@ -1186,6 +1788,25 @@ function normalizedInvoiceText(value: string): string {
   return value.normalize("NFKC").trim();
 }
 
+function isLegacyDemoPayrollMemory(
+  memory: { period: string | null; sourceRef: string | null; content: string },
+  currentEventId: string,
+): boolean {
+  if (memory.period !== "2026-05" || !memory.sourceRef || memory.sourceRef.startsWith(currentEventId)) {
+    return false;
+  }
+  const content = memory.content;
+  return (
+    content.startsWith(`Workforce cost for ${DEMO_COMPANY} in 2026-05:`) ||
+    content.startsWith(`Off-bank workforce cost at ${DEMO_COMPANY} for 2026-05:`) ||
+    content.startsWith(`Off-bank workforce-cost comparison at ${DEMO_COMPANY} for 2026-05:`) ||
+    content.startsWith(`Validation `) && content.includes(` for ${DEMO_COMPANY} 2026-05 —`) ||
+    ["Ana Cole", "Tom Reed", "Mia Novak"].some((name) =>
+      content.startsWith(`${name} (id `) && content.includes(` at ${DEMO_COMPANY} in 2026-05:`)
+    )
+  );
+}
+
 function normalizedInvoiceKey(value: string): string {
   return normalizedInvoiceText(value).toLocaleLowerCase("en-US");
 }
@@ -1199,7 +1820,7 @@ if (isMain) {
     .then((app) => app.listen({ host: "0.0.0.0", port }))
     .then((addr) => console.log(`archon-qwen-memoryagent listening on ${addr}`))
     .catch((err) => {
-      console.error(err);
+      console.error("MemoryAgent server startup failed", sanitizedOperationalFailure("server_startup", err));
       process.exit(1);
     });
 }

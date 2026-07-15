@@ -15,9 +15,11 @@ This is the human handoff. Once the final deployment release gate is green, no s
 
 Stop if any box is red. Do not record a stale deployment.
 
-## 1. Public demo video — target 165–175 seconds
+## 1. Public demo video — target 165–170 seconds
 
-Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Set the video to Public (not private, not login-gated) and keep the final duration below 3:00.
+Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use **Public visibility with no login or access request**, and keep the final duration below the automated 175-second safety limit.
+
+- [ ] Use only owned or properly licensed music, images, logos, fonts, and footage; include no copyrighted third-party asset without permission, and use competition marks only as the rules permit.
 
 ### Recommended shot list
 
@@ -30,12 +32,15 @@ Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Set 
 | 1:12–1:40 | **Run self-audit** | `INV-5521`, `8400` vs `8900`, recency recommendation, no mutation. |
 | 1:40–2:05 | Paste private token in the Explorer's password field → **Run semantic audit** → crop to result | “Pays on time” vs “chronically late”; never reveal the token or browser request header. |
 | 2:05–2:28 | Feedback/lifecycle/OpenAPI or prepared result | Explicit correction loop; dry-run/confirm forgetting; tenant-scoped protected routes. |
-| 2:28–2:48 | Benchmark/evidence card | 90% semantic recall/100% precision/0 FP; reranked retrieval metrics; 298-test result. State offline semantic caveat. |
+| 2:28–2:48 | Benchmark/evidence card | 90% semantic recall/100% precision/0 FP on the original deterministic set; show the historical frozen developer-labelled synthetic result separately from the clean-source A/B promotion artifact; reranked retrieval metrics; final immutable CI summary. State every offline/online caveat. |
 | 2:48–2:56 | Repo + MIT + closing URL | Repo, live URL, Track 1. End before 3:00. |
 
 ### Video quality gate
 
-- [ ] Final file is under 180 seconds and 1080p or better.
+- [ ] Final file is strictly under 175 seconds and 1080p or better.
+- [ ] Set the workflow's voice-rights attestation only after confirming that the
+  generated voice/service is authorized for public competition use; otherwise use
+  an owned human recording.
 - [ ] Text is readable at normal YouTube playback size.
 - [ ] Captions are enabled and names/model ids are spelled correctly.
 - [ ] No API key, reviewer token, Authorization header, shell history secret, email, or cloud credential is visible in any frame, thumbnail, caption, or description. Clear the Judge token field before any beauty shot.
@@ -59,7 +64,7 @@ Capture clean 16:9 or high-resolution browser images; hide bookmarks, personal t
 - [ ] Alibaba proof: ECS/container service and live endpoint in one safe frame; redact account IDs/IP metadata not needed for proof.
 - [ ] Repository proof: public repo landing page with MIT license detection and latest commit.
 
-Store originals outside the repo if they include any cloud-console metadata. Add only the sanitized final gallery images.
+Store sensitive originals only in the ignored repo-local folder `demo/private-originals/` so every agent shares one project boundary without risking a commit. Redact there, then add only sanitized final images under `demo/gallery/`. Before staging, run `git status --ignored --short demo/` and verify no private original is tracked.
 
 ## 3. Public posts
 

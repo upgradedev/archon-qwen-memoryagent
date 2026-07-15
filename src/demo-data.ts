@@ -13,33 +13,40 @@ import type { RawDocument } from "./pipeline/models.js";
 export const DEMO_COMPANY = "Northwind Trading";
 const PERIOD = "2026-05";
 
+// Written LAST by /demo/seed after every independently idempotent component.
+// Its presence is the only completion test: a payroll row alone may be the
+// residue of a crashed/failed partial seed and must never make retries no-op.
+export const DEMO_SEED_VERSION = "memoryagent-demo-v3";
+export const DEMO_SEED_SENTINEL_SOURCE_REF = `demo-seed:${DEMO_SEED_VERSION}:complete`;
+export const DEMO_EVENT_REF = "demo-payroll-v3";
+
 // The numbers pass R1–R4: bank net == sum(payslip net) == 10,800;
 // employer_cost / net = 14,600 / 10,800 = 1.352 ∈ [1.25, 1.45]; 3 == 3 payslips;
 // payment date 2026-05-27 is within the period.
 export const DEMO_DOCUMENTS: RawDocument[] = [
   {
     doc_id: "nw-register", filename: "payroll-register.pdf", source_kind: "text",
-    company: DEMO_COMPANY, period: PERIOD,
+    company: DEMO_COMPANY, period: PERIOD, currency: "EUR", event_ref: DEMO_EVENT_REF,
     content: JSON.stringify({ doc_type: "payroll_register", gross_pay_total: 12000, employer_cost_total: 14600, employee_count: 3 }),
   },
   {
     doc_id: "nw-bank", filename: "bank-confirmation.pdf", source_kind: "text",
-    company: DEMO_COMPANY, period: PERIOD,
+    company: DEMO_COMPANY, period: PERIOD, currency: "EUR", event_ref: DEMO_EVENT_REF,
     content: JSON.stringify({ doc_type: "bank_confirmation", net_pay_total: 10800, payment_date: "2026-05-27" }),
   },
   {
     doc_id: "nw-p1", filename: "payslip-cole.png", source_kind: "image",
-    company: DEMO_COMPANY, period: PERIOD,
+    company: DEMO_COMPANY, period: PERIOD, currency: "EUR", event_ref: DEMO_EVENT_REF,
     content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-01", name: "Ana Cole", gross: 5000, employee_social_security: 150, tax: 350, net: 4500, employer_social_security: 900, employer_cost: 5900 } }),
   },
   {
     doc_id: "nw-p2", filename: "payslip-reed.png", source_kind: "image",
-    company: DEMO_COMPANY, period: PERIOD,
+    company: DEMO_COMPANY, period: PERIOD, currency: "EUR", event_ref: DEMO_EVENT_REF,
     content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-02", name: "Tom Reed", gross: 4000, employee_social_security: 120, tax: 280, net: 3600, employer_social_security: 700, employer_cost: 4700 } }),
   },
   {
     doc_id: "nw-p3", filename: "payslip-novak.png", source_kind: "image",
-    company: DEMO_COMPANY, period: PERIOD,
+    company: DEMO_COMPANY, period: PERIOD, currency: "EUR", event_ref: DEMO_EVENT_REF,
     content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-03", name: "Mia Novak", gross: 3000, employee_social_security: 100, tax: 200, net: 2700, employer_social_security: 1000, employer_cost: 4000 } }),
   },
 ];
@@ -60,7 +67,7 @@ export const DEMO_INVOICE_RECORD = "INV-5521";
 // matching numeric attribute, only opposite prose ("on time" vs "chronically
 // late"). The meaning-aware POST /consistency/semantic catches them: it embeds
 // each memory, keeps the near-identical-subject pair by cosine, and asks the
-// judge (qwen-plus online, a deterministic polarity heuristic offline) whether
+// judge (configured Qwen model online, deterministic polarity heuristic offline) whether
 // they contradict. Written as `insight` memories so the semantic beat can scope
 // to kind="insight" for a fast, deterministic single finding on the live box.
 export const DEMO_SEMANTIC: Array<{ content: string }> = [

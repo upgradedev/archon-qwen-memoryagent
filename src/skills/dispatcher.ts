@@ -17,7 +17,7 @@ import { MemoryAgent } from "../agents/memory-agent.js";
 import { defaultEmbedder } from "../memory/embeddings.js";
 import { defaultNarrator } from "../agents/narrator.js";
 import { DEFAULT_TENANT_ID, InMemoryStore, PgVectorStore, type MemoryStore } from "../memory/store.js";
-import type { Citation } from "../agents/narrator.js";
+import type { Citation, NarratedAnswer, NarratorFailureCode } from "../agents/narrator.js";
 import type { ConsistencyReport } from "../memory/consistency.js";
 import type { SemanticConsistencyReport } from "../memory/semantic-consistency.js";
 import {
@@ -36,6 +36,16 @@ export interface RecallResult {
   citations: Citation[];
   modelId: string;
   consistency: ConsistencyReport;
+  retrieval: {
+    strategy: "dense" | "hybrid";
+    candidateCount: number;
+    returnedCount: number;
+    reranker: { status: "applied" | "fallback" | "disabled"; modelId: string; durationMs: number };
+  };
+  degraded?: string;
+  degradationCode?: NarratorFailureCode;
+  degradationAttempts?: 1 | 2;
+  grounding?: NarratedAnswer["grounding"];
 }
 export interface IngestResult {
   written: number;
@@ -46,6 +56,11 @@ export interface CountResult {
   count: number;
 }
 export type SkillResult = RecallResult | IngestResult | AuditResult | CountResult;
+export type ValidatedSkillCall =
+  | { name: "recall_memory"; args: RecallArgs }
+  | { name: "ingest_memory"; args: IngestArgs }
+  | { name: "audit_memory"; args: AuditArgs }
+  | { name: "memory_count"; args: CountArgs };
 
 export class SkillDispatcher {
   constructor(
@@ -63,28 +78,28 @@ export class SkillDispatcher {
   // from an MCP client or a qwen-plus tool call; each branch reads only the
   // fields its typed contract declares.
   async dispatch(name: string, args: unknown = {}): Promise<SkillResult> {
-    switch (name as SkillName) {
+    const call = validateSkillCall(name, args);
+    switch (call.name) {
       case "recall_memory":
-        return this.recall(validateRecallArgs(args));
+        return this.recall(call.args);
       case "ingest_memory":
-        return this.ingest(validateIngestArgs(args));
+        return this.ingest(call.args);
       case "audit_memory":
-        return this.audit(validateAuditArgs(args));
+        return this.audit(call.args);
       case "memory_count":
-        return this.count(validateCountArgs(args));
-      default:
-        throw inputError(`Unknown skill: ${name}`);
+        return this.count(call.args);
     }
   }
 
   // recall_memory → the same grounded, cited recall the POST /recall route runs.
   private async recall(args: RecallArgs): Promise<RecallResult> {
     if (!args?.question) throw inputError("recall_memory requires a 'question'");
-    const { answer, citations, modelId, consistency } = await this.agent.recallAnswer(
+    const result = await this.agent.recallAnswer(
       args.question,
       { company: args.company, kind: args.kind, limit: args.limit }
     );
-    return { answer, citations, modelId, consistency };
+    const { hits: _internalHits, ...safeResult } = result;
+    return safeResult;
   }
 
   // ingest_memory → embed + persist a single fact (MemoryAgent.remember), the
@@ -136,6 +151,26 @@ const SOURCE_REF_MAX = 256;
 const METADATA_MAX_BYTES = 16_384;
 const PERIOD_RE = /^[0-9]{4}-(0[1-9]|1[0-2])$/;
 const VALID_KINDS = new Set<string>(["document", "payroll_event", "validation", "insight", "invoice", "action"]);
+
+/**
+ * Pure validation shared by dispatch and transport-side spend admission. Invalid
+ * calls can therefore return their ordinary structured tool error without first
+ * consuming Qwen quota; there is one validation contract, not a transport copy.
+ */
+export function validateSkillCall(name: string, value: unknown = {}): ValidatedSkillCall {
+  switch (name as SkillName) {
+    case "recall_memory":
+      return { name: "recall_memory", args: validateRecallArgs(value) };
+    case "ingest_memory":
+      return { name: "ingest_memory", args: validateIngestArgs(value) };
+    case "audit_memory":
+      return { name: "audit_memory", args: validateAuditArgs(value) };
+    case "memory_count":
+      return { name: "memory_count", args: validateCountArgs(value) };
+    default:
+      throw inputError(`Unknown skill: ${name}`);
+  }
+}
 
 function validateRecallArgs(value: unknown): RecallArgs {
   const args = argumentObject(value, "recall_memory");

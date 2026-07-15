@@ -7,7 +7,7 @@ self-explanatory: every failure prints WHICH assertion broke and the numbers beh
 so an out-of-sync or mis-ordered video can never ship again.
 
 Inputs:
-  argv[1]            final mp4 (default archon-memoryagent-demo.mp4)
+  argv[1]            final mp4 (default demo/final-media/memoryagent-demo.mp4)
   VIDEO_MANIFEST     json emitted by the compose step (default video_manifest.json):
                        { fps, title_dur, screencast_dur, web_dur, outro_dur,
                          segments:[...ordered names...], a_main, a_web, vo_delay, have_vo }
@@ -127,7 +127,7 @@ def frame_kind(path, t):
 
 
 def main():
-    mp4 = sys.argv[1] if len(sys.argv) > 1 else "archon-memoryagent-demo.mp4"
+    mp4 = sys.argv[1] if len(sys.argv) > 1 else "demo/final-media/memoryagent-demo.mp4"
     manifest_path = os.environ.get("VIDEO_MANIFEST", "video_manifest.json")
     windows_path = os.environ.get("CAPTION_WINDOWS", "caption_windows.json")
 
@@ -202,8 +202,8 @@ def main():
     g.check(video_dur is not None and abs(video_dur - expected_video) <= 0.75,
             "duration-reconstruct",
             f"measured={video_dur} sum-of-segments={expected_video:.3f} tol=0.75")
-    g.check(video_dur is not None and video_dur <= 180.0 + 1e-6,
-            "budget<=180s", f"video={video_dur}")
+    g.check(video_dur is not None and video_dur < 175.0,
+            "publication-budget<175s", f"video={video_dur}")
 
     # ---- req 1: A/V ----
     print("== req1: audio vs video (no silent+frozen content seam) ==")
