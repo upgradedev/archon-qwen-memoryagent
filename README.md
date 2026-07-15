@@ -603,6 +603,8 @@ Full proof doc with every service mapping: [`demo/ALIBABA_PROOF.md`](./demo/ALIB
 
 The authoritative test and coverage values are the current CI artifacts, not a hand-copied count in this document. Qwen/Alibaba credentials are not needed for offline CI; deterministic Fakes and committed fixtures exercise the model seams without external spend, while PostgreSQL integration slices run when `DATABASE_URL` is supplied.
 
+`scripts/test-matrix.ts` is the single source of truth for the test files in every tier. The npm scripts and hosted c8 job use the same runner; a docs/supply-chain fitness test fails if a test file is unregistered, duplicated, or if CI bypasses the canonical 80% statements/branches/functions/lines gate. The coverage job supplies real pgvector, applies the schema, and verifies the DML-only runtime role before running unit, integration, security, and E2E suites serially under c8.
+
 | Tier | File(s) | What it proves |
 |---|---|---|
 | **Unit** | `tests/unit/*` | Embedder + narrator (Qwen canned + Fake), memory logic, **retrieval primitives** (BM25, RRF, MMR, hybrid, **re-rank**), **IR metrics**, **consolidation + forgetting**, **self-audit consistency** (contradiction + absence detection, precision on a control set), and the **MCP server + custom-skills layer** (`mcp.test.ts` drives the server over the real MCP protocol via the SDK in-memory transport; `skills.test.ts` covers the dispatcher + qwen-plus function-calling loop) — all over `InMemoryStore`, no infra. |
@@ -617,11 +619,12 @@ CI stages:
 1. **secret-scan** — gitleaks (pinned v8.18.4, redacted). Fails fast on any committed secret.
 2. **dep-audit** — `npm audit` (fails on high/critical).
 3. **build-test** — typecheck → schema apply (stands up real pgvector) → unit → integration → e2e → offline demo smoke.
-4. **benchmark** — retrieval regression + discrimination, literal gold-EUR-token/traceability checks, field and semantic regression sets, the 48-pair online synthetic semantic evidence set, scale/lifecycle invariants, and contradiction-resolution policy conformance. All offline gates replay committed fixtures with no key or spend.
-5. **pen-test** — `npm run test:security` (authz + daily-spend budget, prompt-injection resistance, MCP tool-boundary, sensitive-data exposure, SQL-parameterization against real pgvector).
-6. **load** — boots the backend offline, seeds, runs the bounded k6 smoke; the p95 + error-rate **SLO thresholds gate the job**.
-7. **readiness** — `npm run readiness -- --gate`: the weighted rubric completeness (≥ 95%) **and** the new **assurance dimension** (security / load / e2e layers all wired) must both be green.
-8. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.
+4. **coverage** — `npm run coverage` runs the canonical unit + integration + security + E2E matrix serially under c8 against real pgvector and gates statements, branches, functions, and lines at ≥ 80%.
+5. **benchmark** — retrieval regression + discrimination, literal gold-EUR-token/traceability checks, field and semantic regression sets, the 48-pair online synthetic semantic evidence set, scale/lifecycle invariants, and contradiction-resolution policy conformance. All offline gates replay committed fixtures with no key or spend.
+6. **pen-test** — `npm run test:security` (authz + daily-spend budget, prompt-injection resistance, MCP tool-boundary, sensitive-data exposure, SQL-parameterization against real pgvector).
+7. **load** — boots the backend offline, seeds, runs the bounded k6 smoke; the p95 + error-rate **SLO thresholds gate the job**.
+8. **readiness** — `npm run readiness -- --gate`: the weighted rubric completeness (≥ 95%) **and** the new **assurance dimension** (security / load / e2e layers all wired) must both be green.
+9. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.
 
 Every stage runs **fully offline**. There are no DashScope / Alibaba credentials in CI, because the Qwen embedder/narrator auto-fall back to deterministic Fakes and the benchmark replays cached vectors.
 
