@@ -28,7 +28,8 @@ jobs:
             https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz
           echo "ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d  gitleaks.tar.gz" | sha256sum --check --strict
           tar -xzf gitleaks.tar.gz gitleaks
-          ./gitleaks detect --source . --redact --no-banner
+          ./gitleaks detect --source . --redact --no-banner \
+            --gitleaks-ignore-path .gitleaksignore
 
   # Stage 2a — dependency vulnerability audit (offline; runs in parallel with tests).
   # --audit-level=high: low/moderate advisories are reported but do not fail the

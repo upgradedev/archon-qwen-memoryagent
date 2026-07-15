@@ -622,7 +622,7 @@ test("public quota exhaustion cannot starve the bounded authenticated judge rese
   process.env.RECALL_DAILY_LIMIT = String(RECALL_WORK_UNITS + 1);
   process.env.RECALL_DAILY_LIMIT_GLOBAL = String(RECALL_WORK_UNITS);
   process.env.RECALL_DAILY_LIMIT_JUDGE_RESERVE = String(RECALL_WORK_UNITS);
-  const key = "judge-reserve-key-1234567890-abcdef";
+  const key = "judge-reserve-key-1234567890-abcdef"; // gitleaks:allow — deterministic non-secret test fixture
   const local = await buildServer({
     store: new InMemoryStore(),
     embedder: new FakeEmbedder(3),
@@ -678,7 +678,7 @@ test("public in-flight saturation starts no extra provider work and cannot consu
       return new Promise<number[]>((resolve) => releases.push(() => resolve([1, 0, 0])));
     },
   };
-  const key = "judge-admission-key-1234567890";
+  const key = "judge-admission-key-1234567890"; // gitleaks:allow — deterministic non-secret test fixture
   const admission = new TieredQwenAdmission(1, 1);
   const admissionAttempts: Array<"public" | "judge"> = [];
   const local = await buildServer({
