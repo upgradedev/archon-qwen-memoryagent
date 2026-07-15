@@ -6,10 +6,10 @@
 45|58|SESSION B · a fresh client's question → qwen-plus grounds it in Session A's memory
 58|66|Recalled by MEANING — real cosine similarity over pgvector
 66|76|Genuinely QUERYABLE · a second, different question → a new grounded answer
-76|90|⭐ DIFFERENTIATOR · two sessions wrote ONE record differently — Mem0/Zep would MUTATE
-90|103|Archon DETECTS the contradiction, RECOMMENDS which to trust — never mutates memory
+76|90|⭐ DIFFERENTIATOR · explicit READ-ONLY audit · provenance preserved · no silent rewrite
+90|103|Archon DETECTS and RECOMMENDS read-only; a human decision is a separate atomic action
 103|117|⭐ MEANING-LEVEL audit: "on time" vs "chronically late" · qwen-plus · MCP
-117|127|Measured: 5/5 detected · 0 false positives · read-only recommender 4/4 correct
-127|139|Retrieval: Recall@3 90→96.7% · MRR 0.883→0.911 · 100% correct · 90.9% grounded
+117|127|Measured: 5/5 field issues · 0 false positives · 4/4 declared-policy conformance
+127|139|Frozen fixtures: Recall@3 90→96.7% · MRR .883→.911 · gold figure 11/11 · euro trace 10/11
 139|154|LIVE on Alibaba Cloud — ECS in Singapore + pgvector · text-embedding-v4 + qwen-plus
 154|171|Real Qwen on Alibaba Cloud. Measured, not a wrapper. Open source · MIT.

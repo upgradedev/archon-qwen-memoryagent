@@ -45,6 +45,7 @@ import {
 } from "../src/memory/semantic-consistency.js";
 import { runSemanticBench, type SemanticBenchResult } from "../bench/semantic-consistency-run.js";
 import { buildServer } from "../src/server.js";
+import { sanitizedOperationalFailure } from "../src/server/error-sanitization.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -359,18 +360,25 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
       },
     },
     {
-      id: "Pr2-video-artifact",
+      id: "Pr2-final-media-contract",
       criterion: "Presentation",
-      title: "A real demo-video artifact is committed (not an LFS/placeholder stub)",
+      title: "Final-media contract excludes the historical capture and encodes publication gates",
       weight: 5,
       cls: "automatable",
       async run() {
-        const rel = "demo/video/final/archon-memoryagent-demo.mp4";
-        const p = join(ROOT, rel);
-        if (!existsSync(p)) return { ok: false, detail: `missing ${rel}` };
-        const bytes = statSync(p).size;
-        // > 1MB → a real encoded mp4, not a text LFS pointer (~130 bytes) or stub.
-        return { ok: bytes > 1_000_000, detail: `${rel} = ${(bytes / 1_000_000).toFixed(1)} MB` };
+        const checklist = readText("demo/FINAL_MEDIA_CHECKLIST.md");
+        const review = readText("demo/JUDGE_REVIEW.md");
+        const historicalTranscript = readText("demo/video/final/docs/screencast_transcript.txt");
+        const canonicalDir = existsSync(join(ROOT, "demo/final-media"));
+        const durationGate = /strictly under 175 seconds/i.test(checklist);
+        const visibilityGate = /Public visibility with no login or access request/i.test(checklist);
+        const rightsGate = /voice-rights attestation|publication rights/i.test(checklist);
+        const historicalBlocked = /HISTORICAL PRE-HARDENING.*DO NOT RECORD OR PUBLISH/i.test(historicalTranscript);
+        const localNotPass = /local MP4 is not a pass/i.test(review);
+        return {
+          ok: canonicalDir && durationGate && visibilityGate && rightsGate && historicalBlocked && localNotPass,
+          detail: `canonical dir=${canonicalDir}; duration=${durationGate}; public=${visibilityGate}; rights=${rightsGate}; historical blocked=${historicalBlocked}; local≠submission=${localNotPass}`,
+        };
       },
     },
     {
@@ -420,6 +428,10 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
         if (process.env.READINESS_PROBE_LIVE !== "1") {
           return { ok: false, userGated: true, detail: "not probed (set READINESS_PROBE_LIVE=1 to probe the live deployment)" };
         }
+        const reviewerKey = process.env.READINESS_JUDGE_API_KEY;
+        if (!reviewerKey || reviewerKey.length < 32) {
+          return { ok: false, userGated: true, detail: "READINESS_JUDGE_API_KEY is required for the protected live probe" };
+        }
         const README2 = README;
         const host = README2.match(/https:\/\/memory\.[a-z0-9.-]+\.sslip\.io/)?.[0];
         if (!host) return { ok: false, userGated: true, detail: "no live host URL found in README" };
@@ -428,14 +440,17 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
           const t = setTimeout(() => ctrl.abort(), 5000);
           const res = await fetch(`${host}/consistency/semantic`, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${reviewerKey}`,
+            },
             body: JSON.stringify({ company: "Northwind Trading", kind: "insight" }),
             signal: ctrl.signal,
           });
           clearTimeout(t);
           return { ok: res.status === 200, userGated: true, detail: `${host}/consistency/semantic → HTTP ${res.status}` };
-        } catch (e) {
-          return { ok: false, userGated: true, detail: `probe failed: ${(e as Error).message}` };
+        } catch {
+          return { ok: false, userGated: true, detail: "probe failed (network/provider detail withheld)" };
         }
       },
     },
@@ -447,11 +462,31 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
       cls: "user-gated",
       async run() {
         const sub = existsSync(join(ROOT, "demo/SUBMISSION.md")) ? readText("demo/SUBMISSION.md") : "";
-        const hosted = /(youtu\.be\/|youtube\.com\/watch|vimeo\.com\/)\S+/i.exec(README + "\n" + sub);
+        const hosted = /(youtu\.be\/|youtube\.com\/watch|vimeo\.com\/|youku\.com\/)\S+/i.exec(README + "\n" + sub);
         return {
           ok: !!hosted,
           userGated: true,
           detail: hosted ? `hosted at ${hosted[0]}` : "no hosted video URL yet (user records/uploads after redeploy)",
+        };
+      },
+    },
+    {
+      id: "UG3-final-video-reviewed",
+      criterion: "Presentation",
+      title: "A newly generated canonical final video is present and human-reviewed",
+      weight: 5,
+      cls: "user-gated",
+      async run() {
+        const rel = "demo/final-media/memoryagent-demo.mp4";
+        const path = join(ROOT, rel);
+        if (!existsSync(path)) {
+          return { ok: false, userGated: true, detail: `pending new authenticated capture at ${rel}; historical demo/video/final artifact is excluded` };
+        }
+        const bytes = statSync(path).size;
+        return {
+          ok: bytes > 1_000_000,
+          userGated: true,
+          detail: `${rel} = ${(bytes / 1_000_000).toFixed(1)} MB; human rights/content review still required`,
         };
       },
     },
@@ -565,9 +600,10 @@ export async function runChecks(): Promise<ReadinessReport> {
       ok = r.ok;
       detail = r.detail;
       if (r.userGated) userGated = true;
-    } catch (e) {
+    } catch (error) {
       ok = false;
-      detail = `check threw: ${(e as Error).message}`;
+      const failure = sanitizedOperationalFailure("readiness_check", error);
+      detail = `check failed (${failure.failureCategory}/${failure.errorName})`;
     }
     const status: CheckStatus = s.cls === "user-gated" ? "user-gated" : ok ? "pass" : "fail";
     results.push({ id: s.id, criterion: s.criterion, title: s.title, weight: s.weight, class: s.cls, status, detail });
@@ -605,9 +641,10 @@ export async function runChecks(): Promise<ReadinessReport> {
       const r = await s.run();
       ok = r.ok;
       detail = r.detail;
-    } catch (e) {
+    } catch (error) {
       ok = false;
-      detail = `check threw: ${(e as Error).message}`;
+      const failure = sanitizedOperationalFailure("readiness_assurance", error);
+      detail = `check failed (${failure.failureCategory}/${failure.errorName})`;
     }
     assurance.push({ id: s.id, criterion: s.criterion, title: s.title, weight: s.weight, class: s.cls, status: ok ? "pass" : "fail", detail });
   }

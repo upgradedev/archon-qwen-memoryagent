@@ -22,6 +22,7 @@ import {
 import { cosineSimilarity } from "../src/memory/retrieval.js";
 import { QwenNarrator } from "../src/agents/narrator.js";
 import { hasQwenCreds } from "../src/qwen/client.js";
+import { sanitizedOperationalFailure } from "../src/server/error-sanitization.js";
 import type { RecallHit } from "../src/memory/store.js";
 import { CORPUS } from "./dataset.js";
 
@@ -74,7 +75,7 @@ async function main() {
   console.log(`\nwrote ${OUT}  (${Object.keys(answers).length} grounded answers)`);
 }
 
-main().catch((err) => {
-  console.error("bench:answers failed:", err);
+main().catch((error) => {
+  console.error("bench:answers failed", sanitizedOperationalFailure("answer_fixture", error));
   process.exit(1);
 });

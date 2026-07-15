@@ -14,7 +14,7 @@
 // makes precision/recall/FP a clean measurement of the offline opposition JUDGE's
 // discrimination (the `FakeJudge` polarity/negation heuristic), free of embedder
 // (bag-of-words) noise. The LIVE path swaps in real text-embedding-v4 vectors +
-// the qwen-plus judge; this offline corpus measures exactly the CI path.
+// the configured online Qwen judge; this offline corpus measures exactly the CI path.
 //
 // The point of the labels is to measure BOTH halves of the claim:
 //   recall     — same-subject opposed pairs the offline judge catches, and
@@ -27,7 +27,7 @@
 // contradiction is phrased with NO lexical polarity cue ("ahead of schedule" vs
 // "behind schedule") that the offline heuristic can't see. The offline judge
 // MISSES it by design — that miss is the honest motivation for the online
-// qwen-plus judge, and it keeps recall at its measured value, not a hand-fit 100%.
+// configured online judge, and it keeps recall at its measured value, not a hand-fit 100%.
 //
 // Domain-neutral on purpose (invoices, revenue, accounts — not payroll): the
 // self-auditing capability is universal, not tied to any one document type.
@@ -135,7 +135,7 @@ const CASES: SemanticCase[] = [
     b: "The supplier is consistently behind schedule.",
     kind: "contradiction",
     offlineDetectable: false,
-    note: "cue-free: opposed in meaning but no lexical polarity cue — the honest offline MISS; the qwen-plus judge is what closes it",
+    note: "cue-free: opposed in meaning but no lexical polarity cue — the honest offline MISS; the configured Qwen judge handles it online",
   },
 
   // ── Controls (same subject, NOT a contradiction — must never be flagged) ──────

@@ -27,6 +27,14 @@ test("euroFiguresIn returns only €-marked figures (grounding claims)", () => {
   assert.ok(!figs.includes(2026));
 });
 
+test("euroFiguresIn recognizes EUR symbol/code on either side without counting bare numbers", () => {
+  const figs = euroFiguresIn(
+    "Four equivalent claims: EUR 18,400; 6,300 EUR; 2,800 €; €1,075.50. " +
+    "Bare 2026, 18.3%, and 999 are not monetary claims.",
+  );
+  assert.deepEqual(figs, [18400, 6300, 2800, 1075.5]);
+});
+
 test("euroFiguresIn flags a derived, ungrounded figure for the grounding check", () => {
   // The q08-style case: €2,800 derived by arithmetic, not stored in memory.
   const figs = euroFiguresIn("operating profit €41,200 is €2,800 higher than EBITDA €38,400");

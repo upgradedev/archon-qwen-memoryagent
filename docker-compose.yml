@@ -1,9 +1,14 @@
 # Secure-by-default ECS/local stack. Copy .env.example to .env and replace the
-# database password before starting. PostgreSQL is internal-only; developers who
-# need host access can opt in with docker-compose.dev.yml (loopback binding).
+# bootstrap and runtime database passwords before starting. PostgreSQL is
+# internal-only; developers who need host access can opt in with
+# docker-compose.dev.yml (loopback binding).
+x-memoryagent-image: &memoryagent-image
+  build: .
+  image: archon-qwen-memoryagent:${IMAGE_TAG:-local}
+
 services:
   db:
-    image: pgvector/pgvector:0.8.5-pg16-bookworm
+    image: pgvector/pgvector:0.8.5-pg16-bookworm@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -26,12 +31,40 @@ services:
     networks:
       - data
 
-  backend:
-    build: .
+  db-init:
+    <<: *memoryagent-image
     depends_on:
       db:
         condition: service_healthy
     environment:
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:?set MIGRATION_DATABASE_URL in .env}
+      MEMORY_APP_DB_PASSWORD: ${MEMORY_APP_DB_PASSWORD:?set MEMORY_APP_DB_PASSWORD in .env}
+      CROSS_APP_DATABASE_NAME: ${CROSS_APP_DATABASE_NAME:-}
+      CROSS_APP_DATABASE_HOST: ${CROSS_APP_DATABASE_HOST:-}
+      CROSS_APP_DATABASE_PORT: ${CROSS_APP_DATABASE_PORT:-}
+    command: ["node", "dist/scripts/apply-schema.js"]
+    restart: "no"
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - data
+
+  backend:
+    <<: *memoryagent-image
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      # The long-lived process receives only the fixed, non-superuser runtime
+      # role. Bootstrap/admin credentials exist solely in db-init above.
       DATABASE_URL: ${COMPOSE_DATABASE_URL:?set COMPOSE_DATABASE_URL in .env}
       PORT: 9000
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
@@ -39,6 +72,7 @@ services:
       ALLOW_FAKE_QWEN: ${ALLOW_FAKE_QWEN:-false}
       QWEN_TIMEOUT_MS: ${QWEN_TIMEOUT_MS:-20000}
       QWEN_MAX_RETRIES: ${QWEN_MAX_RETRIES:-2}
+      EMBEDDING_CONCURRENCY: ${EMBEDDING_CONCURRENCY:-4}
       QWEN_MODEL: ${QWEN_MODEL:-qwen-plus}
       QWEN_EMBED_MODEL: ${QWEN_EMBED_MODEL:-text-embedding-v4}
       EMBED_DIM: ${EMBED_DIM:-1024}
@@ -52,20 +86,30 @@ services:
       PGPOOL_MAX: ${PGPOOL_MAX:-5}
       JUDGE_API_KEY: ${JUDGE_API_KEY:-}
       JUDGE_API_KEYS_JSON: "${JUDGE_API_KEYS_JSON:-}"
-      JUDGE_TENANT_ID: ${JUDGE_TENANT_ID:-_public}
+      JUDGE_TENANT_ID: ${JUDGE_TENANT_ID:-_judge_demo}
       JUDGE_AUTH_REQUIRED: ${JUDGE_AUTH_REQUIRED:-true}
       PUBLIC_TENANT_ID: ${PUBLIC_TENANT_ID:-_public}
+      ALLOW_SHARED_PUBLIC_JUDGE_TENANT: ${ALLOW_SHARED_PUBLIC_JUDGE_TENANT:-false}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
       TRUST_PROXY_ADDRESSES: ${TRUST_PROXY_ADDRESSES:-}
       # The published port is loopback-only. The production .env must explicitly
       # declare the proxy trust boundary; deploy/redeploy.sh fails closed if it does not.
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-}
+      DEEP_READINESS_DAILY_LIMIT: ${DEEP_READINESS_DAILY_LIMIT:-30}
+      DEEP_READINESS_DAILY_LIMIT_GLOBAL: ${DEEP_READINESS_DAILY_LIMIT_GLOBAL:-300}
       INGEST_DAILY_LIMIT: ${INGEST_DAILY_LIMIT:-100}
       INGEST_DAILY_LIMIT_GLOBAL: ${INGEST_DAILY_LIMIT_GLOBAL:-500}
+      INGEST_DAILY_LIMIT_JUDGE_RESERVE: ${INGEST_DAILY_LIMIT_JUDGE_RESERVE:-200}
       RECALL_DAILY_LIMIT: ${RECALL_DAILY_LIMIT:-200}
       RECALL_DAILY_LIMIT_GLOBAL: ${RECALL_DAILY_LIMIT_GLOBAL:-2000}
-      SEMANTIC_AUDIT_DAILY_LIMIT: ${SEMANTIC_AUDIT_DAILY_LIMIT:-20}
-      SEMANTIC_AUDIT_DAILY_LIMIT_GLOBAL: ${SEMANTIC_AUDIT_DAILY_LIMIT_GLOBAL:-100}
+      RECALL_DAILY_LIMIT_JUDGE_RESERVE: ${RECALL_DAILY_LIMIT_JUDGE_RESERVE:-400}
+      SEMANTIC_AUDIT_DAILY_LIMIT: ${SEMANTIC_AUDIT_DAILY_LIMIT:-500}
+      SEMANTIC_AUDIT_DAILY_LIMIT_GLOBAL: ${SEMANTIC_AUDIT_DAILY_LIMIT_GLOBAL:-2500}
+      SEMANTIC_AUDIT_DAILY_LIMIT_JUDGE_RESERVE: ${SEMANTIC_AUDIT_DAILY_LIMIT_JUDGE_RESERVE:-2500}
+      EXTRACTION_CONCURRENCY: ${EXTRACTION_CONCURRENCY:-3}
+      QWEN_PUBLIC_CONCURRENCY: ${QWEN_PUBLIC_CONCURRENCY:-2}
+      QWEN_JUDGE_CONCURRENCY: ${QWEN_JUDGE_CONCURRENCY:-2}
+      LIFECYCLE_CANDIDATE_CAP: ${LIFECYCLE_CANDIDATE_CAP:-5000}
       EMPLOYER_COST_NET_RATIO_MIN: ${EMPLOYER_COST_NET_RATIO_MIN:-1.25}
       EMPLOYER_COST_NET_RATIO_MAX: ${EMPLOYER_COST_NET_RATIO_MAX:-1.45}
       PAYMENT_GRACE_DAYS: ${PAYMENT_GRACE_DAYS:-7}

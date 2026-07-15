@@ -1,6 +1,6 @@
 // Extractor agent — ports the Archon `jobs/extraction/extractors/*` step.
 //
-// Auto-detects the source kind (image → vision, text/pdf → text), calls the
+// Routes the declared source kind (image → vision, text/PDF-extracted text → text), calls the
 // extraction client, and null-safe-parses the model's JSON into a normalized
 // `ExtractedDocument`. Null-safety follows Archon ADR-003: never `Number(x)` a
 // raw field — a model returning `"field": null` must not crash the pipeline;
@@ -14,6 +14,19 @@ import type {
   PipelineDocType,
   RawDocument,
 } from "./models.js";
+import { normalizeIso4217Currency } from "./currency.js";
+import { canonicalBusinessLabel, canonicalIdentifier } from "./identity.js";
+
+export const DEFAULT_EXTRACTION_CONCURRENCY = 3;
+export const MAX_EXTRACTION_CONCURRENCY = 4;
+
+export function configuredExtractionConcurrency(
+  raw: string | number | undefined = process.env.EXTRACTION_CONCURRENCY,
+): number {
+  const value = Number(raw ?? DEFAULT_EXTRACTION_CONCURRENCY);
+  if (!Number.isFinite(value)) return DEFAULT_EXTRACTION_CONCURRENCY;
+  return Math.max(1, Math.min(Math.trunc(value), MAX_EXTRACTION_CONCURRENCY));
+}
 
 // ADR-003 null-safe numeric coercion. `dict.get(k, default)` / `x ?? default`
 // only helps when the key is ABSENT; a present `null` (or a non-numeric string)
@@ -49,7 +62,12 @@ function parseDocType(v: unknown): PipelineDocType {
 function parsePayslip(raw: unknown): PayslipLine | null {
   if (!raw || typeof raw !== "object") return null;
   const e = raw as Record<string, unknown>;
-  const employeeId = requiredStr(e.employee_id ?? e.employee_code, "employee.employee_id");
+  const employeeId = reconcileRequiredAlias(
+    e.employee_id,
+    e.employee_code,
+    "employee.employee_id",
+    canonicalIdentifier,
+  );
   const name = safeStr(e.name, employeeId);
   const gross = requiredNonNegative(e.gross, "employee.gross");
   const net = requiredNonNegative(e.net, "employee.net");
@@ -128,7 +146,10 @@ export function parseExtractionJson(text: string): Record<string, unknown> {
 }
 
 export class Extractor {
-  constructor(private client: ExtractionClient = defaultExtractionClient()) {}
+  constructor(
+    private client: ExtractionClient = defaultExtractionClient(),
+    private readonly concurrency = configuredExtractionConcurrency(),
+  ) {}
 
   get modelId(): string {
     return `${this.client.visionModel}|${this.client.textModel}`;
@@ -138,36 +159,87 @@ export class Extractor {
     const raw = await this.client.extract(doc);
     const data = parseExtractionJson(raw);
 
-    // doc-level company/period: the caller's declaration wins, else the model's.
-    const company = validatedCompany(safeStr(doc.company) || safeStr(data.company));
-    const period = validatedPeriod(safeStr(doc.period) || safeStr(data.period));
-    const event_ref = validatedEventRef(
-      safeStr(doc.event_ref) ||
-      safeStr(data.event_ref) ||
-      safeStr(data.payroll_run_id) ||
-      "monthly-consolidated",
+    // Caller declarations constrain model output; they never silently override
+    // contradictory extracted identities that could fuse the wrong payroll run.
+    const company = reconcileRequired(
+      optionalValidated(doc.company, validatedCompany),
+      optionalValidated(data.company, (value) => validatedCompany(String(value))),
+      "company",
+      canonicalBusinessLabel,
     );
-    const doc_type = doc.declared_type ?? parseDocType(data.doc_type);
+    const period = reconcileRequired(
+      optionalValidated(doc.period, validatedPeriod),
+      optionalValidated(data.period, (value) => validatedPeriod(String(value))),
+      "period",
+      (value) => value,
+    );
+    const declaredCurrency = validatedCurrency(doc.currency);
+    const extractedCurrency = validatedCurrency(data.currency);
+    if (declaredCurrency && extractedCurrency && declaredCurrency !== extractedCurrency) {
+      throw new ExtractionOutputError(
+        `document currency conflicts with extracted currency (${declaredCurrency} vs ${extractedCurrency})`,
+      );
+    }
+    const currency = declaredCurrency ?? extractedCurrency;
+    const extractedEventRef = reconcileOptional(
+      optionalValidated(data.event_ref, (value) => validatedEventRef(String(value))),
+      optionalValidated(data.payroll_run_id, (value) => validatedEventRef(String(value))),
+      "event_ref and payroll_run_id",
+      canonicalIdentifier,
+    );
+    const event_ref = reconcileOptional(
+      optionalValidated(doc.event_ref, validatedEventRef),
+      extractedEventRef,
+      "declared and extracted event_ref",
+      canonicalIdentifier,
+    ) ?? "monthly-consolidated";
+    const extractedDocType = parseDocType(data.doc_type);
+    const declaredDocType = doc.declared_type;
+    if (
+      declaredDocType && declaredDocType !== "unknown" &&
+      extractedDocType !== "unknown" && declaredDocType !== extractedDocType
+    ) {
+      throw new ExtractionOutputError(
+        `declared document type conflicts with extracted document type (${declaredDocType} vs ${extractedDocType})`,
+      );
+    }
+    const doc_type = declaredDocType && declaredDocType !== "unknown"
+      ? declaredDocType
+      : extractedDocType;
     const payslip = parsePayslip(data.employee ?? data.payslip);
     if (doc_type === "payslip" && !payslip) {
       throw new ExtractionOutputError("payslip document requires an employee object");
     }
 
-    const gross_pay_total = optNonNegative(data.gross_pay_total, "gross_pay_total");
+    let gross_pay_total = optNonNegative(data.gross_pay_total, "gross_pay_total");
     let employer_cost_total = optNonNegative(data.employer_cost_total, "employer_cost_total");
-    const employer_ss_total = optNonNegative(
+    let employer_ss_total = optNonNegative(
       data.employer_social_security_total,
       "employer_social_security_total",
     );
-    // Derive true employer cost when only gross + employer SS are present.
-    if (employer_cost_total == null && gross_pay_total != null && employer_ss_total != null) {
-      employer_cost_total = gross_pay_total + employer_ss_total;
-    }
     const netPayTotal = optNonNegative(data.net_pay_total, "net_pay_total");
-    if (doc_type === "payroll_register" && gross_pay_total == null && employer_cost_total == null) {
-      throw new ExtractionOutputError(
-        "payroll_register requires gross_pay_total or employer_cost_total",
-      );
+    if (doc_type === "payroll_register") {
+      const supplied = [gross_pay_total, employer_cost_total, employer_ss_total]
+        .filter((value) => value != null).length;
+      if (supplied < 2) {
+        throw new ExtractionOutputError(
+          "payroll_register requires any two of gross_pay_total, employer_cost_total, and employer_social_security_total",
+        );
+      }
+      if (
+        gross_pay_total != null && employer_cost_total != null && employer_ss_total != null &&
+        Math.abs(employer_cost_total - (gross_pay_total + employer_ss_total)) > 0.01
+      ) {
+        throw new ExtractionOutputError(
+          "payroll_register employer_cost_total must equal gross_pay_total + employer_social_security_total",
+        );
+      }
+      if (gross_pay_total == null) gross_pay_total = employer_cost_total! - employer_ss_total!;
+      if (employer_ss_total == null) employer_ss_total = employer_cost_total! - gross_pay_total;
+      if (employer_cost_total == null) employer_cost_total = gross_pay_total + employer_ss_total;
+      if (gross_pay_total < 0 || employer_ss_total < 0) {
+        throw new ExtractionOutputError("payroll_register derived totals must be non-negative");
+      }
     }
     if (doc_type === "bank_confirmation" && netPayTotal == null) {
       throw new ExtractionOutputError("bank_confirmation requires net_pay_total");
@@ -178,6 +250,7 @@ export class Extractor {
       doc_type,
       company,
       period,
+      currency,
       event_ref,
       gross_pay_total,
       employer_cost_total,
@@ -191,7 +264,27 @@ export class Extractor {
   }
 
   async extractAll(docs: RawDocument[]): Promise<ExtractedDocument[]> {
-    return Promise.all(docs.map((d) => this.extract(d)));
+    const output = new Array<ExtractedDocument>(docs.length);
+    const workerCount = Math.min(this.concurrency, docs.length);
+    let next = 0;
+    let firstError: unknown;
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (firstError === undefined) {
+        const index = next++;
+        if (index >= docs.length) return;
+        try {
+          output[index] = await this.extract(docs[index]!);
+        } catch (error) {
+          firstError = error;
+        }
+      }
+    });
+    // Let every already-started request settle before returning. No new work is
+    // dequeued after a failure, so slots and provider work cannot leak beyond a
+    // rejected batch.
+    await Promise.all(workers);
+    if (firstError !== undefined) throw firstError;
+    return output;
   }
 }
 
@@ -199,6 +292,7 @@ const ROOT_FIELDS = new Set([
   "doc_type",
   "company",
   "period",
+  "currency",
   "event_ref",
   "payroll_run_id",
   "gross_pay_total",
@@ -238,36 +332,59 @@ function parseLocalizedNumber(value: string): number {
     .replace(/^[A-Z]{3}\s*/i, "")
     .replace(/\s*[A-Z]{3}$/i, "")
     .replace(/[€$£¥]/g, "")
-    .replace(/[\s'’]/g, "");
-  if (!/^[+-]?(?:\d+(?:[.,]\d+)*|[.,]\d+)$/.test(s)) return NaN;
+    .trim()
+    .replace(/[\u00a0\u202f]/g, " ")
+    .replace(/’/g, "'");
+  if (!/^[+-]?[\d., '\t]+$/.test(s)) return NaN;
   const sign = s.startsWith("-") ? -1 : 1;
   s = s.replace(/^[+-]/, "");
-  const dot = s.lastIndexOf(".");
-  const comma = s.lastIndexOf(",");
-  const lastSeparator = Math.max(dot, comma);
-  if (lastSeparator >= 0) {
-    const separator = s[lastSeparator]!;
-    const decimals = s.length - lastSeparator - 1;
-    const occurrences = s.split(separator).length - 1;
-    const otherSeparator = separator === "." ? "," : ".";
-    const hasOther = s.includes(otherSeparator);
-    const integerDigits = s.slice(0, lastSeparator).replace(/[.,]/g, "");
-    const treatAsDecimal =
-      hasOther ||
-      decimals !== 3 ||
-      (occurrences > 1 && decimals <= 2) ||
-      integerDigits === "" ||
-      integerDigits === "0";
-    if (treatAsDecimal) {
-      const integerPart = s.slice(0, lastSeparator).replace(/[.,]/g, "") || "0";
-      const fraction = s.slice(lastSeparator + 1);
-      s = `${integerPart}.${fraction}`;
-    } else {
-      s = s.replace(/[.,]/g, "");
-    }
-  }
-  const parsed = Number(s);
+  s = normalizeGroupedSpaces(s);
+  if (!s) return NaN;
+  const parsed = parseDotCommaNumber(s);
   return (negative ? -1 : 1) * sign * parsed;
+}
+
+function normalizeGroupedSpaces(value: string): string {
+  if (!/[ '\t]/.test(value)) return value;
+  const normalized = value.replace(/\t/g, " ");
+  const usesSpace = normalized.includes(" ");
+  const usesApostrophe = normalized.includes("'");
+  if (usesSpace && usesApostrophe) return "";
+  const separator = usesSpace ? " " : "'";
+  const escaped = separator === " " ? " " : "'";
+  const match = new RegExp(`^(\\d{1,3}(?:${escaped}\\d{3})+)([.,]\\d+)?$`).exec(normalized);
+  if (!match) return "";
+  return match[1]!.split(separator).join("") + (match[2] ?? "");
+}
+
+function parseDotCommaNumber(value: string): number {
+  if (/^\d+$/.test(value)) return Number(value);
+  const dotCount = (value.match(/\./g) ?? []).length;
+  const commaCount = (value.match(/,/g) ?? []).length;
+  if (dotCount > 0 && commaCount > 0) {
+    const decimal = value.lastIndexOf(".") > value.lastIndexOf(",") ? "." : ",";
+    const grouping = decimal === "." ? "," : ".";
+    const split = value.split(decimal);
+    if (split.length !== 2 || !/^\d{1,6}$/.test(split[1]!)) return NaN;
+    const escaped = grouping === "." ? "\\." : ",";
+    if (!new RegExp(`^\\d{1,3}(?:${escaped}\\d{3})+$`).test(split[0]!)) return NaN;
+    return Number(`${split[0]!.split(grouping).join("")}.${split[1]}`);
+  }
+  const separator = dotCount > 0 ? "." : commaCount > 0 ? "," : "";
+  if (!separator) return NaN;
+  const parts = value.split(separator);
+  if (parts.length > 2) {
+    if (!/^\d{1,3}$/.test(parts[0]!) || parts.slice(1).some((part) => !/^\d{3}$/.test(part))) {
+      return NaN;
+    }
+    return Number(parts.join(""));
+  }
+  const [integer, fraction] = parts;
+  if (!/^\d*$/.test(integer!) || !/^\d{1,6}$/.test(fraction!)) return NaN;
+  // A lone 1,234 / 1.234 is locale-ambiguous. Only a leading zero (or no
+  // integer digits) makes three fractional digits unambiguously decimal.
+  if (fraction!.length === 3 && integer !== "0" && integer !== "") return NaN;
+  return Number(`${integer || "0"}.${fraction}`);
 }
 
 function optNonNegative(value: unknown, field: string): number | null {
@@ -338,4 +455,55 @@ function validatedDate(value: unknown): string | null {
     throw new ExtractionOutputError("payment_date is not a real calendar date");
   }
   return text;
+}
+
+function validatedCurrency(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  const currency = normalizeIso4217Currency(value);
+  if (!currency) throw new ExtractionOutputError("currency must be a supported ISO 4217 code");
+  return currency;
+}
+
+function optionalValidated<T>(
+  value: unknown,
+  validate: (value: never) => T,
+): T | null {
+  if (value == null || value === "") return null;
+  return validate(value as never);
+}
+
+function reconcileRequired(
+  declared: string | null,
+  extracted: string | null,
+  label: string,
+  canonicalize: (value: string) => string,
+): string {
+  const value = reconcileOptional(declared, extracted, label, canonicalize);
+  if (value == null) throw new ExtractionOutputError(`${label} is required`);
+  return value;
+}
+
+function reconcileOptional(
+  first: string | null,
+  second: string | null,
+  label: string,
+  canonicalize: (value: string) => string,
+): string | null {
+  if (first && second && canonicalize(first) !== canonicalize(second)) {
+    throw new ExtractionOutputError(`${label} conflict (${first} vs ${second})`);
+  }
+  return first ?? second;
+}
+
+function reconcileRequiredAlias(
+  first: unknown,
+  second: unknown,
+  label: string,
+  canonicalize: (value: string) => string,
+): string {
+  const firstValue = first == null || first === "" ? null : requiredStr(first, label);
+  const secondValue = second == null || second === "" ? null : requiredStr(second, label);
+  const value = reconcileOptional(firstValue, secondValue, `${label} aliases`, canonicalize);
+  if (!value) throw new ExtractionOutputError(`${label} is required`);
+  return value;
 }

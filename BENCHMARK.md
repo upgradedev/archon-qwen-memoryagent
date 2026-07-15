@@ -7,14 +7,13 @@ vibe.
 
 ## TL;DR
 
-On **real `text-embedding-v4` embeddings**, hybrid retrieval (dense + lexical,
-fused with Reciprocal Rank Fusion) is the **robust** choice: it never recalls
-worse than pure dense, improves **Recall@3 coverage**, and **far outperforms
-lexical-only** on every ranking metric. Hybrid alone does *not* beat a strong
-dense embedder on top-of-list ordering (MRR / nDCG) on this corpus — but adding a
-**cross-encoder re-rank stage** (`reranked-hybrid`) does: it **beats dense on
-every metric**, including the top-rank ones. Both results are measured on real
-embeddings and reported as they fall.
+On the frozen 32-memory/15-query corpus using cached real
+`text-embedding-v4` vectors, hybrid retrieval (dense + lexical, fused with
+Reciprocal Rank Fusion) improves Recall@3 over the explicit dense condition and
+ties it at Recall@5. Hybrid alone trails dense on MRR and nDCG@5; the committed
+`qwen-plus` listwise re-rank fixture lifts those two measures and Recall@3 on
+this corpus. These are corpus-specific measurements, not a product-wide or
+field-wide superiority claim.
 
 | Condition | Recall@3 | Recall@5 | MRR | nDCG@5 |
 |---|---:|---:|---:|---:|
@@ -30,39 +29,24 @@ embeddings and reported as they fall.
 Recall@5 ties at 100%) and **≫ lexical** on every metric. Hybrid alone trails
 dense on MRR (0.883 → 0.839) and nDCG@5 (0.903 → 0.884) — a strong 1024-dim
 embedder already ranks the right memory first, so rank-fusing a weaker lexical
-list only jostles it down. **The cross-encoder re-ranker fixes exactly that:**
+list only jostles it down. **The committed listwise re-rank result addresses
+that on this corpus:**
 reading each (query, memory) pair jointly, it lifts **MRR 0.883 → 0.911 (+0.028)**,
 **nDCG@5 0.903 → 0.938 (+0.035)** and **Recall@3 90.0% → 96.7%** over the dense
 baseline — a genuine top-rank win on the rebalanced corpus (see
 [The cross-encoder re-ranker](#the-cross-encoder-re-ranker)).
 
-## What the dense baseline represents (it is the field default)
+## What the explicit dense baseline represents
 
-`naive-vector` in the table above is **not a strawman** — it is the retrieval
-approach mainstream agent-memory stacks ship **by default**. A single-vector cosine
-ANN search (`ORDER BY embedding <=> $q`) is the tutorial-grade default of
-LangChain's `VectorStoreRetriever` / `VectorStoreRetrieverMemory` (search type
-`"similarity"`, cosine — [docs](https://reference.langchain.com/javascript/langchain-core/vectorstores/VectorStoreRetriever))
-and of virtually every pgvector RAG demo. So `reranked-hybrid` beating
-`naive-vector` on **every** metric (Recall@3 90.0% → 96.7%, MRR 0.883 → 0.911,
-nDCG@5 0.903 → 0.938) is a win over **what the field actually ships by default**,
-not over a weak control.
-
-To be explicit about what we are and are **not** claiming: we did **not** run any
-product head-to-head — that would need each product's harness and is out of scope.
-What we *can* state precisely is that **LangChain's `VectorStoreRetriever` and
-typical pgvector RAG demos default to exactly the dense-cosine ANN we measured
-against**, so the delta over `naive-vector` is a delta over a real, widely-shipped
-default. And our result points the same way the strongest *production* stacks are
-already moving: **Mem0's 2026 "multi-signal" retrieval (semantic + BM25 + entity)
-and Zep's hybrid/graph retrieval have both moved _beyond_ pure dense** toward
-exactly the lexical/dense **fusion** this benchmark measures. So the finding both
-**beats the common tutorial-grade default** and **independently corroborates the
-direction the field's leaders are taking** — arrived at from Archon's own memory
-corpus, and reproducible offline from committed fixtures. (Note: Mem0/Zep are cited
-as evidence of *where the field is heading*, not as the dense baseline — their
-current defaults are richer than dense; the dense-default attribution is only to
-LangChain's default retriever and stock pgvector demos.)
+`naive-vector` is a controlled single-vector cosine condition
+(`ORDER BY embedding <=> $q`), not a named competitor product. It resembles the
+plain similarity mode documented for LangChain's
+[`VectorStoreRetriever`](https://reference.langchain.com/javascript/langchain-core/vectorstores/VectorStoreRetriever)
+and common pgvector examples, which makes it a useful and reproducible baseline.
+Implementations, defaults and tuning differ across products, so the measured
+delta must not be generalized to “what the field ships.” The only product
+head-to-head in this repository is the small, pinned Mem0 probe described below;
+Zep/Graphiti is documentation-cited and was not executed.
 
 ## Why it wins where it wins: recall by genre (Recall@5)
 
@@ -227,69 +211,62 @@ report the delta every run rather than freezing it into a brittle gate.
 npm ci
 npm run bench            # replays the committed fixtures (embeddings + re-rank scores)
 npm run bench -- --gate  # CI gate: regression guard + fusion value + discrimination
-npm run bench:accuracy -- --gate      # grounded-answer accuracy: correctness + faithfulness
+npm run bench:accuracy -- --gate      # gold EUR-token hit + complete EUR-labelled traceability
 npm run bench:consistency -- --gate   # self-auditing memory: detection + 0 false positives
-npm run bench:resolution -- --gate    # contradiction resolution: winner-accuracy + structural invariants
+npm run bench:resolution -- --gate    # declared-policy conformance + structural invariants
 # optional, need DASHSCOPE_API_KEY, rebuild the fixtures (one-time ~cents each):
 npm run bench:embed      # re-embed the corpus/queries (text-embedding-v4)
 npm run bench:rerank     # re-score the cross-encoder re-rank (qwen-plus)
 npm run bench:answers    # re-narrate the grounded answers (qwen-plus)
-# external head-to-head (needs `pip install "mem0ai==2.0.11" qdrant-client` + a key):
-npm run bench:export && python bench/external/mem0_headtohead.py   # → bench/external/mem0-evidence.json
+# optional versioned external probe (needs `pip install "mem0ai==2.0.11" qdrant-client` + a key):
+npm run bench:export
+python bench/external/mem0_headtohead.py --attempt-id=<unique-id>
+# → exclusive bench/external/mem0-evidence-v2-attempt-<unique-id>.json
 ```
 
-## Grounded-answer accuracy — a measured number on our own pipeline
+Read [`bench/external/README.md`](./bench/external/README.md) before opening or
+citing the immutable pre-hardening `mem0-evidence.json`; its original broad
+interpretation is explicitly superseded by the narrow disclosed `dir()` probe.
 
-Retrieval metrics score the *ranking*. But the thing a user actually reads is the
-**narrated answer**. So we also measure the end of the pipeline the same way an
-extraction system measures field accuracy: on a labelled question set, is the
-answer *correct*, and is every figure in it *grounded* in a recalled memory (no
-invented numbers)? This is the memory-agent analogue of a measured field-accuracy
-number — an objective grade on our own output, gated in CI.
+## Objective gold EUR-token hit and EUR-labelled amount traceability
 
-**We grade by NUMBER PRESENCE, not prose.** Earlier in this doc we said we
-deliberately do *not* grade the narrator's prose (phrasing is brittle to
-string-match and an LLM-judge would be circular — same model grading itself).
-That still holds. This benchmark sidesteps both traps: it never scores wording or
-uses a judge model. It checks two objective, reproducible facts — *is a specific
-labelled figure present?* and *does every euro figure in the answer trace to a
-recalled memory?* Both are deterministic string/number facts, not opinions.
+Retrieval metrics score ranking; this second frozen check scores only literal
+EUR-labelled token behavior in the answer fixture. It accepts `€` or `EUR` on
+either side of an English-formatted amount, so dates and percentages cannot
+accidentally satisfy the monetary check. It does **not** grade prose, factual
+truth, arithmetic validity, semantic equivalence, or general answer quality. It
+asks whether a developer-labelled amount appears with an EUR marker, and whether
+every EUR-labelled amount emitted by the answer also appears, EUR-labelled, in
+one of its recalled memories.
 
-**Measured** (`bench/accuracy-dataset.ts`, `npm run bench:accuracy`) on **11
-labelled number-bearing questions**, replaying **one committed `qwen-plus` pass**
-(`bench/fixtures/answers.json`, built by `npm run bench:answers`) over the shipped
-hybrid top-5 recall:
+Measured by `bench/accuracy-dataset.ts` and `npm run bench:accuracy` on 11
+developer-labelled, number-bearing questions, replaying one committed
+`qwen-plus` answer fixture over hybrid top-5 recall:
 
-| Measure | Result | What it means |
+| Measure | Result | Exact interpretation |
 |---|---:|---|
-| Gold-memory recall@5 | **11 / 11 (100%)** | hybrid recall put the answer-bearing memory in the top-5 for every question |
-| Answer correctness | **11 / 11 (100%)** | the narrated answer states a gold figure |
-| **Answer grounding (faithfulness)** | **10 / 11 (90.9%)** | every euro figure in the answer traces to a recalled memory |
+| Gold-memory recall@5 | **11 / 11 (100%)** | an answer-bearing labelled memory appears in top-5 for each question |
+| Developer-labelled gold EUR-token hit | **11 / 11 (100%)** | each answer contains its labelled amount with `€` / `EUR` |
+| **Complete EUR-labelled amount traceability** | **10 / 11 (90.9%)** | every emitted EUR-labelled amount occurs, EUR-labelled, in recalled evidence for 10 answers |
 
-The grounding number is the honest, load-bearing one. The single miss is
-instructive, not swept away: on the EBITDA question the narrator *derived*
-**€2,800 = operating-profit €41,200 − EBITDA €38,400** (the depreciation/
-amortisation gap) — an arithmetically-*correct* but **not-stored** figure. The
-faithfulness metric **correctly flags it**: that is the metric working, catching
-even a plausible, self-consistent invented number. We report **90.9%**, not a
-suspiciously perfect 100%, and gate at that floor (correctness = 100%, grounding
-≥ 90%) so CI catches a real regression without pretending the narrator never
-derives.
-
-**Scope, owned:** 11 questions on the frozen corpus — a small, honest labelled
-set, exactly like the retrieval benchmark's 15. It measures *this* pipeline on
-*this* corpus; it is not a general faithfulness claim. Reproducible offline: the
-grade replays the committed answers with **no key and no spend** (rebuild the
-answers only if the corpus changes, `npm run bench:answers`).
+The one traceability miss is retained: the EBITDA answer derived €2,800 from two
+stored figures even though €2,800 itself was not stored. This historical answer
+fixture predates the current strict narrator amount/currency/citation guard,
+which now repairs or falls back rather than serving an unsupported amount. We do
+not rewrite old evidence after improving production. The result is deliberately
+described as literal token presence/traceability, not “correctness” or
+“faithfulness”; the labels are developer-authored and the 11-question corpus is
+small.
 
 ```bash
-npm run bench:accuracy            # replay committed answers, grade correctness + grounding
-npm run bench:accuracy -- --gate  # CI gate: correctness = 100%, grounding ≥ 90%
+npm run bench:accuracy            # replay the committed answer fixture
+npm run bench:accuracy -- --gate  # gold EUR-token hit = 100%; complete EUR traceability >= 90%
 ```
 
 ## Head-to-head vs Mem0 and Zep
 
-The retrieval table above measures us against the field-default dense baseline.
+The retrieval table above measures controlled retrieval conditions, not product
+defaults.
 The fair question a judge will ask next is: *how does this compare to the actual
 agent-memory libraries — Mem0 and Zep?* We answer it honestly, and the honest
 answer has two parts: **retrieval is at parity**, and **we expose a capability
@@ -301,11 +278,13 @@ recommendation.
 We installed **Mem0 (`mem0ai==2.0.11`)** and drove it with the **same Qwen models
 and data**: `qwen-plus` + `text-embedding-v4` via DashScope, a local in-process
 Qdrant store, and the **same cross-session conflict pairs our own audit is
-measured on** (`bench/external/`, `python bench/external/mem0_headtohead.py`). The
-run is committed as evidence (`bench/external/mem0-evidence.json`) — it needs a
-key, so like `bench:embed`/`bench:rerank` it is **captured once and read offline**,
-and because Mem0's write path is a non-deterministic LLM it is **evidence, not a
-CI gate**.
+measured on** (`bench/external/`). The historical run is committed as
+`bench/external/mem0-evidence.json`. It predates the v2 provenance protocol, so it
+has no clean-tree/source/provider attestation and is cited only as historical
+observed-fixture evidence. The new runner refuses overwrite, a dirty source tree,
+and custom endpoints, then records a unique attempt plus source/data/protocol
+hashes. Because Mem0's write path is a non-deterministic LLM, this remains
+**evidence, not a CI gate**.
 
 Findings, measured:
 
@@ -318,14 +297,16 @@ Findings, measured:
   both: on the very same five figures (€18,400 / €12,900 / €38,400 / €6,300 /
   €27,600), **our** hybrid recall surfaces the gold figure in its top-5 on **5 / 5**
   too — see the accuracy benchmark's 11/11 recall, of which these are five.
-- **No contradiction/resolution surface.** Mem0's public API exposes **no**
+- **No separately named contradiction/resolution method matched in the pinned
+  name probe.** In `mem0ai==2.0.11`, filtering the public names returned by
+  Python `dir(memory)` found **no**
   `consist*`/`contradict*`/`conflict*`/`resolve*`/`audit*` method (empirically the
   matched-method list is `[]`). Fed two cross-session writes that disagree
   (INV-2043 total €18,400 then €18,900; and three more records), Mem0 **stored
-  both** and, on recall, **returned both values ranked by similarity with no
-  conflict flag and no resolution recommendation**. Mem0 *does* reason about
-  conflicts **internally at write time** — its LLM decides ADD/UPDATE/DELETE — but
-  that is a **silent, non-deterministic mutation**, not a queryable report of
+  both**, and the returned `memory` strings contained both values. This narrow
+  harness did not inspect undocumented, internal, differently named, or newer
+  conflict behavior. Mem0 can reason about memory operations internally at write
+  time through its LLM; the name probe found no separately named report of
   *"these two memories disagree; here is which to trust and why."*
 
 ### Zep / Graphiti (cited, not run)
@@ -347,23 +328,28 @@ override.
 | Capability | Mem0 (OSS) | Zep / Graphiti | **This entry** |
 |---|---|---|---|
 | Cross-session retrieval | dense (+ newer multi-signal) | graph + semantic/BM25 | dense + BM25 **RRF** + cross-encoder re-rank |
-| Detects same-record contradictions | at write time (LLM) | at write time (LLM, graph edges) | **on demand, read-only** (`POST /consistency`) |
-| Resolution output | none surfaced | temporal: newer edge wins | **recommendation** `{rule, confidence, rationale}` (importance→authority→recency) |
-| Mutates memory to resolve? | **yes** (silent ADD/UPDATE/DELETE) | **yes** (closes validity window) | **no — never mutates**, recommends only |
+| Detects same-record contradictions | write-time LLM operations; no separately named method matched the pinned `dir()` probe | at write time (LLM, graph edges) | **on demand, read-only** (`POST /consistency`) |
+| Resolution output | not evaluated beyond the narrow public-name/search probe | temporal: newer edge wins | **recommendation** `{rule, confidence, rationale}` (importance→authority→recency) |
+| Mutation semantics | write-time LLM memory operations were observed in the pinned/configured probe | closes temporal validity windows | audit is read-only; a separate authenticated human decision endpoint can atomically apply a selected existing value |
 | Deterministic + explainable? | no (LLM decision) | partial (LLM detect + time rule) | **yes** (pure function, fixed ladder) |
 | Portable (no lib/graph lock-in)? | needs Mem0 stack | needs graph DB + Graphiti | **pure function over generic memory rows** |
 
 **The one honest sentence.** We are **not** claiming Mem0/Zep can't handle
 conflicting memories — Mem0 mutates via its LLM, Zep invalidates graph edges by
 time. We are claiming something narrower and, we think, genuinely useful that
-*neither* exposes: a **read-only, deterministic, portable audit that surfaces the
-contradiction and *recommends* which value to trust — with a rule, a confidence,
-and a rationale — while never mutating the memory itself.** The agent (or a human)
-decides; the memory layer stays honest about what it holds.
+*neither exposed in the inspected surfaces*: a **read-only, deterministic,
+portable audit that surfaces the contradiction and recommends which value to
+trust — with a rule, a confidence, and a rationale.** In this entry the audit
+never mutates; an authenticated reviewer may separately accept or override the
+recommendation through the atomic conflict-resolution endpoint.
 
 **Scope, owned:** 4 conflict pairs + 5 retrieval probes against Mem0 — a focused,
 frozen comparison, not a broad multi-workload benchmark; Zep is doc-cited, not run.
-Reproduce with `npm run bench:export && python bench/external/mem0_headtohead.py`.
+The historical JSON remains immutable and its adjacent
+[`correction/read-first`](./bench/external/README.md) is part of its interpretation.
+A new attempt uses
+`npm run bench:export && python bench/external/mem0_headtohead.py --attempt-id=<unique-id>`
+from a clean repository against the enforced official DashScope endpoint.
 
 ## Self-auditing memory-consistency (the innovation headline)
 
@@ -422,14 +408,14 @@ actually correct, only which one a defensible policy prefers. It **never mutates
 memory**; it recommends, and the caller decides. The recommendation is additive on
 the `POST /consistency` response (backward-compatible).
 
-**Measured** on a labelled dataset (`bench/resolution-dataset.ts`,
-`npm run bench:resolution`) of contradictions hand-labelled with the memory that
-*should* win and the rule that should decide it (two recency, one importance, one
-source-authority):
+**Measured** on a declared-policy dataset (`bench/resolution-dataset.ts`,
+`npm run bench:resolution`) containing two recency, one importance and one
+source-authority case:
 
-> **4 / 4 winners recommended correctly, 4 / 4 rules correct** — with the
-> structural invariants (every contradiction resolved, the recommendation points
-> at a real memory of that contradiction, confidence in [0,1]) enforced too.
+> **4 / 4 declared-policy conformance (selected memory + rule)** — with the
+> structural invariants (every contradiction receives a recommendation, the
+> recommendation points at a carrier in that contradiction, and confidence is
+> in [0,1]) enforced too.
 
 **Honesty caveats we own:**
 
@@ -450,8 +436,8 @@ source-authority):
   signal separated the sides (bigger write-gap / stronger signal → higher), and is
   deliberately modest for recency. Treat it as an ordinal hint, not a probability.
 
-**What CI gates:** only the robust, deterministic facts — the structural invariants
-above plus winner-accuracy against the labelled policy (`bench:resolution --gate`).
+**What CI gates:** only the deterministic facts — the structural invariants
+above plus conformance to the declared policy (`bench:resolution --gate`).
 Because the recommender is pure and deterministic, these never flake; the rule
 breakdown is reported every run.
 
@@ -489,8 +475,8 @@ cross-cluster / different-subject pairs:
 
 > **9 / 10 contradictions detected with 0 false positives — 90% recall, 100%
 > precision, 0% false-positive rate.** On the same corpus the rule-based
-> field-level audit catches **0**, so the meaning-level self-audit
-> **surfaces 9 contradictions** a naive store — and any field-level audit — would serve as truth.
+> field-level audit catches **0**. The offline meaning-level path
+> **surfaces 9 contradictions** this repository's metadata-field path does not detect.
 
 **Method — the number isolates the offline judge.** Each memory carries an explicit
 per-subject **orthogonal embedding**, so the subject gate is deterministic (same-subject
@@ -498,7 +484,7 @@ pairs land at cosine ≈ 0.995 and clear the gate; different-subject pairs are o
 are rejected, never judged). That makes precision/recall/FP a clean measurement of the
 offline opposition **judge's** discrimination — the `FakeJudge` polarity/negation heuristic
 — free of bag-of-words embedder noise. The **live** path swaps in real `text-embedding-v4`
-vectors + the **qwen-plus** judge; this offline corpus measures exactly the credential-free
+vectors + the configured online Qwen judge; this offline corpus measures exactly the credential-free
 CI path.
 
 **Precision is the load-bearing number** (identical stance to the rule-based audit): the
@@ -509,17 +495,56 @@ time"* (both positive once negation is applied) and must **not** flag; the heuri
 
 **The one miss is honest, not hidden.** The single undetected contradiction is **cue-free**
 — *"delivers every shipment ahead of schedule"* vs *"is consistently behind schedule"* — no
-lexical polarity cue the offline heuristic can see. That is precisely the case the **online
-qwen-plus judge** exists to close; we floor recall at the measured 90% (same philosophy as
-grounding's measured 90.9% above), never an aspirational 100%. Full unit coverage of the
+lexical polarity cue the offline heuristic can see. The online pipeline evaluates
+such cases with `qwen-plus`; its separately frozen result is reported below. We
+floor offline recall at the measured 90%, never an aspirational 100%. Focused unit tests of the
 mechanism remains in `tests/unit/semantic-consistency.test.ts`, and the **shipped demo
 fixture** (`DEMO_SEMANTIC`, seeded by `POST /demo/seed`) is proven detectable offline.
 
 **What CI gates:** `npm run bench:semantic -- --gate` fails on any regression below **100%
-precision (0 FP)** or **90% recall** — the fifth benchmark gate alongside retrieval,
-grounded-answer accuracy, self-audit detection, and resolution. The headline numbers are
+precision (0 FP)** or **90% recall**. The offline numbers are
 pinned in `bench/golden.json` (`semantic` block) and re-verified by the readiness gate
 (`scripts/readiness.ts`, which asserts computed == golden == docs).
+
+### Historical online Qwen evaluation on a frozen developer-labelled synthetic set
+
+The historical online path used a frozen synthetic set with developer-authored labels created before that run:
+48 isolated pairs (24 contradictions, 24 negative controls). Protocol v1.1 is
+fixed at commit `7a6f06d23d83b510b1edec802679ff0ad49bdc9d` with protocol SHA-256
+`4dc677361632c1d4f5ebfc0878715137ae1453048343aef45c414ee6fd894bce`:
+`text-embedding-v4` at 1024 dimensions, `qwen-plus` at temperature 0 with JSON
+output, similarity threshold 0.75, one candidate pair per case, and three
+repetitions over one frozen embedding pass.
+
+Every repetition produced the same confusion matrix: TP 23, TN 24, FP 0, FN 1,
+with accuracy 97.92%, precision 100%, recall 95.83%, specificity 100%, F1
+97.87%, and completion 97.92%. The single p04 embedding call timed out once; its
+frozen missing vector was reused and conservatively scored as one inconclusive
+false negative in every repetition. Therefore the repetitions are stability
+checks over one observed set, not 144 independent samples or three embedding
+attempts.
+
+The append-only result is
+`bench/results/semantic-heldout-qwen-v1.1.json` (artifact commit `5648428`). The
+earlier v1 artifact with a reporting-only serialization defect remains verbatim
+at `bench/results/semantic-heldout-qwen-v1-reporting-bug.json` (artifact commit
+`c336551`); v1.1 changes reporting only, not the dataset, labels, models,
+threshold, calls, scoring or selection. All cases, errors and repetitions are
+retained. The set is synthetic and developer-authored, so these figures describe
+this frozen evaluation rather than production prevalence or general accuracy.
+The immutable v1.1 metadata also records `gitDirty: true` and a host-specific
+absolute command. We retain that provenance rather than rewriting history, but do
+not use it as clean-tree release evidence. The dated-model promotion protocol runs
+a fresh qwen-plus baseline and Qwen 3.7 candidate on the same commit and observed
+set, with explicit non-overwritable attempt evidence; it is not a new held-out or
+confirmatory evaluation. The versioned protocol is
+`bench/protocol/semantic-qwen37-ab-promotion-v1.json`; from a source-clean clone,
+run it only against the enforced official DashScope international endpoint with
+`npm run bench:semantic:qwen37:promotion -- --attempt-id=<unique-id>`. It performs
+three repetitions per arm in counterbalanced AB/BA/AB order, reuses the same
+frozen embedding pass, records source/protocol/provider hashes, and changes no
+runtime model setting. A passing decision may be applied only to
+`QWEN_JUDGE_MODEL`; `QWEN_MODEL` remains independently controlled.
 
 ## Memory lifecycle: consolidation + forgetting
 

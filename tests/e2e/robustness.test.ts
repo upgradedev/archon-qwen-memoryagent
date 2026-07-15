@@ -29,14 +29,14 @@ function event(company: string, employerCost: number, empName: string): PayrollE
     bank_net_total: employerCost - 10000,
     gross_total: employerCost - 5000,
     employer_social_security_total: 5000,
-    employee_social_security_total: 1000,
-    tax_withheld_total: 2000,
+    employee_social_security_total: 2000,
+    tax_withheld_total: 3000,
     employer_cost_total: employerCost,
     cost_gap_amount: 5000,
     cost_gap_pct: 20,
     off_bank_cost: 10000,
     employees: [
-      { employee_id: "E-1", name: empName, gross: employerCost - 6000, employee_social_security: 500, tax: 1000, net: employerCost - 8000, employer_social_security: 3000, employer_cost: employerCost },
+      { employee_id: "E-1", name: empName, gross: employerCost - 5000, employee_social_security: 2000, tax: 3000, net: employerCost - 10000, employer_social_security: 5000, employer_cost: employerCost },
     ],
     linked_docs: [],
   };

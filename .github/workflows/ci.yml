@@ -16,9 +16,9 @@ permissions:
 jobs:
   # Stage 1 — fail fast on any committed secret.
   secret-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
       - name: gitleaks detect (pinned v8.18.4, redacted)
@@ -28,7 +28,8 @@ jobs:
             https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz
           echo "ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d  gitleaks.tar.gz" | sha256sum --check --strict
           tar -xzf gitleaks.tar.gz gitleaks
-          ./gitleaks detect --source . --redact --no-banner
+          ./gitleaks detect --source . --redact --no-banner \
+            --gitleaks-ignore-path .gitleaksignore
 
   # Stage 2a — dependency vulnerability audit (offline; runs in parallel with tests).
   # --audit-level=high: low/moderate advisories are reported but do not fail the
@@ -36,12 +37,12 @@ jobs:
   # vulnerability fails the job so it is surfaced, never silently suppressed.
   dep-audit:
     needs: secret-scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24.18.0
           cache: npm
       - name: Install deps
         run: npm ci
@@ -53,12 +54,12 @@ jobs:
   # hidden by the backend-only pipeline.
   web-build:
     needs: secret-scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24.18.0
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install dashboard dependencies
@@ -80,12 +81,12 @@ jobs:
   # route introspection never opens the pg pool, so no DB service is needed.
   docs-consistency:
     needs: secret-scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24.18.0
           cache: npm
       - name: Install deps
         run: npm ci
@@ -94,16 +95,20 @@ jobs:
 
   build-test:
     needs: secret-scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memoryagent
+      DATABASE_URL: postgresql://memoryagent_app:ci-memoryagent-runtime-password-2026@localhost:5432/memoryagent
+      MEMORY_APP_DB_PASSWORD: ci-memoryagent-runtime-password-2026
+      CROSS_APP_DATABASE_NAME: postgres
     services:
       pgvector:
-        image: pgvector/pgvector:pg16
+        # Official pgvector 0.8.5 / PostgreSQL 16 / Bookworm OCI index.
+        image: pgvector/pgvector:0.8.5-pg16-bookworm@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_DB: memoryagent
         ports:
           - 5432:5432
         options: >-
@@ -112,11 +117,11 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24.18.0
           cache: npm
 
       - name: Install deps
@@ -130,6 +135,9 @@ jobs:
 
       - name: Apply schema (creates the vector(1024) memory table + HNSW index)
         run: npm run db:schema
+
+      - name: Verify DML-only runtime role and cross-database denial
+        run: npm run db:verify-role
 
       - name: Unit tests (no infra, no key)
         run: npm run test:unit
@@ -150,19 +158,35 @@ jobs:
   # if src/ coverage regresses below the honest floor. Fully OFFLINE (no key).
   coverage:
     needs: secret-scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-      # Keep the pen-test budget-exhaustion case fast (5 valid calls + 1 → 429),
-      # instead of driving the default 100-call per-IP limit through the pipeline.
-      INGEST_DAILY_LIMIT: "5"
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memoryagent
+      DATABASE_URL: postgresql://memoryagent_app:ci-memoryagent-runtime-password-2026@localhost:5432/memoryagent
+      MEMORY_APP_DB_PASSWORD: ci-memoryagent-runtime-password-2026
+      CROSS_APP_DATABASE_NAME: postgres
+      # Coverage runs the complete pyramid against one durable DB, so unrelated
+      # tests must not consume each other's operational budgets. Quota semantics
+      # remain covered by deterministic policy-injected route tests and dedicated
+      # real-Pg atomicity tests; production defaults are unchanged.
+      INGEST_DAILY_LIMIT: "10000"
+      INGEST_DAILY_LIMIT_GLOBAL: "10000"
+      INGEST_DAILY_LIMIT_JUDGE_RESERVE: "10000"
+      RECALL_DAILY_LIMIT: "10000"
+      RECALL_DAILY_LIMIT_GLOBAL: "10000"
+      RECALL_DAILY_LIMIT_JUDGE_RESERVE: "10000"
+      SEMANTIC_AUDIT_DAILY_LIMIT: "10000"
+      SEMANTIC_AUDIT_DAILY_LIMIT_GLOBAL: "10000"
+      SEMANTIC_AUDIT_DAILY_LIMIT_JUDGE_RESERVE: "10000"
+      DEEP_READINESS_DAILY_LIMIT: "10000"
+      DEEP_READINESS_DAILY_LIMIT_GLOBAL: "10000"
     services:
       pgvector:
-        image: pgvector/pgvector:pg16
+        # Official pgvector 0.8.5 / PostgreSQL 16 / Bookworm OCI index.
+        image: pgvector/pgvector:0.8.5-pg16-bookworm@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_DB: memoryagent
         ports:
           - 5432:5432
         options: >-
@@ -171,21 +195,23 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24.18.0
           cache: npm
       - name: Install deps
         run: npm ci
       - name: Apply schema (creates the vector(1024) memory table + HNSW index)
         run: npm run db:schema
+      - name: Verify DML-only runtime role and cross-database denial
+        run: npm run db:verify-role
       - name: Coverage gate (full pyramid under c8; fails below the src/ floor)
         run: >-
           npx c8 --check-coverage
           --statements=80 --branches=80 --functions=80 --lines=80
           node --import tsx --test --test-concurrency=1
-          tests/unit/embeddings.test.ts tests/unit/narrator.test.ts
+          tests/unit/db-least-privilege.test.ts tests/unit/embeddings.test.ts tests/unit/narrator.test.ts
           tests/unit/memory.test.ts tests/unit/retrieval.test.ts
           tests/unit/metrics.test.ts tests/unit/consolidation.test.ts
           tests/unit/consistency.test.ts tests/unit/semantic-consistency.test.ts tests/unit/rerank.test.ts
@@ -207,7 +233,7 @@ jobs:
           tests/e2e/readiness.test.ts
       - name: Upload lcov coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-lcov
           path: coverage/lcov.info
@@ -219,12 +245,12 @@ jobs:
   # spend — the fixture makes the SOTA claim reproducible offline.
   benchmark:
     needs: secret-scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24.18.0
           cache: npm
       - name: Install deps
         run: npm ci
@@ -234,10 +260,14 @@ jobs:
         run: npm run bench:consistency -- --gate
       - name: Meaning-level semantic self-audit gate (90% recall, 100% precision, 0 FP)
         run: npm run bench:semantic -- --gate
+      - name: Broad held-out semantic gate (48 pairs, hard controls, all misses retained)
+        run: npm run bench:semantic:heldout -- --gate
       - name: Contradiction-resolution gate (structural invariants + policy-conformance)
         run: npm run bench:resolution -- --gate
       - name: Grounded-answer accuracy gate (replays committed qwen-plus answers; correctness + grounding)
         run: npm run bench:accuracy -- --gate
+      - name: External Mem0 evidence runner self-test (no provider call)
+        run: npm run bench:external:self-test
 
   # Stage 4 — submission READINESS GATE. Encodes the four judging criteria
   # (Technical 30 · Innovation 30 · Problem 25 · Presentation 15) as machine
@@ -247,12 +277,12 @@ jobs:
   # < 95%. Fully OFFLINE (no key, no DB, no network). Emits readiness.json.
   readiness:
     needs: secret-scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24.18.0
           cache: npm
       - name: Install deps
         run: npm ci
@@ -260,7 +290,7 @@ jobs:
         run: npm run readiness -- --gate
       - name: Upload readiness.json
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: readiness-report
           path: readiness.json
@@ -275,18 +305,23 @@ jobs:
   # data). Fully OFFLINE — no DASHSCOPE key; the pg service makes the SQLi case real.
   pen-test:
     needs: secret-scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-      # Small budget so the 429 exhaustion case is fast (5 valid calls, then a 429).
-      INGEST_DAILY_LIMIT: "5"
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memoryagent
+      DATABASE_URL: postgresql://memoryagent_app:ci-memoryagent-runtime-password-2026@localhost:5432/memoryagent
+      MEMORY_APP_DB_PASSWORD: ci-memoryagent-runtime-password-2026
+      CROSS_APP_DATABASE_NAME: postgres
+      # A demo seed now costs 25 model-work units. The dedicated exhaustion test
+      # injects an exact deterministic policy, independent of this job setting.
+      INGEST_DAILY_LIMIT: "75"
     services:
       pgvector:
-        image: pgvector/pgvector:pg16
+        # Official pgvector 0.8.5 / PostgreSQL 16 / Bookworm OCI index.
+        image: pgvector/pgvector:0.8.5-pg16-bookworm@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_DB: memoryagent
         ports:
           - 5432:5432
         options: >-
@@ -295,15 +330,17 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24.18.0
           cache: npm
       - name: Install deps
         run: npm ci
       - name: Apply schema (creates the vector(1024) memory table + HNSW index)
         run: npm run db:schema
+      - name: Verify DML-only runtime role and cross-database denial
+        run: npm run db:verify-role
       - name: Pen-test suite (authz · injection · MCP boundary · exposure · SQLi)
         run: npm run test:security
 
@@ -315,17 +352,21 @@ jobs:
   # drives the LIVE box with real Qwen spend.
   load:
     needs: secret-scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memoryagent
+      DATABASE_URL: postgresql://memoryagent_app:ci-memoryagent-runtime-password-2026@localhost:5432/memoryagent
+      MEMORY_APP_DB_PASSWORD: ci-memoryagent-runtime-password-2026
+      CROSS_APP_DATABASE_NAME: postgres
       PORT: "9000"
     services:
       pgvector:
-        image: pgvector/pgvector:pg16
+        # Official pgvector 0.8.5 / PostgreSQL 16 / Bookworm OCI index.
+        image: pgvector/pgvector:0.8.5-pg16-bookworm@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_DB: memoryagent
         ports:
           - 5432:5432
         options: >-
@@ -334,27 +375,36 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24.18.0
           cache: npm
       - name: Install deps
         run: npm ci
       - name: Apply schema (creates the vector(1024) memory table + HNSW index)
         run: npm run db:schema
+      - name: Verify DML-only runtime role and cross-database denial
+        run: npm run db:verify-role
 
-      - name: Install k6
+      - name: Install k6 v2.1.0 (official archive, SHA-256 verified)
+        env:
+          K6_VERSION: "2.1.0"
+          K6_SHA256: "295d961ebfca306f295f1133068dcd403a8171c87f387928f5f30b0fbcff858a"
         run: |
           set -euo pipefail
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
-            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
-            | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install -y k6
-          k6 version
+          tools_dir=".artifacts/tools"
+          archive="${tools_dir}/k6-v${K6_VERSION}-linux-amd64.tar.gz"
+          install_dir="${tools_dir}/k6-v${K6_VERSION}-linux-amd64"
+          mkdir -p "${tools_dir}"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            --output "${archive}" \
+            "https://github.com/grafana/k6/releases/download/v${K6_VERSION}/k6-v${K6_VERSION}-linux-amd64.tar.gz"
+          printf '%s  %s\n' "${K6_SHA256}" "${archive}" | sha256sum --check --strict
+          tar -xzf "${archive}" -C "${tools_dir}"
+          test -x "${install_dir}/k6"
+          printf '%s\n' "${GITHUB_WORKSPACE}/${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/k6" version | grep -F "k6 v${K6_VERSION}"
 
       - name: Boot the OFFLINE backend (Fakes, no key) and wait for /health
         run: |
@@ -380,7 +430,7 @@ jobs:
 
       - name: Upload k6 summary + server log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: k6-offline-smoke
           path: |

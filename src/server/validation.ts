@@ -1,5 +1,7 @@
 const shortText = { type: "string", minLength: 1, maxLength: 256 } as const;
 const money = { type: "number", minimum: 0, maximum: 1_000_000_000_000 } as const;
+const signedMoney = { type: "number", minimum: -1_000_000_000_000, maximum: 1_000_000_000_000 } as const;
+export const MAX_DIRECT_PAYROLL_EMPLOYEES = 50;
 const period = { type: "string", pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$" } as const;
 const kind = {
   type: "string",
@@ -31,14 +33,15 @@ export const payrollEventSchema = {
   required: [
     "event_id", "company", "period", "employee_count", "bank_net_total", "gross_total",
     "employer_social_security_total", "employee_social_security_total", "tax_withheld_total",
-    "employer_cost_total", "cost_gap_amount", "cost_gap_pct", "off_bank_cost", "employees", "linked_docs",
+    "employer_cost_total", "employees", "linked_docs",
   ],
   properties: {
     event_id: shortText,
     event_ref: shortText,
     company: shortText,
     period,
-    employee_count: { type: "integer", minimum: 0, maximum: 100_000 },
+    currency: { type: "string", pattern: "^[A-Z]{3}$" },
+    employee_count: { type: "integer", minimum: 0, maximum: MAX_DIRECT_PAYROLL_EMPLOYEES },
     bank_net_total: money,
     gross_total: money,
     employer_social_security_total: money,
@@ -47,9 +50,10 @@ export const payrollEventSchema = {
     employer_cost_total: money,
     cost_gap_amount: money,
     cost_gap_pct: { type: "number", minimum: 0, maximum: 10_000 },
-    off_bank_cost: money,
-    employees: { type: "array", maxItems: 2_000, items: employee },
-    linked_docs: { type: "array", maxItems: 2_000, items: shortText },
+    off_bank_cost: signedMoney,
+    off_bank_cost_pct: { type: "number", minimum: -10_000, maximum: 10_000 },
+    employees: { type: "array", maxItems: MAX_DIRECT_PAYROLL_EMPLOYEES, items: employee },
+    linked_docs: { type: "array", maxItems: 100, items: shortText },
   },
 } as const;
 
@@ -61,10 +65,22 @@ export const rawDocumentSchema = {
     doc_id: shortText,
     event_ref: shortText,
     filename: { type: "string", maxLength: 512 },
-    source_kind: { type: "string", enum: ["image", "pdf", "text"] },
-    content: { type: "string", minLength: 1, maxLength: 8_000_000 },
+    source_kind: {
+      type: "string",
+      enum: ["image", "pdf", "text"],
+      description:
+        "Input representation: image uses an image data URL/base64 payload; pdf means caller-extracted plain text. This API does not parse raw PDF bytes.",
+    },
+    content: {
+      type: "string",
+      minLength: 1,
+      maxLength: 8_000_000,
+      description:
+        "Image data URL/base64 when source_kind=image; otherwise plain text. The caller must extract PDF text before submission.",
+    },
     company: shortText,
     period,
+    currency: { type: "string", pattern: "^[A-Za-z]{3}$" },
     declared_type: {
       type: "string",
       enum: ["payroll_register", "bank_confirmation", "payslip", "unknown"],

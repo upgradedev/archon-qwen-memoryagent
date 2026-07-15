@@ -67,4 +67,7 @@ npm test
 npm run coverage
 ```
 
-Verified full result: **300 total, 285 pass, 0 fail, 15 real-DB skips**; coverage **91.96% statements, 84.96% branches, 91.25% functions, 91.96% lines**. Model seams use deterministic Fakes in local/CI runs, while production is configured to fail closed without real Qwen.
+Use the final immutable CI artifact for exact test and coverage values; real-DB
+slices skip explicitly when `DATABASE_URL` is absent. Model seams use
+deterministic Fakes in offline CI, while production is configured to fail closed
+without real Qwen.

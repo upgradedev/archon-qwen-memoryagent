@@ -10,11 +10,14 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import type { FastifyInstance } from "fastify";
+import { Writable } from "node:stream";
+import pino from "pino";
 import { buildServer } from "../../src/server.js";
 import { InMemoryStore, type MemoryStore } from "../../src/memory/store.js";
 import { FakeEmbedder } from "../../src/memory/embeddings.js";
 import { FakeNarrator } from "../../src/agents/narrator.js";
 import { FakeJudge } from "../../src/memory/semantic-consistency.js";
+import { sanitizedOperationalFailure } from "../../src/server/error-sanitization.js";
 
 function offlineServer(store: MemoryStore): Promise<FastifyInstance> {
   delete process.env.DASHSCOPE_API_KEY;
@@ -38,7 +41,47 @@ const SOURCE_PATH = /(?:[A-Za-z]:\\|\/)[^\s"]*\.(?:ts|js):\d+/; // file.ts:123 w
 const SECRETISH = /(sk-[A-Za-z0-9]{8,}|"?(?:api[_-]?key|secret|password|token)"?\s*[:=])/i;
 const CONN_STRING = /postgres(?:ql)?:\/\/[^\s"]+/i;
 
+test("startup/operator error projection cannot carry a hostile name, message, or stack", () => {
+  const error = new Error("postgres://admin:password@private-db C:\\private\\server.ts:9 api_key=secret");
+  error.name = "C:\\private\\PasswordError postgres://admin:password@private-db";
+  const projected = sanitizedOperationalFailure("server_startup", error);
+  assert.deepEqual(projected, { failureCategory: "server_startup", errorName: "UnknownError" });
+  const serialized = JSON.stringify(projected);
+  assert.doesNotMatch(serialized, /postgres|admin|password|private|api_key|secret/i);
+});
+
 describe("Exposure: a server-side fault returns a graceful envelope, no internals", () => {
+  test("operator error logs contain correlation metadata but never exception secrets or paths", async () => {
+    let captured = "";
+    const sink = new Writable({
+      write(chunk, _encoding, callback) {
+        captured += chunk.toString();
+        callback();
+      },
+    });
+    const app = await buildServer({
+      store: unreachableStore(),
+      embedder: new FakeEmbedder(),
+      narrator: new FakeNarrator(),
+      judge: new FakeJudge(),
+      loggerInstance: pino({ level: "error" }, sink),
+    });
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: "/memory/count" });
+    await app.close();
+
+    assert.equal(res.statusCode, 503);
+    assert.match(captured, /request failed/);
+    assert.match(captured, /"failureCategory":"internal_error"/);
+    assert.match(captured, /"operation":"GET \/memory\/count"/);
+    assert.match(captured, /"errorId":"[0-9a-f-]{36}"/i);
+    assert.doesNotMatch(captured, /memory store unreachable/i);
+    assert.doesNotMatch(captured, STACK_FRAME);
+    assert.doesNotMatch(captured, SOURCE_PATH);
+    assert.doesNotMatch(captured, CONN_STRING);
+    assert.doesNotMatch(captured, /admin:password|api_key|sk-not-a-real-key/i);
+  });
+
   test("GET /memory/count on an unreachable store → generic correlated 503 with no internals", async () => {
     const app = await offlineServer(unreachableStore());
     await app.ready();

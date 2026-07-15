@@ -13,6 +13,7 @@ import { dirname } from "node:path";
 import { defaultEmbedder } from "../src/memory/embeddings.js";
 import { CORPUS, QUERIES } from "./dataset.js";
 import { FIXTURE_PATH, type EmbeddingFixture } from "./fixture.js";
+import { sanitizedOperationalFailure } from "../src/server/error-sanitization.js";
 
 // Round to keep the committed JSON small without hurting cosine ranking.
 const round = (v: number[]) => v.map((x) => Math.round(x * 1e6) / 1e6);
@@ -46,7 +47,7 @@ async function main() {
   console.log(`Wrote ${FIXTURE_PATH} (${Object.keys(memories).length} + ${Object.keys(queries).length} vectors).`);
 }
 
-main().catch((err) => {
-  console.error("bench:embed failed:", err);
+main().catch((error) => {
+  console.error("bench:embed failed", sanitizedOperationalFailure("embedding_fixture", error));
   process.exit(1);
 });

@@ -1,0 +1,5 @@
+# Direct Python dependencies for the authenticated demo-video workflow.
+# Keep these exact; regenerate video-demo.lock with Python 3.11 and pip-tools.
+Pillow==12.3.0
+edge-tts==7.2.8
+playwright==1.61.0

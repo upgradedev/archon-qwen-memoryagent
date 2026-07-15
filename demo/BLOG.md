@@ -24,14 +24,17 @@ part that's usually missing: **the memory audits itself.**
 
 Below is the system architecture diagram showing the ingestion pipeline, MemoryAgent core, and Qwen Cloud / Alibaba Cloud integration:
 
-![Archon MemoryAgent architecture](../docs/architecture.svg)
+![Archon MemoryAgent judge architecture](./final-media/judge-architecture.jpg)
 
 The trust boundary matters as much as the model graph. The public surface is a fixed,
 idempotent demo plus public-tenant reads; public seed and recall are quota-bounded.
 Writes, feedback, lifecycle operations, meaning-level audit, and Streamable HTTP MCP
 are authenticated and mapped to a tenant by the server. The event linker groups by
 `company + period + event_ref`, and P&L totals stay separated by currency. The editable
-source and PNG/SVG renders live in [`docs/`](../docs/architecture.mmd).
+The judge-facing image above is the canonical 16:9 submission hero. The editable
+hero source is [`docs/judge-architecture.svg`](../docs/judge-architecture.svg);
+the denser technical appendix and its PNG/SVG renders remain under
+[`docs/architecture.mmd`](../docs/architecture.mmd).
 
 ## The innovation: detect → resolve
 
@@ -76,8 +79,9 @@ compare, so the field-level audit groups nothing and reports OK; the disagreemen
 lives entirely in the prose. A companion **semantic** audit (`POST
 /consistency/semantic`, `src/memory/semantic-consistency.ts`) closes that gap. It
 embeds each memory with the same `text-embedding-v4` recall path, keeps only
-same-subject pairs by cosine, then asks a judge whether they directly contradict —
-**qwen-plus** online (real semantic reasoning), a deterministic polarity/negation
+same-subject pairs by cosine, then asks the configured `QWEN_JUDGE_MODEL` whether
+they directly contradict (`qwen-plus` is the rollback baseline; a candidate is
+eligible only after the versioned promotion gate), and a deterministic polarity/negation
 heuristic offline so it still runs in CI with no key. The online judge **fails
 closed**: any error or unparseable reply is treated as "no contradiction", never a
 manufactured one. It reuses the **same read-only resolution ladder** and, like the
@@ -87,8 +91,8 @@ quota-bounded HTTP and HTTP MCP (the `audit_memory` tool takes `semantic: true`)
 and its fixed contradiction pair is planted by the public idempotent demo seed
 so you can see the agent catch a meaning-level contradiction in its own memory.
 (Honest scope: the semantic detector is a *proven mechanism with a working live
-demo, full offline unit coverage, and a scored labelled set for the deterministic
-offline judge (not a live-Qwen accuracy claim) — see
+demo, offline regression coverage, a scored deterministic fixture, and a separate
+frozen 48-pair online Qwen evaluation with every case/error retained — see
 `BENCHMARK.md`.)
 
 ## It's measured, offline, and reproducible
@@ -99,7 +103,7 @@ fixtures — no API key, no spend, gated in CI:
 **Retrieval.** On real `text-embedding-v4` embeddings, over a frozen, diverse,
 hand-labelled corpus, our `reranked-hybrid` retriever (dense + lexical fused with
 Reciprocal Rank Fusion, then a `qwen-plus` cross-encoder re-rank) beats a strong
-single-vector dense baseline on **every** metric:
+single-vector dense condition on the three reported metrics in this frozen corpus:
 
 | Metric | dense baseline | reranked-hybrid |
 |---|---:|---:|
@@ -107,9 +111,10 @@ single-vector dense baseline on **every** metric:
 | nDCG@5 | 0.903 | **0.938** |
 | Recall@3 | 90.0% | **96.7%** |
 
-The dense baseline is not a strawman — a single-vector cosine ANN search is the
-default retrieval mode of LangChain's `VectorStoreRetriever` and of virtually
-every pgvector RAG demo, so beating it is beating what the field ships by default.
+The dense condition is an explicit, reproducible single-vector cosine control,
+similar to the plain similarity mode documented by LangChain's
+`VectorStoreRetriever`. It is not a product head-to-head or a claim about every
+system's current defaults.
 (We were honest where honesty cost us: hybrid *alone* does **not** beat a modern
 embedder on top-rank ordering on a clean corpus — that's why we added the
 cross-encoder, and reported the null result rather than tuning the corpus back
@@ -124,10 +129,10 @@ attribute name):
 > precision. The precision number is load-bearing: the control set exists to prove
 > the audit stays *silent* on things that only look like conflicts.
 
-**Resolution.** On contradictions hand-labelled with the memory that should win
-and the rule that should decide it:
+**Resolution.** On four cases encoding the declared importance → authority →
+recency policy:
 
-> **4 / 4 winners recommended correctly, 4 / 4 rules correct**, with structural
+> **4 / 4 declared-policy conformance (selected memory + rule)**, with structural
 > invariants (every contradiction resolved, recommendation points at a real
 > memory, confidence in [0,1]) enforced too.
 
@@ -153,7 +158,9 @@ a payroll register, bank confirmation, and payslips; and a strict JSON path for
 purchase/sales invoices. Over those memories it reports payroll cost, purchases,
 sales, known/unknown cash, and net profit **per currency**. If currencies are mixed,
 top-level monetary totals are `null` and `by_currency` carries independent totals.
-Payroll without a stated currency is `UNSPECIFIED`, never silently EUR.
+Payroll without supported currency evidence is counted as unknown and excluded
+from monetary aggregation—never silently EUR and never combined through an
+`UNSPECIFIED` pseudo-currency.
 
 That scope is intentionally narrower than the broader Archon roadmap. This entry
 does not claim shipped order/receipt/general-bank-statement extraction, EBITDA, or
@@ -162,7 +169,8 @@ sales targets.
 ## The stack, and where it runs
 
 - **Qwen models:** `text-embedding-v4` (1024-dim embeddings), `qwen-plus` (RAG
-  narration, rerank, semantic judge, and skills), and `qwen-vl-max` (payroll-document
+  narration, rerank, and skills), the health-visible configured semantic judge,
+  and `qwen-vl-max` (payroll-document
   vision extraction), via Alibaba Cloud Model Studio / DashScope.
 - **Memory store:** pgvector on PostgreSQL — `agent_memory(embedding vector(1024))`
   with an HNSW cosine index, semantic recall as `ORDER BY embedding <=> $query`.
@@ -181,17 +189,17 @@ Qwen plus configured judge authentication are required for `/ready`.
 
 ```bash
 cp .env.example .env
-# Fill POSTGRES_PASSWORD + both DATABASE_URL values with the same URL-safe
-# random password; set a separate 32+ character JUDGE_API_KEY.
+# Set independent bootstrap/admin and memoryagent_app runtime passwords/URLs;
+# set a third, separate 32+ character JUDGE_API_KEY.
 set -a; . ./.env; set +a
 npm ci
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
-npm run db:schema
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build db-init
+npm run db:verify-role
 npm run memory:demo                 # write the payroll evidence, recall by meaning
 npm run bench -- --gate             # retrieval: regression + fusion + discrimination gates
 npm run bench:consistency -- --gate # self-audit: 5/5 detected, 0 false positives
 npm run bench:semantic -- --gate    # meaning audit: 90% recall, 100% precision, 0 FP
-npm run bench:resolution -- --gate  # resolution: 4/4 winners correct
+npm run bench:resolution -- --gate  # resolution: 4/4 declared-policy conformance
 ```
 
 The easy half of agent memory is remembering. The half that makes it trustworthy

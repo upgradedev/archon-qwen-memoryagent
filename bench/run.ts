@@ -29,6 +29,7 @@ import {
 } from "../src/memory/retrieval.js";
 import { aggregate, type MetricRow } from "./metrics.js";
 import { FakeEmbedder } from "../src/memory/embeddings.js";
+import { sanitizedOperationalFailure } from "../src/server/error-sanitization.js";
 
 type Retriever = (q: { id: string; text: string; embedding: number[] }, corpus: Candidate[], k: number) => string[];
 
@@ -225,7 +226,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("bench failed:", err);
+main().catch((error) => {
+  console.error("bench failed", sanitizedOperationalFailure("retrieval_benchmark", error));
   process.exit(1);
 });

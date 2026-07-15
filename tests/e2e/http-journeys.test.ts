@@ -41,7 +41,7 @@ const ACME: PayrollEvent = {
   off_bank_cost: 22800,
   employees: [
     { employee_id: "E-01", name: "Elena Novak", gross: 22000, employee_social_security: 1800, tax: 3000, net: 17200, employer_social_security: 5000, employer_cost: 27000 },
-    { employee_id: "E-02", name: "David Chen", gross: 18000, employee_social_security: 1500, tax: 2400, net: 14100, employer_social_security: 4100, employer_cost: 22100 },
+    { employee_id: "E-02", name: "David Chen", gross: 30000, employee_social_security: 2400, tax: 3800, net: 23800, employer_social_security: 6800, employer_cost: 36800 },
   ],
   linked_docs: ["doc-bank-1", "doc-reg-1"],
 };
@@ -51,11 +51,16 @@ const GLOBEX: PayrollEvent = {
   ...ACME,
   event_id: "evt-globex-2026-03",
   company: "Globex Metals",
+  employee_count: 1,
   employer_cost_total: 90000,
+  gross_total: 75000,
+  employer_social_security_total: 15000,
+  employee_social_security_total: 5000,
+  tax_withheld_total: 10000,
   bank_net_total: 60000,
   off_bank_cost: 30000,
   employees: [
-    { employee_id: "G-01", name: "Priya Raman", gross: 30000, employee_social_security: 2000, tax: 4000, net: 24000, employer_social_security: 6000, employer_cost: 36000 },
+    { employee_id: "G-01", name: "Priya Raman", gross: 75000, employee_social_security: 5000, tax: 10000, net: 60000, employer_social_security: 15000, employer_cost: 90000 },
   ],
 };
 
@@ -240,7 +245,10 @@ describe("consolidation journeys", () => {
     const before = await app.inject({ method: "GET", url: "/memory/list?limit=100" });
     assert.equal(before.json().count, 4, "a retried 4-memory event remains exactly 4 rows");
 
-    const consolidated = await app.inject({ method: "POST", url: "/consolidate", payload: {} });
+    const consolidated = await app.inject({
+      method: "POST", url: "/consolidate",
+      payload: { operationId: "journey-preview", reason: "preview duplicate consolidation" },
+    });
     assert.equal(consolidated.statusCode, 200);
     const plan = consolidated.json();
     assert.equal(plan.dryRun, true, "lifecycle routes preview unless confirm=true");
@@ -251,7 +259,10 @@ describe("consolidation journeys", () => {
     assert.equal(after.json().count, before.json().count, "dry-run leaves active memories untouched");
 
     // Idempotent: a second pass finds nothing left to merge.
-    const again = await app.inject({ method: "POST", url: "/consolidate", payload: { confirm: true } });
+    const again = await app.inject({
+      method: "POST", url: "/consolidate",
+      payload: { confirm: true, operationId: "journey-apply", reason: "apply duplicate consolidation" },
+    });
     await app.close();
     assert.equal(again.json().superseded, 0, "idempotent ingest leaves no duplicate to consolidate");
   });
@@ -261,7 +272,10 @@ describe("consolidation journeys", () => {
     const app = await offlineServer(store);
     await app.ready();
     await app.inject({ method: "POST", url: "/ingest", payload: { event: ACME } }); // all-distinct memories
-    const res = await app.inject({ method: "POST", url: "/consolidate", payload: {} });
+    const res = await app.inject({
+      method: "POST", url: "/consolidate",
+      payload: { operationId: "journey-empty-preview", reason: "verify empty consolidation" },
+    });
     await app.close();
 
     assert.equal(res.statusCode, 200);

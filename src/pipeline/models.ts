@@ -25,13 +25,14 @@ export type PipelineDocType =
   | "payslip"
   | "unknown";
 
-// How the raw bytes reach the extractor. `image` → the vision model (qwen-vl-max);
-// `pdf` / `text` → the text model (qwen-plus). Mirrors the Archon extractor's
-// auto-detect-then-route step.
+// How evidence reaches the extractor. `image` is an image data URL routed to
+// qwen-vl-max; `pdf` means text already extracted from a PDF (this API does not
+// parse PDF bytes) and, like `text`, routes to qwen-plus.
 export type SourceKind = "image" | "pdf" | "text";
 
 // One raw document handed to the pipeline. For a real vision extraction, `content`
-// is a data-URL / base64 image; for text/pdf it is the extracted text. Offline
+// is a data-URL / base64 image; for text/pdf it is plain text (PDF text must be
+// extracted by the caller). Offline
 // (Fake extractor), `content` is the JSON the model WOULD have returned — the same
 // convention the FakeNarrator/FakeEmbedder use to run the whole path without a key.
 export interface RawDocument {
@@ -41,6 +42,7 @@ export interface RawDocument {
   content: string;
   company?: string;
   period?: string; // YYYY-MM
+  currency?: string; // optional caller-declared ISO 4217 code
   // Distinguishes multiple payroll runs/batches in one company-month. When
   // absent, the extractor labels the document as the monthly consolidated run.
   event_ref?: string;
@@ -68,6 +70,7 @@ export interface ExtractedDocument {
   doc_type: PipelineDocType;
   company: string;
   period: string; // YYYY-MM
+  currency?: string | null; // normalized ISO 4217 code when printed/declared
   event_ref?: string;
   // payroll_register / bank_confirmation totals
   gross_pay_total?: number | null; // register

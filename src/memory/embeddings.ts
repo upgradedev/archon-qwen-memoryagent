@@ -22,7 +22,7 @@ export const DEFAULT_EMBED_MODEL =
 export interface Embedder {
   readonly modelId: string;
   readonly dim: number;
-  embed(text: string): Promise<number[]>;
+  embed(text: string, signal?: AbortSignal): Promise<number[]>;
 }
 
 // Qwen text-embedding via the OpenAI-compatible Model Studio endpoint.
@@ -38,12 +38,15 @@ export class QwenEmbedder implements Embedder {
     this.dim = dim;
   }
 
-  async embed(text: string): Promise<number[]> {
-    const res = await this.client.embeddings.create({
-      model: this.modelId,
-      input: text,
-      dimensions: this.dim,
-    });
+  async embed(text: string, signal?: AbortSignal): Promise<number[]> {
+    const res = await this.client.embeddings.create(
+      {
+        model: this.modelId,
+        input: text,
+        dimensions: this.dim,
+      },
+      signal ? { signal } : undefined,
+    );
     const vec = res.data?.[0]?.embedding;
     if (!Array.isArray(vec) || vec.length !== this.dim) {
       throw new Error(

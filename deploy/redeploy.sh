@@ -46,7 +46,8 @@
 #   -h|--help    show this help.
 #
 # CONFIG (env-overridable):
-#   APP_DIR (/root/memoryagent) · DB_SVC (db) · BACKEND_SVC (backend)
+#   APP_DIR (/root/memoryagent) · DB_SVC (db) · DB_INIT_SVC (db-init)
+#   BACKEND_SVC (backend)
 #   BASE_URL (http://localhost:9000) · SMOKE_COMPANY (__smoke__)
 #   SMOKE_TENANT (JUDGE_TENANT_ID, otherwise _public) · SMOKE_API_KEY
 # ═════════════════════════════════════════════════════════════════════════════
@@ -54,6 +55,7 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/root/memoryagent}"
 DB_SVC="${DB_SVC:-db}"
+DB_INIT_SVC="${DB_INIT_SVC:-db-init}"
 BACKEND_SVC="${BACKEND_SVC:-backend}"
 BASE_URL="${BASE_URL:-http://localhost:9000}"
 SMOKE_COMPANY="${SMOKE_COMPANY:-__smoke__}"
@@ -109,14 +111,43 @@ env_file_value() {
 }
 if [ -f .env ]; then
   DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY:-$(env_file_value DASHSCOPE_API_KEY)}"
+  DASHSCOPE_BASE_URL="${DASHSCOPE_BASE_URL:-$(env_file_value DASHSCOPE_BASE_URL)}"
   JUDGE_API_KEY="${JUDGE_API_KEY:-$(env_file_value JUDGE_API_KEY)}"
   JUDGE_TENANT_ID="${JUDGE_TENANT_ID:-$(env_file_value JUDGE_TENANT_ID)}"
   TRUST_PROXY_ADDRESSES="${TRUST_PROXY_ADDRESSES:-$(env_file_value TRUST_PROXY_ADDRESSES)}"
   TRUST_PROXY_HOPS="${TRUST_PROXY_HOPS:-$(env_file_value TRUST_PROXY_HOPS)}"
+  MIGRATION_DATABASE_URL="${MIGRATION_DATABASE_URL:-$(env_file_value MIGRATION_DATABASE_URL)}"
+  COMPOSE_DATABASE_URL="${COMPOSE_DATABASE_URL:-$(env_file_value COMPOSE_DATABASE_URL)}"
+  MEMORY_APP_DB_PASSWORD="${MEMORY_APP_DB_PASSWORD:-$(env_file_value MEMORY_APP_DB_PASSWORD)}"
+  CROSS_APP_DATABASE_NAME="${CROSS_APP_DATABASE_NAME:-$(env_file_value CROSS_APP_DATABASE_NAME)}"
+  CROSS_APP_DATABASE_HOST="${CROSS_APP_DATABASE_HOST:-$(env_file_value CROSS_APP_DATABASE_HOST)}"
+  CROSS_APP_DATABASE_PORT="${CROSS_APP_DATABASE_PORT:-$(env_file_value CROSS_APP_DATABASE_PORT)}"
 fi
+DASHSCOPE_BASE_URL="${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}"
 SMOKE_API_KEY="${SMOKE_API_KEY:-${JUDGE_API_KEY:-}}"
-SMOKE_TENANT="${SMOKE_TENANT:-${JUDGE_TENANT_ID:-_public}}"
+SMOKE_TENANT="${SMOKE_TENANT:-${JUDGE_TENANT_ID:-_judge_demo}}"
 [ -n "${DASHSCOPE_API_KEY:-}" ] || die "configure DASHSCOPE_API_KEY in .env or the environment (real Qwen is required)."
+[ -n "${MIGRATION_DATABASE_URL:-}" ] || die "configure one-shot MIGRATION_DATABASE_URL."
+[[ "${MIGRATION_DATABASE_URL}" == postgresql://* || "${MIGRATION_DATABASE_URL}" == postgres://* ]] \
+  || die "MIGRATION_DATABASE_URL must use postgres:// or postgresql://."
+case "${MIGRATION_DATABASE_URL}" in
+  postgres://memoryagent_app:*|postgresql://memoryagent_app:*)
+    die "MIGRATION_DATABASE_URL must not authenticate as the runtime role." ;;
+esac
+[[ "${MEMORY_APP_DB_PASSWORD:-}" =~ ^[A-Za-z0-9._~-]{32,128}$ ]] \
+  || die "MEMORY_APP_DB_PASSWORD must be 32-128 URL-safe characters."
+[ -n "${COMPOSE_DATABASE_URL:-}" ] || die "configure runtime COMPOSE_DATABASE_URL."
+case "${COMPOSE_DATABASE_URL}" in
+  postgres://memoryagent_app:"${MEMORY_APP_DB_PASSWORD}"@*|postgresql://memoryagent_app:"${MEMORY_APP_DB_PASSWORD}"@*) ;;
+  *) die "COMPOSE_DATABASE_URL must use memoryagent_app and MEMORY_APP_DB_PASSWORD." ;;
+esac
+[ -n "${CROSS_APP_DATABASE_NAME:-}" ] \
+  || die "CROSS_APP_DATABASE_NAME is mandatory for the production isolation proof."
+[[ "${CROSS_APP_DATABASE_NAME}" =~ ^[A-Za-z_][A-Za-z0-9_]{0,62}$ ]] \
+  || die "CROSS_APP_DATABASE_NAME must be a safe PostgreSQL identifier."
+[ -z "${CROSS_APP_DATABASE_PORT:-}" ] || [ -n "${CROSS_APP_DATABASE_HOST:-}" ] \
+  || die "CROSS_APP_DATABASE_PORT requires CROSS_APP_DATABASE_HOST."
+ok "admin migration and non-superuser runtime database roles are separated"
 [ -z "${TRUST_PROXY_ADDRESSES:-}" ] || [ -z "${TRUST_PROXY_HOPS:-}" ] \
   || die "configure only one of TRUST_PROXY_ADDRESSES or TRUST_PROXY_HOPS."
 if [ -z "${TRUST_PROXY_ADDRESSES:-}" ]; then
@@ -150,6 +181,17 @@ log "Build backend image"
 compose build
 ok "image built"
 
+# Validate the exact value that will reach the serving container with the same
+# compiled allowlist the production client uses. This makes arbitrary compatible
+# proxies and trial/token/coding-plan endpoints a fail-closed deploy error.
+if ! compose run --rm --no-deps -e "DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL}" \
+  "$BACKEND_SVC" node --input-type=module -e \
+  'import { officialRuntimeEndpoint } from "./dist/src/qwen/client.js"; officialRuntimeEndpoint(process.env.DASHSCOPE_BASE_URL);' \
+  >/dev/null 2>&1; then
+  die "DASHSCOPE_BASE_URL must be an official credential-free pay-as-you-go Alibaba Model Studio endpoint."
+fi
+ok "official Alibaba Model Studio endpoint verified (value not printed)"
+
 # ── Bring the database up FIRST and wait until it accepts connections ─────────
 if [ "$HAS_DB_SVC" -eq 1 ]; then
   log "Start database ($DB_SVC) and wait for readiness"
@@ -164,11 +206,20 @@ if [ "$HAS_DB_SVC" -eq 1 ]; then
 fi
 
 # ── SCHEMA FIRST — fail-closed. This is the whole point of the script. ────────
-log "Apply schema (BEFORE serving new code — fail-closed)"
-if ! compose run --rm "$BACKEND_SVC" node dist/scripts/apply-schema.js; then
+log "Apply schema + least-privilege grants (BEFORE serving new code — fail-closed)"
+if ! compose run --rm "$DB_INIT_SVC"; then
   die "schema apply FAILED — NOT serving new code (would 500 on every ingest). Fix the schema/DB and re-run."
 fi
-ok "schema applied (idempotent)"
+ok "schema applied and runtime grants provisioned (idempotent)"
+
+log "Verify runtime role and cross-database denial"
+VERIFY_ARGS=(run --rm --no-deps -e "CROSS_APP_DATABASE_NAME=${CROSS_APP_DATABASE_NAME}")
+[ -n "${CROSS_APP_DATABASE_HOST:-}" ] && VERIFY_ARGS+=(-e "CROSS_APP_DATABASE_HOST=${CROSS_APP_DATABASE_HOST}")
+[ -n "${CROSS_APP_DATABASE_PORT:-}" ] && VERIFY_ARGS+=(-e "CROSS_APP_DATABASE_PORT=${CROSS_APP_DATABASE_PORT}")
+if ! compose "${VERIFY_ARGS[@]}" "$BACKEND_SVC" node dist/scripts/verify-db-least-privilege.js; then
+  die "runtime database role verification FAILED — the new image was not promoted; inspect any previously running version separately."
+fi
+ok "runtime DML boundary verified"
 
 # ── Optional: clear demo rows for a clean recording ───────────────────────────
 if [ "$TRUNCATE" -eq 1 ]; then
@@ -231,19 +282,17 @@ JSON
     || die "POST /recall failed (hybrid recall path). Check compose logs $BACKEND_SVC."
   case "$REC" in *'"answer"'*) ok "recall returned a grounded answer" ;; *) die "recall returned no 'answer'." ;; esac
 
-  # Clean up the smoke rows so the demo count is untouched.
-  if [ "$HAS_DB_SVC" -eq 1 ]; then
-    compose exec -T "$DB_SVC" sh -ec \
-      'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v tenant="$1" -v company="$2" -c "DELETE FROM agent_memory WHERE tenant_id = :'\''tenant'\'' AND company = :'\''company'\'';"' \
-      sh "$SMOKE_TENANT" "$SMOKE_COMPANY" >/dev/null 2>&1 \
-      && ok "smoke rows removed (count restored)" \
-      || printf '    \033[33m! could not auto-remove smoke rows; remove company %s manually\033[0m\n' "$SMOKE_COMPANY"
-  else
-    printf '    \033[33m! external DB: smoke rows for company %s remain; remove them manually\033[0m\n' "$SMOKE_COMPANY"
-  fi
+  # Clean up through the DML-only app role for both local and managed databases.
+  # The one-shot container receives no migration/bootstrap credential.
+  compose run --rm --no-deps \
+    -e "SMOKE_TENANT=${SMOKE_TENANT}" -e "SMOKE_COMPANY=${SMOKE_COMPANY}" \
+    "$BACKEND_SVC" node dist/scripts/cleanup-smoke.js >/dev/null \
+    || die "smoke cleanup failed — release is not clean; the new image remains unverified."
+  ok "smoke rows removed through the runtime role (count restored)"
 fi
 
 log "DONE — schema migrated, backend live, round-trip verified."
-echo "    Live URL base: $BASE_URL   (public: check the box's public IP:9000)"
+echo "    Verified URL base: $BASE_URL"
+echo "    Public access remains behind the configured HTTPS reverse proxy; port 9000 is loopback-only."
 [ "$DO_SMOKE" -eq 0 ] && echo "    (smoke skipped — health-only; ingest/recall NOT verified)"
 exit 0

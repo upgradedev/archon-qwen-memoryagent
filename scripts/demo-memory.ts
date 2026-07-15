@@ -18,6 +18,7 @@ import { PgVectorStore } from "../src/memory/store.js";
 import { MemoryAgent } from "../src/agents/memory-agent.js";
 import type { MemoryKind } from "../src/memory/store.js";
 import { closePool } from "../src/db/client.js";
+import { sanitizedOperationalFailure } from "../src/server/error-sanitization.js";
 import type { PayrollEvent } from "../src/types.js";
 
 // A diverse slice of a small business's financial memory — the FULL picture, not
@@ -118,7 +119,7 @@ async function main() {
   await closePool();
 }
 
-main().catch((err) => {
-  console.error("Demo failed:", err);
+main().catch((error) => {
+  console.error("Demo failed", sanitizedOperationalFailure("memory_demo", error));
   process.exit(1);
 });

@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../src/server.js";
+import { MEMORY_KINDS, SKILLS } from "../../src/skills/schemas.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -23,9 +24,9 @@ const readText = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 
 const README = readText("README.md");
 
-// Tokens that MATCH the model-id regex but are NOT models (the package / repo
-// slug `qwen-memoryagent`). Excluded from both the code set and the README set.
-const NON_MODEL_TOKENS = new Set(["qwen-memoryagent"]);
+// Tokens that MATCH the model-id regex but are NOT models (package/repo slugs or
+// protocol/header names). Excluded from both the code set and the README set.
+const NON_MODEL_TOKENS = new Set(["qwen-memoryagent", "qwen-work-units"]);
 // Matches Qwen/DashScope model ids: `text-embedding-vN`, `qwen-plus`,
 // `qwen-vl-max`, etc. Deliberately broad so a *phantom* model in the README
 // (e.g. `qwen-turbo` the code never uses) is still caught.
@@ -74,6 +75,7 @@ test("CHECK 1a — every model id in README is one the code actually uses (no ph
   const readme = modelsIn(README);
 
   assert.ok(code.size >= 3, `expected the code to reference model ids, found ${[...code]}`);
+  assert.ok(!code.has("qwen-work-units"), "HTTP quota headers must not be classified as Qwen model ids");
 
   // HARD: no phantom — a model the README advertises but the code never uses.
   const phantom = [...readme].filter((m) => !code.has(m));
@@ -184,7 +186,8 @@ interface Golden {
     mrr_reranked_hybrid: number;
     ndcg5_reranked_hybrid: number;
     recall3_reranked_hybrid_pct: number;
-    grounding_faithfulness_pct: number;
+    gold_figure_hit_pct: number;
+    complete_euro_figure_traceability_pct: number;
   };
 }
 
@@ -202,17 +205,17 @@ function parseHeadlineRetrieval(): { mrr: number; ndcg5: number; recall3: number
   return { mrr: Number(m![1]), ndcg5: Number(m![2]), recall3: Number(m![3]) };
 }
 
-function parseGrounding(): number {
-  const m = README.match(/grounding \/ faithfulness: ([\d.]+)%/);
-  assert.ok(m, "README must state the answer grounding / faithfulness percentage");
-  return Number(m![1]);
+function parseFigureMetrics(): { goldFigureHit: number; completeEuroTraceability: number } {
+  const m = README.match(/gold EUR-token hit: ([\d.]+)% · complete EUR-labelled traceability: ([\d.]+)%/);
+  assert.ok(m, "README must state both narrow objective EUR-token metrics");
+  return { goldFigureHit: Number(m![1]), completeEuroTraceability: Number(m![2]) };
 }
 
 test("CHECK 3 — README headline metrics equal the pinned golden.json values (within tolerance)", () => {
   const { ratio, percent } = golden.tolerance;
   const g = golden.metrics;
   const rt = parseHeadlineRetrieval();
-  const grounding = parseGrounding();
+  const figures = parseFigureMetrics();
 
   const near = (a: number, b: number, tol: number, label: string) =>
     assert.ok(Math.abs(a - b) <= tol, `${label}: README ${a} drifted from golden ${b} (tol ±${tol})`);
@@ -220,5 +223,14 @@ test("CHECK 3 — README headline metrics equal the pinned golden.json values (w
   near(rt.mrr, g.mrr_reranked_hybrid, ratio, "MRR");
   near(rt.ndcg5, g.ndcg5_reranked_hybrid, ratio, "nDCG@5");
   near(rt.recall3, g.recall3_reranked_hybrid_pct, percent, "Recall@3");
-  near(grounding, g.grounding_faithfulness_pct, percent, "grounding/faithfulness");
+  near(figures.goldFigureHit, g.gold_figure_hit_pct, percent, "gold-figure hit");
+  near(figures.completeEuroTraceability, g.complete_euro_figure_traceability_pct, percent, "complete euro-figure traceability");
+});
+
+test("CHECK 1c — skill kind descriptions are generated from the complete enum", () => {
+  const expected = `Memory kind: ${MEMORY_KINDS.join(" | ")}.`;
+  for (const skill of SKILLS) {
+    const kind = skill.parameters.properties.kind as { description?: string } | undefined;
+    if (kind) assert.equal(kind.description, expected, `${skill.name} kind description drifted from MEMORY_KINDS`);
+  }
 });

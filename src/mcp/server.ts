@@ -37,7 +37,14 @@ import { createServer as createHttpServer, type Server as HttpServer } from "nod
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SkillDispatcher, defaultSkillDispatcher } from "../skills/dispatcher.js";
 import { mcpTools, callTool } from "./tools.js";
-import { authenticateJudge, loadJudgeAuth, type JudgeAuthOptions } from "../server/auth.js";
+import {
+  DEFAULT_JUDGE_TENANT,
+  DEFAULT_PUBLIC_TENANT,
+  authenticateJudge,
+  loadJudgeAuth,
+  normalizeTenantId,
+  type JudgeAuthOptions,
+} from "../server/auth.js";
 import {
   consumeTwoTierQuota,
   InMemoryDailyQuotaBackend,
@@ -45,6 +52,13 @@ import {
   type DailyQuotaBackend,
 } from "../server/quota.js";
 import { hasQwenCreds } from "../qwen/client.js";
+import { PROCESS_QWEN_ADMISSION, type QwenAdmission } from "../server/admission.js";
+import { sanitizedOperationalFailure } from "../server/error-sanitization.js";
+import {
+  createStdioCallExecutor,
+  mcpRequestWorkUnits,
+  type McpCallExecutor,
+} from "./stdio-policy.js";
 
 const pkg = createRequire(import.meta.url)("../../package.json") as { version: string };
 
@@ -52,7 +66,10 @@ const pkg = createRequire(import.meta.url)("../../package.json") as { version: s
 // tools/call handlers. Returns the configured, UNCONNECTED server so a caller
 // (or a test using InMemoryTransport) can connect any transport to it. All the
 // request logic delegates to the pure adapter in ./tools.ts.
-export function buildMcpServer(dispatcher: SkillDispatcher = defaultSkillDispatcher()): Server {
+export function buildMcpServer(
+  dispatcher: SkillDispatcher = defaultSkillDispatcher(),
+  execute: McpCallExecutor = callTool,
+): Server {
   const server = new Server(
     { name: "archon-memoryagent", version: pkg.version },
     { capabilities: { tools: {} } }
@@ -62,7 +79,7 @@ export function buildMcpServer(dispatcher: SkillDispatcher = defaultSkillDispatc
 
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
     const { name, arguments: args } = request.params;
-    return callTool(dispatcher, name, (args ?? {}) as Record<string, unknown>);
+    return execute(dispatcher, name, (args ?? {}) as Record<string, unknown>);
   });
 
   return server;
@@ -75,7 +92,12 @@ export function buildMcpServer(dispatcher: SkillDispatcher = defaultSkillDispatc
 // Start the server on the stdio transport (the primary MCP client transport).
 // NOTE: stdio speaks JSON-RPC on stdout — never write logs to stdout here.
 export async function startStdio(): Promise<void> {
-  const server = buildMcpServer();
+  const tenantId = mcpStdioTenantId();
+  // Construct the policy before provider/store defaults. Production and
+  // serverless misconfiguration therefore fail closed before opening a protocol
+  // transport or accepting any tool request.
+  const execute = createStdioCallExecutor({ tenantId });
+  const server = buildMcpServer(defaultSkillDispatcher(tenantId), execute);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("archon-memoryagent MCP server running on stdio");
@@ -89,15 +111,19 @@ export interface McpHttpOptions {
   maxBodyBytes?: number;
   dispatcherFactory?: (tenantId: string) => SkillDispatcher;
   quotaBackend?: DailyQuotaBackend;
+  qwenAdmission?: QwenAdmission;
 }
 
 export function createMcpHttpServer(options: McpHttpOptions = {}): HttpServer {
-  if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL && !options.dispatcherFactory) {
-    throw new Error("DATABASE_URL is required for the production MCP server");
+  // Real provider spend must never be guarded by a fresh per-process counter.
+  // Production also requires the durable store even when a caller injects a
+  // dispatcher: injectable test seams are not a production bypass.
+  if (!process.env.DATABASE_URL && (process.env.NODE_ENV === "production" || hasQwenCreds())) {
+    throw new Error("DATABASE_URL is required for durable remote MCP memory and quotas");
   }
   const envAuth: JudgeAuthOptions = process.env.MCP_API_KEY
     ? {
-        apiKeys: { [process.env.MCP_TENANT_ID ?? process.env.JUDGE_TENANT_ID ?? "_public"]: process.env.MCP_API_KEY },
+        apiKeys: { [process.env.MCP_TENANT_ID ?? process.env.JUDGE_TENANT_ID ?? DEFAULT_JUDGE_TENANT]: process.env.MCP_API_KEY },
       }
     : {};
   // Remote MCP is always fail-closed, even in local NODE_ENV. stdio remains the
@@ -112,6 +138,7 @@ export function createMcpHttpServer(options: McpHttpOptions = {}): HttpServer {
   const dispatcherFactory = options.dispatcherFactory ?? defaultSkillDispatcher;
   const quota = options.quotaBackend ??
     (process.env.DATABASE_URL ? new PgDailyQuotaBackend() : new InMemoryDailyQuotaBackend());
+  const qwenAdmission = options.qwenAdmission ?? PROCESS_QWEN_ADMISSION;
   const tenantLimit = boundedEnv("MCP_DAILY_LIMIT", 500);
   const globalLimit = boundedEnv("MCP_DAILY_LIMIT_GLOBAL", 2_000);
 
@@ -133,11 +160,7 @@ export function createMcpHttpServer(options: McpHttpOptions = {}): HttpServer {
       }
       return json(res, result.statusCode, { error: result.error });
     }
-    const allowFake = /^(1|true|yes|on)$/i.test(process.env.ALLOW_FAKE_QWEN ?? "");
-    if (process.env.NODE_ENV === "production" && !hasQwenCreds() && !allowFake) {
-      return mcpServiceUnavailable(res, requestId, new Error("Qwen provider is not configured"));
-    }
-
+    let releaseAdmission: (() => void) | null = null;
     try {
       const contentType = String(req.headers["content-type"] ?? "").split(";", 1)[0]!.trim().toLowerCase();
       if (contentType !== "application/json") {
@@ -150,18 +173,42 @@ export function createMcpHttpServer(options: McpHttpOptions = {}): HttpServer {
       // Reject malformed/oversized payloads before reserving a shared Qwen
       // budget unit; otherwise cheap invalid requests could drain judge quota.
       const body = await readJsonBody(req, maxBodyBytes);
+      // One HTTP debit must never authorize an arbitrarily large JSON-RPC batch.
+      // This endpoint is deliberately single-message; each tool call is sent and
+      // atomically metered as its own request.
+      if (Array.isArray(body)) {
+        return json(res, 400, { error: "JSON-RPC batch requests are not supported" });
+      }
 
-      const budget = await consumeTwoTierQuota(
-        quota,
-        "mcp",
-        result.principal.tenantId,
-        tenantLimit,
-        globalLimit,
-      );
-      res.setHeader("x-ratelimit-limit", budget.limit);
-      res.setHeader("x-ratelimit-remaining", budget.remaining);
-      res.setHeader("x-ratelimit-reset", budget.resetAt);
-      if (!budget.ok) return json(res, 429, { error: "daily MCP request limit reached", resetAt: budget.resetAt });
+      // Use exactly the same provider-work classifier as stdio. Protocol setup,
+      // tools/list, count, and rule-only audit are cheap and must neither occupy
+      // Qwen admission nor consume a model budget unit.
+      const workUnits = mcpWorkUnits(body);
+      if (workUnits > 0) {
+        const allowFake = /^(1|true|yes|on)$/i.test(process.env.ALLOW_FAKE_QWEN ?? "");
+        if (process.env.NODE_ENV === "production" && !hasQwenCreds() && !allowFake) {
+          return mcpServiceUnavailable(res, requestId, new Error("Qwen provider is not configured"));
+        }
+        releaseAdmission = qwenAdmission.tryAcquire("judge");
+        if (!releaseAdmission) {
+          res.setHeader("retry-after", "2");
+          return json(res, 503, { error: "model capacity temporarily unavailable", retryAfterSeconds: 2 });
+        }
+
+        const budget = await consumeTwoTierQuota(
+          quota,
+          "mcp",
+          result.principal.tenantId,
+          tenantLimit,
+          globalLimit,
+          "judge",
+          workUnits,
+        );
+        res.setHeader("x-ratelimit-limit", budget.limit);
+        res.setHeader("x-ratelimit-remaining", budget.remaining);
+        res.setHeader("x-ratelimit-reset", budget.resetAt);
+        if (!budget.ok) return json(res, 429, { error: "daily MCP model-work limit reached", resetAt: budget.resetAt });
+      }
       const server = buildMcpServer(dispatcherFactory(result.principal.tenantId));
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => {
@@ -176,14 +223,20 @@ export function createMcpHttpServer(options: McpHttpOptions = {}): HttpServer {
         return json(res, err.statusCode, { error: err.message });
       }
       return mcpServiceUnavailable(res, requestId, err);
+    } finally {
+      releaseAdmission?.();
     }
   });
 }
 
-export async function startHttp(port: number = mcpHttpPort()): Promise<void> {
+export async function startHttp(port: number = mcpHttpPort(), host: string = mcpHttpHost()): Promise<void> {
   const httpServer = createMcpHttpServer();
-  await new Promise<void>((resolve) => httpServer.listen(port, resolve));
-  console.error(`archon-memoryagent MCP server running on Streamable HTTP :${port}/mcp`);
+  await new Promise<void>((resolve) => httpServer.listen(port, host, resolve));
+  console.error(`archon-memoryagent MCP server running on Streamable HTTP ${host}:${port}/mcp`);
+}
+
+export function mcpWorkUnits(body: unknown): number {
+  return mcpRequestWorkUnits(body);
 }
 
 class McpHttpError extends Error {
@@ -226,9 +279,14 @@ function mcpServiceUnavailable(
   err: unknown,
 ): void {
   const errorId = randomUUID();
-  // stderr is the MCP server's operator log; stdout must remain protocol-only for
-  // stdio mode. Public clients receive only the generic correlated envelope.
-  console.error("MCP request failed", { requestId, errorId, err });
+  // Keep both the client envelope and operator log free of exception messages,
+  // stacks, SQL, credentials, and payload data. The correlation id is sufficient
+  // to join this event to provider/database observability at the source.
+  console.error("MCP request failed", {
+    requestId,
+    errorId,
+    errorName: sanitizedOperationalFailure("mcp_request", err).errorName,
+  });
   json(res, 503, { error: "service temporarily unavailable", requestId, errorId });
 }
 
@@ -238,6 +296,30 @@ function boundedEnv(name: string, fallback: number): number {
 
 export function mcpHttpPort(raw: string | number | undefined = process.env.MCP_HTTP_PORT): number {
   return boundedNumber(raw, 9_100, 1, 65_535);
+}
+
+export function mcpHttpHost(raw: string | undefined = process.env.MCP_HTTP_HOST): string {
+  const host = (raw ?? "127.0.0.1").trim();
+  if (!host || host.length > 253 || /[\s/\\]/.test(host)) {
+    throw new Error("MCP_HTTP_HOST must be a plain hostname or IP address");
+  }
+  return host;
+}
+
+export function mcpStdioTenantId(
+  raw: string | undefined = process.env.MCP_STDIO_TENANT_ID ?? process.env.JUDGE_TENANT_ID,
+  publicTenant: string = process.env.PUBLIC_TENANT_ID ?? DEFAULT_PUBLIC_TENANT,
+  production: boolean = process.env.NODE_ENV === "production",
+): string {
+  if (production && !raw?.trim()) {
+    throw new Error("production MCP stdio requires MCP_STDIO_TENANT_ID or JUDGE_TENANT_ID");
+  }
+  const fallback = production ? DEFAULT_JUDGE_TENANT : "_local_mcp";
+  const tenant = normalizeTenantId(raw ?? fallback);
+  if (tenant === normalizeTenantId(publicTenant)) {
+    throw new Error("writable MCP stdio tenant must differ from the public tenant");
+  }
+  return tenant;
 }
 
 function boundedNumber(
@@ -263,7 +345,7 @@ async function main(): Promise<void> {
 const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]!).href;
 if (isMain) {
   main().catch((err) => {
-    console.error(err);
+    console.error("MemoryAgent MCP startup failed", sanitizedOperationalFailure("mcp_startup", err));
     process.exit(1);
   });
 }

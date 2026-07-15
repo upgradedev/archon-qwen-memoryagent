@@ -7,13 +7,20 @@ import assert from "node:assert/strict";
 import { FakeEmbedder } from "../../src/memory/embeddings.js";
 import { FakeNarrator } from "../../src/agents/narrator.js";
 import { InMemoryStore } from "../../src/memory/store.js";
-import { remember, recall } from "../../src/memory/memory.js";
+import {
+  MAX_MEMORY_BATCH,
+  remember,
+  rememberMany,
+  recall,
+} from "../../src/memory/memory.js";
 import { MemoryAgent } from "../../src/agents/memory-agent.js";
 import { cosineSimilarity } from "../../src/memory/retrieval.js";
 import { toVectorLiteral } from "../../src/db/client.js";
 import type { PayrollEvent } from "../../src/types.js";
 import type { Reranker } from "../../src/memory/rerank.js";
 import { FakeJudge } from "../../src/memory/semantic-consistency.js";
+import type { Embedder } from "../../src/memory/embeddings.js";
+import type { StoredMemory } from "../../src/memory/store.js";
 
 const EVENT: PayrollEvent = {
   event_id: "evt-acme-2026-03",
@@ -107,6 +114,55 @@ test("MemoryAgent.ingestEvent writes event + insight + per-employee memories", a
   const ids = await agent.ingestEvent(EVENT);
   // event summary + insight + 2 per-employee lines = 4 memories.
   assert.equal(ids.length, 4);
+});
+
+test("company scope uses one NFKC/case/whitespace identity while preserving the display label", async () => {
+  const embedder = new FakeEmbedder();
+  const store = new InMemoryStore();
+  const display = "Ａcme   Ltd";
+  await remember(embedder, store, { kind: "insight", company: display, content: "canonical company fact" });
+  await remember(embedder, store, { kind: "insight", company: "Other Ltd", content: "other company fact" });
+
+  const hits = await recall(embedder, store, "canonical company fact", {
+    company: "  acme ltd  ", kind: "insight", limit: 5,
+  });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]!.company, display, "the original display value remains intact");
+  assert.equal(await store.count("acme ltd"), 1);
+  assert.equal((await store.listForAudit({ company: " ACME   LTD " })).length, 1);
+});
+
+test("recall never mixes incompatible embedding-model vector spaces", async () => {
+  const store = new InMemoryStore();
+  await store.remember({
+    kind: "insight", company: "Acme", content: "historical model fact",
+    embedding: [1, 0], embedModel: "model-v1",
+  });
+  await store.remember({
+    kind: "insight", company: "Acme", content: "current model fact",
+    embedding: [0, 1], embedModel: "model-v2",
+  });
+  const currentEmbedder: Embedder = {
+    modelId: "model-v2", dim: 2, async embed() { return [1, 0]; },
+  };
+
+  const hits = await recall(currentEmbedder, store, "query", { company: "Acme", limit: 5 });
+  assert.deepEqual(hits.map((hit) => hit.content), ["current model fact"]);
+});
+
+test("MemoryAgent keeps the full off-bank ratio distinct from employer social-security ratio", async () => {
+  const store = new InMemoryStore();
+  const agent = new MemoryAgent(new FakeEmbedder(), store, new FakeNarrator());
+  await agent.ingestEvent(EVENT);
+  const insight = (await store.listForAudit({ company: EVENT.company, kind: "insight" }))[0]!;
+
+  assert.match(insight.content, /22,800 currency units \(55\.6% of the transfer\)/);
+  assert.match(insight.content, /11,800 currency units \(28\.8% of the bank transfer\)/);
+  assert.doesNotMatch(
+    insight.content,
+    /22,800 currency units \(28\.8%/,
+    "the employer-SS percentage must never be attached to the full employer-cost gap",
+  );
 });
 
 test("MemoryAgent.ingestPipelineBatch commits event + derived findings in one batch", async () => {
@@ -208,7 +264,7 @@ test("MemoryAgent semantic audit reuses stored tenant-scoped embeddings", async 
     });
   }
   const noReembed = {
-    modelId: "must-not-run",
+    modelId: "stored-model",
     dim: 3,
     async embed(): Promise<number[]> {
       throw new Error("semantic audit must use stored vectors");
@@ -261,11 +317,144 @@ test("MemoryAgent.recallAnswer degrades gracefully when the narrator is down (re
   assert.ok(res.citations.length > 0, "degraded answer must stay grounded in citations");
   // Flagged as degraded, with the documented reason.
   assert.equal(res.degraded, "narrator unavailable — returning raw recalled memories");
+  assert.equal(res.degradationCode, "unexpected_narrator_failure");
   assert.equal(res.modelId, "degraded");
   // The fallback answer is composed from the recalled memories, cited by marker.
   for (const c of res.citations) assert.ok(res.answer.includes(c.marker), `fallback missing marker ${c.marker}`);
   // The self-audit still runs over the recalled memories in the degraded path.
   assert.ok(res.consistency && typeof res.consistency.audited === "number");
+});
+
+test("rememberMany bounds embedding concurrency and preserves input order", async () => {
+  let active = 0;
+  let maxActive = 0;
+  const embedder: Embedder = {
+    modelId: "timed-embedder",
+    dim: 1,
+    async embed(text) {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      const index = Number(text.slice(1));
+      await new Promise((resolve) => setTimeout(resolve, (8 - index) * 2));
+      active--;
+      return [index];
+    },
+  };
+  class CapturingStore extends InMemoryStore {
+    batch: StoredMemory[] = [];
+    override async rememberMany(memories: StoredMemory[]): Promise<string[]> {
+      this.batch = memories;
+      return memories.map((_, index) => `id-${index}`);
+    }
+  }
+  const store = new CapturingStore();
+  const inputs = Array.from({ length: 8 }, (_, index) => ({
+    kind: "document" as const,
+    content: `m${index}`,
+  }));
+
+  const ids = await rememberMany(embedder, store, inputs, { concurrency: 3 });
+
+  assert.ok(maxActive <= 3, `provider concurrency exceeded the cap: ${maxActive}`);
+  assert.deepEqual(ids, inputs.map((_, index) => `id-${index}`));
+  assert.deepEqual(store.batch.map((memory) => memory.content), inputs.map((memory) => memory.content));
+  assert.deepEqual(store.batch.map((memory) => memory.embedding[0]), [0, 1, 2, 3, 4, 5, 6, 7]);
+});
+
+test("rememberMany aborts siblings, drains active embeddings, and writes nothing after a failure", async () => {
+  let active = 0;
+  let maxActive = 0;
+  let started = 0;
+  let aborted = 0;
+  const embedder: Embedder = {
+    modelId: "failing-embedder",
+    dim: 1,
+    async embed(text, signal) {
+      active++;
+      started++;
+      maxActive = Math.max(maxActive, active);
+      try {
+        if (text === "fail") {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          throw new Error("embedding failed");
+        }
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 100);
+          signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            aborted++;
+            reject(Object.assign(new Error("aborted sibling"), { name: "AbortError" }));
+          }, { once: true });
+        });
+        return [1];
+      } finally {
+        active--;
+      }
+    },
+  };
+  const store = new InMemoryStore();
+  const inputs = ["fail", "slow-1", "slow-2", "queued-1", "queued-2"].map((content) => ({
+    kind: "document" as const,
+    content,
+  }));
+
+  await assert.rejects(
+    rememberMany(embedder, store, inputs, { concurrency: 3 }),
+    /embedding failed/,
+  );
+
+  assert.equal(active, 0, "the batch must drain every provider request before rejecting");
+  assert.equal(started, 3, "queued work must never start after the first failure");
+  assert.equal(aborted, 2, "both in-flight siblings receive the abort signal");
+  assert.equal(maxActive, 3);
+  assert.equal(await store.count(), 0, "a failed embedding batch cannot partially persist");
+});
+
+test("rememberMany rejects an oversized batch before invoking the provider", async () => {
+  let calls = 0;
+  const embedder: Embedder = {
+    modelId: "must-not-run",
+    dim: 1,
+    async embed() {
+      calls++;
+      return [1];
+    },
+  };
+  await assert.rejects(
+    rememberMany(
+      embedder,
+      new InMemoryStore(),
+      Array.from({ length: MAX_MEMORY_BATCH + 1 }, (_, index) => ({
+        kind: "document" as const,
+        content: `memory-${index}`,
+      })),
+    ),
+    /hard cap/,
+  );
+  assert.equal(calls, 0);
+});
+
+test("MemoryAgent preserves recall and classifies account-level narrator contention", async () => {
+  const rateLimitedNarrator = {
+    modelId: "qwen-plus",
+    async narrate(): Promise<never> {
+      throw Object.assign(new Error("provider is busy"), { status: 429 });
+    },
+  };
+  const agent = new MemoryAgent(new FakeEmbedder(), new InMemoryStore(), rateLimitedNarrator);
+  await agent.ingestEvent(EVENT);
+  const res = await agent.recallAnswer("What was our real employer payroll cost last month?", {
+    company: "Acme Foods AE",
+    limit: 3,
+  });
+  assert.equal(res.modelId, "degraded");
+  assert.equal(res.degradationCode, "upstream_rate_limited");
+  assert.ok(res.citations.length > 0);
+  assert.equal(
+    JSON.stringify(res).includes("provider is busy"),
+    false,
+    "provider detail must not leak into the API-shaped result",
+  );
 });
 
 test("MemoryAgent.recallAnswer runs the production rerank stage and exposes provenance", async () => {
@@ -291,17 +480,197 @@ test("MemoryAgent.recallAnswer runs the production rerank stage and exposes prov
   assert.equal(result.retrieval.returnedCount, 1);
 });
 
-test("MemoryAgent.recallAnswer falls back to hybrid order when reranking times out", async () => {
+test("MemoryAgent.recallAnswer aborts and drains a timed-out reranker before continuing with hybrid fallback", async () => {
   const embedder = new FakeEmbedder();
   const store = new InMemoryStore();
   await remember(embedder, store, { kind: "insight", content: "first memory" });
   await remember(embedder, store, { kind: "insight", content: "second memory" });
-  const never: Reranker = {
-    modelId: "hung-reranker",
-    rerank: async () => new Promise(() => {}),
+  let activeProviderCalls = 0;
+  let providerObservedAbort = false;
+  let providerSettled = false;
+  let narrationStartedAfterDrain = false;
+  const abortable: Reranker = {
+    modelId: "abortable-reranker",
+    rerank: async (_query, _docs, signal) => {
+      activeProviderCalls += 1;
+      return new Promise((_resolve, reject) => {
+        const abort = () => {
+          providerObservedAbort = true;
+          activeProviderCalls -= 1;
+          providerSettled = true;
+          reject(signal?.reason ?? new Error("aborted"));
+        };
+        if (signal?.aborted) abort();
+        else signal?.addEventListener("abort", abort, { once: true });
+      });
+    },
   };
-  const agent = new MemoryAgent(embedder, store, new FakeNarrator(), undefined, never);
+  const fakeNarrator = new FakeNarrator();
+  const observingNarrator = {
+    modelId: fakeNarrator.modelId,
+    async narrate(question: string, hits: Parameters<FakeNarrator["narrate"]>[1]) {
+      narrationStartedAfterDrain = providerSettled && activeProviderCalls === 0;
+      return fakeNarrator.narrate(question, hits);
+    },
+  };
+  const agent = new MemoryAgent(embedder, store, observingNarrator, undefined, abortable);
   const result = await agent.recallAnswer("memory", { limit: 2, rerankTimeoutMs: 100 });
   assert.equal(result.hits.length, 2, "successful hybrid candidates survive a reranker timeout");
   assert.equal(result.retrieval.reranker.status, "fallback");
+  assert.equal(providerObservedAbort, true, "deadline must abort the underlying provider request");
+  assert.equal(providerSettled, true);
+  assert.equal(activeProviderCalls, 0);
+  assert.equal(narrationStartedAfterDrain, true, "fallback must not continue until cancellation settles");
+});
+
+async function threeWayConflict(store: InMemoryStore, tenantId = "tenant-resolution") {
+  const agent = new MemoryAgent(new FakeEmbedder(), store, new FakeNarrator(), new FakeJudge(), undefined, tenantId);
+  const ids: string[] = [];
+  for (const [index, amount] of [8900, 8400, 9100].entries()) {
+    ids.push(await agent.remember("document", `Invoice INV-3WAY amount ${amount}.`, {
+      tenantId,
+      company: "Resolution Co",
+      period: "2026-05",
+      sourceRef: `session-${index + 1}`,
+      metadata: { record: "INV-3WAY", amount },
+      importance: index === 0 ? 0.9 : 0.5,
+      idempotencyKey: `${tenantId}:three-way:${index}`,
+    }));
+  }
+  return { agent, ids };
+}
+
+for (const scenario of [
+  { name: "accept", selectedIndex: 0 },
+  { name: "override", selectedIndex: 2 },
+] as const) {
+  test(`atomic conflict resolution ${scenario.name}: one existing carrier remains, retry is idempotent, no row is created`, async () => {
+    const store = new InMemoryStore();
+    const { agent, ids } = await threeWayConflict(store);
+    const selected = ids[scenario.selectedIndex]!;
+    const targets = ids.filter((id) => id !== selected);
+    const beforeCount = await store.count(undefined, "tenant-resolution");
+    assert.equal((await agent.auditConsistency({ tenantId: "tenant-resolution" })).contradictions.length, 1);
+    const first = await agent.resolveConflict("INV-3WAY", "amount", selected, targets, {
+      tenantId: "tenant-resolution",
+      decisionId: `decision-${scenario.name}-0001`,
+      actor: "judge:tenant-resolution",
+      reason: `${scenario.name} after source review`,
+    });
+    assert.equal(first.selectedMemoryId, selected);
+    assert.deepEqual(first.supersededMemoryIds, [...targets].sort());
+    assert.deepEqual({ before: first.before.activeCarriers, after: first.after.activeCarriers }, { before: 3, after: 1 });
+    assert.equal(first.actor, "judge:tenant-resolution");
+    assert.equal(first.reason, `${scenario.name} after source review`);
+    assert.equal(await store.count(undefined, "tenant-resolution"), beforeCount, "selection must create zero correction rows");
+    const active = await store.listForAudit({ tenantId: "tenant-resolution", company: "Resolution Co" });
+    assert.deepEqual(active.map((row) => row.id), [selected]);
+    assert.equal((await agent.auditConsistency({ tenantId: "tenant-resolution" })).ok, true);
+    const replay = await agent.resolveConflict("INV-3WAY", "amount", selected, [...targets].reverse(), {
+      tenantId: "tenant-resolution",
+      decisionId: `decision-${scenario.name}-0001`,
+      actor: "judge:tenant-resolution",
+      reason: `${scenario.name} after source review`,
+    });
+    assert.deepEqual(replay, first);
+    await assert.rejects(
+      agent.resolveConflict("INV-3WAY", "amount", selected, targets, {
+        tenantId: "tenant-resolution",
+        decisionId: `decision-${scenario.name}-0001`,
+        actor: "judge:tenant-resolution",
+        reason: "changed reason on an existing decision",
+      }),
+      /decision id was already used for a different request/i,
+    );
+  });
+}
+
+test("atomic conflict resolution rejects incomplete, stale, mismatched and cross-tenant sets without partial changes", async () => {
+  const store = new InMemoryStore();
+  const { agent, ids } = await threeWayConflict(store);
+  const other = new MemoryAgent(new FakeEmbedder(), store, new FakeNarrator(), new FakeJudge(), undefined, "tenant-other");
+  const crossTenantId = await other.remember("document", "Foreign INV-3WAY amount 1.", {
+    tenantId: "tenant-other", company: "Resolution Co", period: "2026-05",
+    metadata: { record: "INV-3WAY", amount: 1 }, idempotencyKey: "other:conflict",
+  });
+  await assert.rejects(
+    agent.resolveConflict("INV-3WAY", "amount", ids[0]!, [ids[1]!], { tenantId: "tenant-resolution", decisionId: "decision-incomplete" }),
+    /every active non-selected/i,
+  );
+  await assert.rejects(
+    agent.resolveConflict("OTHER", "amount", ids[0]!, [ids[1]!, ids[2]!], { tenantId: "tenant-resolution", decisionId: "decision-scope" }),
+    /scope|every active/i,
+  );
+  await assert.rejects(
+    agent.resolveConflict("INV-3WAY", "amount", ids[0]!, [ids[1]!, crossTenantId], { tenantId: "tenant-resolution", decisionId: "decision-cross" }),
+    /every active non-selected/i,
+  );
+  assert.equal((await store.listForAudit({ tenantId: "tenant-resolution" })).length, 3);
+  const completed = await agent.resolveConflict("INV-3WAY", "amount", ids[0]!, [ids[1]!, ids[2]!], {
+    tenantId: "tenant-resolution", decisionId: "decision-complete",
+  });
+  assert.equal(completed.after.activeCarriers, 1);
+  await assert.rejects(
+    agent.resolveConflict("INV-3WAY", "amount", ids[2]!, [ids[0]!, ids[1]!], { tenantId: "tenant-resolution", decisionId: "decision-stale" }),
+    /stale|active non-selected/i,
+  );
+  assert.deepEqual((await store.listForAudit({ tenantId: "tenant-resolution" })).map((row) => row.id), [ids[0]!]);
+});
+
+test("atomic conflict resolution rolls back an injected mid-operation failure", async () => {
+  class FaultStore extends InMemoryStore {
+    fail = true;
+    protected override beforeConflictResolutionCommit(): void {
+      if (this.fail) throw new Error("injected conflict transaction failure");
+    }
+  }
+  const store = new FaultStore();
+  const { agent, ids } = await threeWayConflict(store);
+  await assert.rejects(
+    agent.resolveConflict("INV-3WAY", "amount", ids[2]!, [ids[0]!, ids[1]!], {
+      tenantId: "tenant-resolution", decisionId: "decision-rollback",
+    }),
+    /injected conflict transaction failure/,
+  );
+  assert.equal((await store.listForAudit({ tenantId: "tenant-resolution" })).length, 3);
+  assert.equal((await agent.auditConsistency({ tenantId: "tenant-resolution" })).contradictions.length, 1);
+  store.fail = false;
+  const repaired = await agent.resolveConflict("INV-3WAY", "amount", ids[2]!, [ids[0]!, ids[1]!], {
+    tenantId: "tenant-resolution", decisionId: "decision-rollback",
+  });
+  assert.equal(repaired.after.activeCarriers, 1);
+});
+
+test("competing atomic conflict decisions serialize so exactly one wins", async () => {
+  const store = new InMemoryStore();
+  const { agent, ids } = await threeWayConflict(store);
+  const outcomes = await Promise.allSettled([
+    agent.resolveConflict("INV-3WAY", "amount", ids[0]!, [ids[1]!, ids[2]!], { tenantId: "tenant-resolution", decisionId: "decision-race-a" }),
+    agent.resolveConflict("INV-3WAY", "amount", ids[2]!, [ids[0]!, ids[1]!], { tenantId: "tenant-resolution", decisionId: "decision-race-c" }),
+  ]);
+  assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+  assert.equal(outcomes.filter((outcome) => outcome.status === "rejected").length, 1);
+  assert.equal((await store.listForAudit({ tenantId: "tenant-resolution" })).length, 1);
+  assert.equal((await agent.auditConsistency({ tenantId: "tenant-resolution" })).ok, true);
+});
+
+test("atomic conflict resolution cannot select a same-subject non-carrier", async () => {
+  const store = new InMemoryStore();
+  const { agent, ids } = await threeWayConflict(store);
+  const nonCarrier = await agent.remember("insight", "INV-3WAY was reviewed by a human.", {
+    tenantId: "tenant-resolution",
+    company: "Resolution Co",
+    period: "2026-05",
+    metadata: { record: "INV-3WAY", review_status: "reviewed" },
+    idempotencyKey: "tenant-resolution:three-way:non-carrier",
+  });
+  await assert.rejects(
+    agent.resolveConflict("INV-3WAY", "amount", nonCarrier, ids, {
+      tenantId: "tenant-resolution", decisionId: "decision-non-carrier",
+    }),
+    /does not carry the disputed attribute/i,
+  );
+  const active = await store.listForAudit({ tenantId: "tenant-resolution", company: "Resolution Co" });
+  assert.equal(active.length, 4, "a rejected non-carrier selection must mutate zero rows");
+  assert.equal((await agent.auditConsistency({ tenantId: "tenant-resolution" })).contradictions.length, 1);
 });

@@ -90,6 +90,23 @@
     .audit-flag { background: rgba(210,153,34,.08); border: 1px solid rgba(210,153,34,.4); border-radius: 8px; padding: 10px 13px; margin-bottom: 8px; font-size: 13px; }
     .audit-flag .subj { font-family: var(--mono); color: var(--amber); }
     .audit-flag .rec { color: var(--muted); margin-top: 4px; }
+    .audit-timeline { position: relative; display: grid; gap: 10px; margin: 12px 0; padding-left: 24px; }
+    .audit-timeline::before { content: ""; position: absolute; left: 8px; top: 9px; bottom: 9px; width: 2px; background: var(--border); }
+    .timeline-event { position: relative; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+    .timeline-event::before { content: ""; position: absolute; left: -21px; top: 14px; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); border: 2px solid var(--panel); }
+    .timeline-event.recommended { border-color: rgba(63,185,80,.65); }
+    .timeline-event.recommended::before { background: var(--green-hi); }
+    .timeline-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+    .session-label { color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 600; }
+    .timeline-value { font-size: 17px; font-weight: 650; }
+    .timeline-meta { color: var(--muted); font-family: var(--mono); font-size: 10.5px; overflow-wrap: anywhere; }
+    .resolution-card { border-top: 1px dashed var(--border); margin-top: 10px; padding-top: 10px; }
+    .resolution-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .resolution-actions button { padding: 7px 11px; font-size: 12px; }
+    .resolution-actions .override { color: var(--amber); border-color: rgba(210,153,34,.55); }
+    .decision-result { margin-top: 10px; border: 1px solid rgba(63,185,80,.45); border-radius: 7px; padding: 9px 11px; color: var(--muted); font-size: 12px; }
+    .decision-result b { color: var(--green-hi); }
+    .credential-note { color: var(--muted); font-size: 10.5px; margin-top: 4px; text-transform: none; letter-spacing: 0; }
 
     .kpis { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
     .kpi { flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
@@ -106,6 +123,23 @@
     .rec-row .rec-co { font-size: 11px; color: var(--accent); white-space: nowrap; }
     .rec-row .txt { flex: 1; color: var(--text); }
     .rec-row .when { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .is-hidden { display: none !important; }
+    .is-invisible { visibility: hidden; }
+    .pnl-table { width: 100%; margin-top: 8px; margin-bottom: 20px; }
+    .pnl-table.currency-breakdown { margin-top: 12px; }
+    .pnl-table.summary { margin-bottom: 0; }
+    .align-left { text-align: left; }
+    .metric-revenue { color: var(--green-hi); }
+    .metric-expense { color: var(--amber); }
+    .metric-profit { color: var(--green-hi); }
+    .metric-loss { color: var(--red); }
+    .pnl-section-title { margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent); }
+    .table-empty { text-align: center; color: var(--muted); padding: 12px; }
+    .total-row { font-weight: bold; border-top: 1.5px solid var(--border); }
+    .rec-row.stacked { flex-direction: column; gap: 6px; padding: 12px 0; align-items: stretch; }
+    .rec-row-head { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+    .rec-row-labels { display: flex; gap: 8px; align-items: center; }
+    .rec-row .txt.full { width: 100%; line-height: 1.4; }
 
     /* Right drawer panel for Browse memories */
     #recordsPanel {
@@ -183,12 +217,14 @@
 
     /* ── Inline guided tour (no external dependency) ───────────────────────── */
     #tour-overlay { position: fixed; inset: 0; z-index: 900; display: none; }
-    #tour-spot { position: absolute; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(1,4,9,.78); transition: all .2s ease; pointer-events: none; }
+    #tour-overlay.tour-open { display: block; }
+    #tour-spot { position: absolute; left: 0; top: 0; width: 0; height: 0; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(1,4,9,.78); transition: all .2s ease; pointer-events: none; }
     #tour-tip {
-      position: absolute; z-index: 901; max-width: 320px; background: var(--panel);
+      position: absolute; display: none; top: 14px; left: 14px; z-index: 901; max-width: 320px; background: var(--panel);
       border: 1px solid var(--accent); border-radius: 10px; padding: 16px 18px;
       box-shadow: 0 8px 30px rgba(0,0,0,.5);
     }
+    #tour-tip.tour-open { display: block; }
     #tour-tip h3 { margin: 0 0 6px; font-size: 14px; }
     #tour-tip p { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
     #tour-tip .nav { display: flex; gap: 8px; align-items: center; }
@@ -198,12 +234,11 @@
 <body>
   <header>
     <h1>Archon MemoryAgent</h1>
-    <span class="sub">Persistent, queryable, cross-session memory</span>
+    <span class="sub">Track 1 only · persistent recall, self-audit &amp; lifecycle</span>
     <span class="spacer"></span>
     <button class="pill pill-btn" id="count" type="button" title="Browse the stored memories">memories <span class="n" id="countN">…</span> <span class="pill-caret">▾</span></button>
     <span class="pill" id="model">…</span>
     <button class="secondary" id="tourBtn" type="button">Take the tour</button>
-    <button class="secondary" id="peerApp" type="button" onclick="window.open('https://autopilot.43.106.13.19.sslip.io','_blank','noopener')" title="Open the companion Autopilot app — the human-gated accounts-payable agent built on this same memory foundation">Open Autopilot ↗</button>
   </header>
 
   <main>
@@ -212,7 +247,7 @@
       <h2><span class="star">★</span> MemoryAgent — recall &amp; self-audit</h2>
       <div class="tag">Ask a question; the agent recalls the relevant memories by meaning, grounds a cited answer in them, and self-audits for cross-session contradictions.</div>
 
-      <div id="emptyState" style="display:none">
+      <div id="emptyState" class="is-hidden">
         <div class="empty">
           <b>No memories yet.</b><br/>
           Click <b>Run demo</b> to see the MemoryAgent recall + self-audit in action.
@@ -226,8 +261,9 @@
             <input id="company" placeholder="e.g. Northwind Trading" autocomplete="off" />
           </div>
           <div class="grow">
-            <label for="judgeToken">Judge token (protected audit/lifecycle)</label>
-            <input id="judgeToken" type="password" placeholder="Paste the private reviewer token" autocomplete="off" />
+            <label for="judgeToken">Reviewer token (protected audit/feedback)</label>
+            <input id="judgeToken" type="password" placeholder="Paste the private reviewer token" autocomplete="off" spellcheck="false" />
+            <div class="credential-note">Masked; kept only for this browser tab in sessionStorage. Never logged or embedded in the page.</div>
           </div>
         </div>
         <div>
@@ -267,7 +303,7 @@
 
   <!-- Tour DOM (inert until started) -->
   <div id="tour-overlay"><div id="tour-spot"></div></div>
-  <div id="tour-tip" style="display:none">
+  <div id="tour-tip">
     <h3 id="tour-title"></h3>
     <p id="tour-body"></p>
     <div class="nav">
@@ -280,6 +316,15 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
+    // Geometry for the guided tour is written into the nonce-authorized
+    // stylesheet, never into element style attributes (which CSP forbids).
+    const setCssRule = (selector, properties) => {
+      const sheet = $('appStyles').sheet;
+      const rule = Array.from(sheet.cssRules).find((candidate) => candidate.selectorText === selector);
+      if (!rule) throw new Error('missing trusted CSS rule: ' + selector);
+      const declaration = rule['style'];
+      Object.entries(properties).forEach(([name, value]) => declaration.setProperty(name, value));
+    };
     const el = (tag, props, kids) => {
       const n = document.createElement(tag);
       if (props) for (const k in props) {
@@ -319,6 +364,23 @@
       return data;
     }
 
+    // Reviewer credentials are never persisted beyond this tab. sessionStorage
+    // survives an accidental refresh but is cleared when the tab closes; the
+    // field remains type=password and request errors never echo the token.
+    const TOKEN_SESSION_KEY = 'archon_memory_reviewer_token';
+    try { $('judgeToken').value = sessionStorage.getItem(TOKEN_SESSION_KEY) || ''; } catch (_) {}
+    $('judgeToken').addEventListener('input', () => {
+      try {
+        const value = $('judgeToken').value.trim();
+        if (value) sessionStorage.setItem(TOKEN_SESSION_KEY, value);
+        else sessionStorage.removeItem(TOKEN_SESSION_KEY);
+      } catch (_) {}
+    });
+    $('judgeToken').addEventListener('change', activateReviewerTenant);
+    $('judgeToken').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); activateReviewerTenant(); }
+    });
+
     // Verified template questions — INJECTED at serve time from DEMO_TEMPLATES
     // (src/demo-data.ts), the single source of truth the CI end-to-end test proves
     // is answerable from the /demo/seed data. The empty-array fallback keeps this
@@ -356,6 +418,22 @@
       finally { seeding = false; }
     }
 
+    async function activateReviewerTenant() {
+      const reviewer = Boolean($('judgeToken').value.trim());
+      $('status').className = '';
+      $('status').textContent = reviewer ? 'Switching to the isolated reviewer tenant…' : 'Switching to the public synthetic demo…';
+      try {
+        if (reviewer) await api('POST', '/demo/seed');
+        await refreshAll();
+        $('status').textContent = reviewer
+          ? 'Reviewer tenant active · isolated seed ready.'
+          : 'Public synthetic tenant active.';
+      } catch (e) {
+        $('status').className = 'err';
+        $('status').textContent = 'Tenant switch failed: ' + e.message;
+      }
+    }
+
     function renderRecall(r) {
       const wrap = $('result'); wrap.innerHTML = '';
       const ans = el('div', { class: 'answer' });
@@ -378,6 +456,104 @@
       renderAudit(wrap, r.consistency, 'from this recall');
     }
 
+    const printable = (value) => typeof value === 'string' ? value : JSON.stringify(value);
+    const shortId = (value) => value ? String(value).slice(0, 8) + '…' : '—';
+    function stableDecisionHash(value) {
+      // Two independent 32-bit FNV-style streams. This is an idempotency-key
+      // fingerprint, not a security primitive; it keeps long subject/attribute
+      // text from truncating away the IDs that distinguish human decisions.
+      let a = 0x811c9dc5, b = 0x9e3779b9;
+      for (let i = 0; i < value.length; i++) {
+        const code = value.charCodeAt(i);
+        a = Math.imul(a ^ code, 0x01000193) >>> 0;
+        b = Math.imul(b ^ code, 0x85ebca6b) >>> 0;
+      }
+      return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0');
+    }
+    const conflictDecisionId = (action, contradiction, selectedId, targetIds) => {
+      const material = JSON.stringify([
+        action, contradiction.subject || 'record', contradiction.attribute || 'field', selectedId, [...targetIds].sort(),
+      ]);
+      const safe = (value) => String(value).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 48);
+      return ['memory-ui-resolution-v1', safe(action), safe(selectedId), stableDecisionHash(material)]
+        .join(':').slice(0, 128);
+    };
+
+    function planHumanDecision(action, c, selectedMemoryId) {
+      const values = c.values || [];
+      const winnerId = c.resolution && c.resolution.recommendedMemoryId;
+      if (!winnerId || !values.some((v) => v.memoryId === winnerId)) {
+        throw new Error('resolution requires a traceable recommended memory');
+      }
+      const resolvedSelectedId = action === 'accept' ? winnerId : selectedMemoryId;
+      if (!resolvedSelectedId || !values.some((v) => v.memoryId === resolvedSelectedId)) {
+        throw new Error('human decision requires an explicit traceable selected memory');
+      }
+      if (action === 'override' && resolvedSelectedId === winnerId) {
+        throw new Error('override must select a non-recommended memory');
+      }
+      // Accept and Override share the same complete-set invariant: every active
+      // conflicting value except the explicitly selected one must be targeted.
+      // Targeting only the recommended winner on a 3+ value override would leave
+      // another losing alternative active and the contradiction unresolved.
+      const targetMemoryIds = values
+        .filter((v) => v.memoryId !== resolvedSelectedId)
+        .map((v) => v.memoryId);
+      if (!targetMemoryIds.length) throw new Error('decision requires at least one conflicting target');
+      return { selectedMemoryId: resolvedSelectedId, targetMemoryIds };
+    }
+
+    async function applyHumanDecision(action, c, box, selectedMemoryId) {
+      const token = $('judgeToken').value.trim();
+      if (!token) {
+        $('status').className = 'err';
+        $('status').textContent = 'Paste the private reviewer token before a human Accept or Override decision.';
+        return;
+      }
+      const plan = planHumanDecision(action, c, selectedMemoryId);
+      const reasonField = box.querySelector('.decision-reason');
+      const reason = reasonField ? reasonField.value.trim() : '';
+      if (!reason) {
+        $('status').className = 'err';
+        $('status').textContent = 'Add a decision reason before Accept or Override.';
+        if (reasonField) reasonField.focus();
+        return;
+      }
+      const selected = (c.values || []).find((v) => v.memoryId === plan.selectedMemoryId);
+      const targets = plan.targetMemoryIds.map((id) => (c.values || []).find((v) => v.memoryId === id));
+      if (!selected || targets.some((target) => !target)) throw new Error('decision references an unknown memory');
+      const buttons = box.querySelectorAll('button'); buttons.forEach((b) => { b.disabled = true; });
+      statusBusy((action === 'accept' ? 'Accepting recommendation' : 'Applying human override') + '…');
+      try {
+        const decisionId = conflictDecisionId(action, c, selected.memoryId, plan.targetMemoryIds);
+        // One authenticated transaction selects an EXISTING carrier and
+        // supersedes the complete loser set. No duplicate correction rows, no
+        // partial window, no embedding call; a lost-response retry replays the
+        // same durable decisionId result.
+        const result = await api('POST', '/resolve-conflict', {
+          decisionId,
+          subject: c.subject,
+          attribute: c.attribute,
+          selectedMemoryId: selected.memoryId,
+          targetMemoryIds: plan.targetMemoryIds,
+          reason,
+        });
+        const proof = el('div', { class: 'decision-result' });
+        proof.appendChild(el('div', {}, [el('b', { text: action === 'accept'
+          ? 'Human accepted the recommendation against ' + result.supersededMemoryIds.length + ' alternative(s).'
+          : 'Human overrode the recommendation and superseded all ' + result.supersededMemoryIds.length + ' non-selected alternative(s).' })]));
+        proof.appendChild(el('div', { text: 'decisionId ' + result.decisionId + ' · selected existing memory ' + shortId(result.selectedMemoryId) + ' remains active' }));
+        proof.appendChild(el('div', { text: 'Atomic proof: active conflict carriers ' + result.before.activeCarriers + ' → ' + result.after.activeCarriers + ' · no correction row created' }));
+        proof.appendChild(el('div', { text: 'Provenance: ' + result.actor + ' · reason: ' + result.reason }));
+        box.appendChild(proof);
+        $('status').className = ''; $('status').textContent = 'Human decision persisted with before/after provenance; refreshing the read-only audit…';
+        await runFullAudit();
+      } catch (e) {
+        $('status').className = 'err'; $('status').textContent = 'Human decision failed: ' + e.message;
+        buttons.forEach((b) => { b.disabled = false; });
+      }
+    }
+
     function renderAudit(wrap, report, context) {
       wrap.appendChild(el('div', { class: 'section-label', text: 'Self-audit — ' + context }));
       const contradictions = (report && report.contradictions) || [];
@@ -386,14 +562,59 @@
         return;
       }
       contradictions.forEach((c) => {
-        const vals = (c.values || []).map((v) => (v && v.value !== undefined) ? v.value : v).join('  vs  ');
         const box = el('div', { class: 'audit-flag' });
-        box.appendChild(el('div', {}, [
-          el('span', { class: 'subj', text: (c.subject || 'record') + ' · ' + (c.attribute || '') }),
-          document.createTextNode('  ' + vals),
-        ]));
+        box.appendChild(el('div', { class: 'subj', text: (c.subject || 'record') + ' · ' + (c.attribute || '') }));
+        const timeline = el('div', { class: 'audit-timeline' });
+        const ordered = [...(c.values || [])].sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+        ordered.forEach((v, index) => {
+          const recommended = c.resolution && v.memoryId === c.resolution.recommendedMemoryId;
+          timeline.appendChild(el('div', { class: 'timeline-event' + (recommended ? ' recommended' : '') }, [
+            el('div', { class: 'timeline-head' }, [
+              el('span', { class: 'session-label', text: 'SESSION ' + String.fromCharCode(65 + index) }),
+              el('span', { class: 'timeline-value', text: printable(v.value) }),
+              ...(recommended ? [el('span', { class: 'pill', text: 'policy recommendation' })] : []),
+            ]),
+            el('div', { class: 'timeline-meta', text: (v.createdAt || 'unknown time') + ' · source ' + (v.sourceRef || '—') + ' · memory ' + shortId(v.memoryId) }),
+          ]));
+        });
+        box.appendChild(timeline);
         if (c.resolution) {
-          box.appendChild(el('div', { class: 'rec', text: 'Recommended: trust ' + c.resolution.recommendedValue + '  (' + (c.resolution.rule || '') + ')' }));
+          const resolution = el('div', { class: 'resolution-card' });
+          resolution.appendChild(el('div', { class: 'rec', text: 'Policy recommendation: trust ' + printable(c.resolution.recommendedValue) + ' · rule ' + (c.resolution.rule || '') + ' · ordinal confidence ' + Math.round((c.resolution.confidence || 0) * 100) + '% (not a calibrated probability)' }));
+          resolution.appendChild(el('div', { class: 'timeline-meta', text: c.resolution.rationale || '' }));
+          resolution.appendChild(el('div', { class: 'timeline-meta', text: 'Read-only audit. A separate authenticated human decision is required before memory changes.' }));
+          resolution.appendChild(el('textarea', {
+            class: 'decision-reason', maxlength: '500',
+            placeholder: 'Decision reason (required; persisted with server-derived actor)',
+            'aria-label': 'Decision reason',
+          }));
+          const actions = el('div', { class: 'resolution-actions' });
+          const winnerId = c.resolution.recommendedMemoryId;
+          const alternatives = ordered.filter((v) => v.memoryId !== winnerId);
+          const accept = el('button', { type: 'button', text: 'Accept recommendation · resolve ' + alternatives.length + ' alternative(s)' });
+          const defer = el('button', { type: 'button', class: 'secondary', text: 'Defer — no write' });
+          accept.addEventListener('click', () => applyHumanDecision('accept', c, box, winnerId));
+          actions.appendChild(accept);
+          alternatives.forEach((alternative) => {
+            const index = ordered.findIndex((v) => v.memoryId === alternative.memoryId);
+            const session = String.fromCharCode(65 + Math.max(0, index));
+            const labelValue = printable(alternative.value).slice(0, 64);
+            const override = el('button', {
+              type: 'button',
+              class: 'override',
+              'data-selected-memory-id': alternative.memoryId,
+              text: 'Override with Session ' + session + ' · ' + labelValue,
+            });
+            override.addEventListener('click', () => applyHumanDecision('override', c, box, alternative.memoryId));
+            actions.appendChild(override);
+          });
+          defer.addEventListener('click', () => {
+            box.appendChild(el('div', { class: 'decision-result', text: 'Deferred by the human reviewer. Zero API call, zero quota charge, zero mutation; all conflicting memories remain active.' }));
+            $('status').className = ''; $('status').textContent = 'Decision deferred locally — audit remains read-only and memory is unchanged.';
+          });
+          actions.appendChild(defer);
+          resolution.appendChild(actions);
+          box.appendChild(resolution);
         }
         wrap.appendChild(box);
       });
@@ -439,15 +660,22 @@
         if (!p.events) { box.appendChild(el('div', { class: 'empty', text: 'Run the demo to compute a P&L.' })); return; }
 
         const mixed = p.currency_status === 'mixed';
-        const totalMoney = (n) => mixed ? 'See currency breakdown' : money(n, p.currency);
-        if (mixed) {
+        const unknownCurrency = p.currency_status === 'unknown' || (p.unknown_currency_records || 0) > 0;
+        const nonAggregable = mixed || unknownCurrency;
+        const totalMoney = (n) => nonAggregable ? 'Unavailable across currency boundary' : money(n, p.currency);
+        const ratio = (n) => nonAggregable || typeof n !== 'number'
+          ? 'Unavailable'
+          : n.toFixed(1) + '%';
+        if (nonAggregable) {
           box.appendChild(el('div', {
             class: 'empty',
-            text: 'Mixed currencies detected. Monetary totals are intentionally kept separate and are never cross-summed.'
+            text: unknownCurrency
+              ? 'Currency evidence is missing for ' + (p.unknown_currency_records || 0) + ' record(s). Unknown currency is never cross-summed; complete monetary totals are withheld.'
+              : 'Mixed currencies detected. Monetary totals are intentionally kept separate and are never cross-summed.'
           }));
-          const currencyTable = el('table', { style: 'width: 100%; margin-top: 12px; margin-bottom: 20px;' }, [
+          const currencyTable = el('table', { class: 'pnl-table currency-breakdown' }, [
             el('tr', {}, [
-              el('th', { text: 'Currency', style: 'text-align: left;' }),
+              el('th', { text: 'Currency', class: 'align-left' }),
               el('th', { text: 'Revenue', class: 'num' }),
               el('th', { text: 'Payroll', class: 'num' }),
               el('th', { text: 'Purchases', class: 'num' }),
@@ -463,35 +691,42 @@
               el('td', { class: 'num', text: money(c.net_profit, c.currency) })
             ]));
           });
-          box.appendChild(currencyTable);
+          if ((p.by_currency || []).length) box.appendChild(currencyTable);
+        }
+        if ((p.purchase_cash_unknown_count || 0) > 0) {
+          box.appendChild(el('div', {
+            class: 'empty',
+            text: 'Payment evidence is missing for ' + p.purchase_cash_unknown_count +
+              ' purchase invoice(s). Net cash outflow is withheld; known purchase cash remains a minimum observed amount.'
+          }));
         }
 
         // Render 3 top-level P&L KPIs. Mixed-currency reports deliberately have
         // no synthetic grand total; the table above is the authoritative view.
-        const netProfitColor = typeof p.net_profit === 'number' && p.net_profit < 0 ? 'var(--red)' : 'var(--green-hi)';
+        const netProfitClass = typeof p.net_profit === 'number' && p.net_profit < 0 ? 'metric-loss' : 'metric-profit';
         const kpis = el('div', { class: 'kpis' }, [
           el('div', { class: 'kpi' }, [
             el('div', { class: 'k', text: 'Total Revenue (Sales)' }), 
-            el('div', { class: 'v', style: 'color: var(--green-hi);', text: totalMoney(p.revenue_total) })
+            el('div', { class: 'v metric-revenue', text: totalMoney(p.revenue_total) })
           ]),
           el('div', { class: 'kpi' }, [
             el('div', { class: 'k', text: 'Total Operating Expenses' }), 
-            el('div', { class: 'v', style: 'color: var(--amber);', text: totalMoney(p.total_expenses) })
+            el('div', { class: 'v metric-expense', text: totalMoney(p.total_expenses) })
           ]),
           el('div', { class: 'kpi' }, [
             el('div', { class: 'k', text: 'Net Profit / Loss' }), 
-            el('div', { class: 'v', style: 'color: ' + netProfitColor + ';', text: totalMoney(p.net_profit) })
+            el('div', { class: 'v ' + netProfitClass, text: totalMoney(p.net_profit) })
           ]),
         ]);
         box.appendChild(kpis);
 
         // Section: Revenue & Sales Breakdown
-        box.appendChild(el('h3', { text: 'Revenue & Sales Breakdown', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
-        const revTable = el('table', { style: 'width: 100%; margin-top: 8px; margin-bottom: 20px;' }, [
+        box.appendChild(el('h3', { text: 'Revenue & Sales Breakdown', class: 'pnl-section-title' }));
+        const revTable = el('table', { class: 'pnl-table' }, [
           el('tr', {}, [
-            el('th', { text: 'Customer / Counterparty', style: 'text-align: left;' }),
-            el('th', { text: 'Invoice Ref', style: 'text-align: left;' }),
-            el('th', { text: 'Date', style: 'text-align: left;' }),
+            el('th', { text: 'Customer / Counterparty', class: 'align-left' }),
+            el('th', { text: 'Invoice Ref', class: 'align-left' }),
+            el('th', { text: 'Date', class: 'align-left' }),
             el('th', { text: 'Amount', class: 'num' })
           ])
         ]);
@@ -506,20 +741,20 @@
           });
         } else {
           revTable.appendChild(el('tr', {}, [
-            el('td', { colspan: 4, text: 'No sales records found.', style: 'text-align: center; color: var(--muted); padding: 12px;' })
+            el('td', { colspan: 4, text: 'No sales records found.', class: 'table-empty' })
           ]));
         }
-        revTable.appendChild(el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
+        revTable.appendChild(el('tr', { class: 'total-row' }, [
           el('td', { text: 'Total Operating Revenue', colspan: 3 }),
           el('td', { class: 'num', text: totalMoney(p.revenue_total) })
         ]));
         box.appendChild(revTable);
 
         // Section: Workforce Payroll Expenses Breakdown
-        box.appendChild(el('h3', { text: 'Operating Expenses (OPEX) — Workforce Payroll', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
-        const payTable = el('table', { style: 'width: 100%; margin-top: 8px; margin-bottom: 20px;' }, [
+        box.appendChild(el('h3', { text: 'Operating Expenses (OPEX) — Workforce Payroll', class: 'pnl-section-title' }));
+        const payTable = el('table', { class: 'pnl-table' }, [
           el('tr', {}, [
-            el('th', { text: 'Expense Category', style: 'text-align: left;' }),
+            el('th', { text: 'Expense Category', class: 'align-left' }),
             el('th', { text: 'Amount', class: 'num' })
           ]),
           el('tr', {}, [
@@ -530,7 +765,7 @@
             el('td', { text: 'Employer Social Security Contributions' }),
             el('td', { class: 'num', text: totalMoney(p.employer_social_security_total) })
           ]),
-          el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
+          el('tr', { class: 'total-row' }, [
             el('td', { text: 'Total Payroll Expenses' }),
             el('td', { class: 'num', text: totalMoney(p.employer_cost_total) })
           ])
@@ -538,12 +773,12 @@
         box.appendChild(payTable);
 
         // Section: Vendor Purchases & Expenses Breakdown
-        box.appendChild(el('h3', { text: 'Operating Expenses (OPEX) — Vendor Purchases', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
-        const purTable = el('table', { style: 'width: 100%; margin-top: 8px; margin-bottom: 20px;' }, [
+        box.appendChild(el('h3', { text: 'Operating Expenses (OPEX) — Vendor Purchases', class: 'pnl-section-title' }));
+        const purTable = el('table', { class: 'pnl-table' }, [
           el('tr', {}, [
-            el('th', { text: 'Supplier / Vendor', style: 'text-align: left;' }),
-            el('th', { text: 'Invoice Ref', style: 'text-align: left;' }),
-            el('th', { text: 'Date', style: 'text-align: left;' }),
+            el('th', { text: 'Supplier / Vendor', class: 'align-left' }),
+            el('th', { text: 'Invoice Ref', class: 'align-left' }),
+            el('th', { text: 'Date', class: 'align-left' }),
             el('th', { text: 'Amount', class: 'num' })
           ])
         ]);
@@ -558,20 +793,20 @@
           });
         } else {
           purTable.appendChild(el('tr', {}, [
-            el('td', { colspan: 4, text: 'No vendor purchase records found.', style: 'text-align: center; color: var(--muted); padding: 12px;' })
+            el('td', { colspan: 4, text: 'No vendor purchase records found.', class: 'table-empty' })
           ]));
         }
-        purTable.appendChild(el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
+        purTable.appendChild(el('tr', { class: 'total-row' }, [
           el('td', { text: 'Total Vendor Purchases', colspan: 3 }),
           el('td', { class: 'num', text: totalMoney(p.purchases_total) })
         ]));
         box.appendChild(purTable);
 
         // Section: P&L Summary & Financial Performance
-        box.appendChild(el('h3', { text: 'Financial Performance Summary', style: 'margin-top: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent);' }));
-        const summaryTable = el('table', { style: 'width: 100%; margin-top: 8px;' }, [
+        box.appendChild(el('h3', { text: 'Financial Performance Summary', class: 'pnl-section-title' }));
+        const summaryTable = el('table', { class: 'pnl-table summary' }, [
           el('tr', {}, [
-            el('th', { text: 'Financial Metric', style: 'text-align: left;' }),
+            el('th', { text: 'Financial Metric', class: 'align-left' }),
             el('th', { text: 'Total Amount', class: 'num' })
           ]),
           el('tr', {}, [
@@ -579,16 +814,28 @@
             el('td', { class: 'num', text: totalMoney(p.total_expenses) })
           ]),
           el('tr', {}, [
-            el('td', { text: 'Net Cash Outflow (Paid Outflow)' }),
+            el('td', { text: 'Net Cash Outflow (only when payment evidence is complete)' }),
             el('td', { class: 'num', text: totalMoney(p.net_cash_outflow) })
           ]),
           el('tr', {}, [
-            el('td', { text: 'Accrued Taxes & Outstanding Contributions' }),
+            el('td', { text: 'Employer Cost − Bank Salary Transfer' }),
             el('td', { class: 'num', text: totalMoney(p.off_bank_cost) })
           ]),
-          el('tr', { style: 'font-weight: bold; border-top: 1.5px solid var(--border);' }, [
+          el('tr', {}, [
+            el('td', { text: 'Full Difference / Bank Salary Transfer' }),
+            el('td', { class: 'num', text: ratio(p.off_bank_cost_pct) })
+          ]),
+          el('tr', {}, [
+            el('td', { text: 'Employer Social Security / Bank Salary Transfer' }),
+            el('td', { class: 'num', text: ratio(p.cost_gap_pct) })
+          ]),
+          el('tr', { class: 'total-row' }, [
             el('td', { text: 'Net Operating Profit Margin' }),
-            el('td', { class: 'num', text: mixed ? 'See currency breakdown' : (p.net_profit_margin_pct || 0).toFixed(1) + '%' })
+            el('td', { class: 'num', text: nonAggregable
+              ? 'Unavailable across currency boundary'
+              : (typeof p.net_profit_margin_pct === 'number'
+                  ? p.net_profit_margin_pct.toFixed(1) + '%'
+                  : 'Unavailable without positive revenue') })
           ])
         ]);
         box.appendChild(summaryTable);
@@ -611,15 +858,15 @@
               counterparty = m.metadata.vendor || counterparty;
             }
           }
-          box.appendChild(el('div', { class: 'rec-row', style: 'display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13px;' }, [
-            el('div', { style: 'display: flex; justify-content: space-between; align-items: center; width: 100%;' }, [
-              el('div', { style: 'display: flex; gap: 8px; align-items: center;' }, [
+          box.appendChild(el('div', { class: 'rec-row stacked' }, [
+            el('div', { class: 'rec-row-head' }, [
+              el('div', { class: 'rec-row-labels' }, [
                 el('span', { class: 'badge', text: m.kind }),
                 el('span', { class: 'rec-co', text: counterparty })
               ]),
               el('span', { class: 'when', text: ts })
             ]),
-            el('div', { class: 'txt', style: 'width: 100%; color: var(--text); line-height: 1.4;' }, [
+            el('div', { class: 'txt full' }, [
               el('span', { text: m.snippet || '' })
             ])
           ]));
@@ -633,7 +880,7 @@
       catch (_) { $('model').textContent = 'offline'; }
       try { const c = await api('GET', '/memory/count'); count = (c && typeof c.count === 'number') ? c.count : 0; $('countN').textContent = count; }
       catch (_) { $('countN').textContent = '?'; }
-      $('emptyState').style.display = count > 0 ? 'none' : 'block';
+      $('emptyState').classList.toggle('is-hidden', count > 0);
       return count;
     }
 
@@ -666,16 +913,18 @@
     });
 
     // ── Full self-audit (POST /consistency) ────────────────────────────────────
-    $('auditBtn').addEventListener('click', async () => {
+    async function runFullAudit() {
       const company = $('company').value.trim();
       $('status').className = ''; $('status').textContent = 'Auditing memory…';
       try {
+        if ($('judgeToken').value.trim()) await ensureSeeded();
         const report = await api('POST', '/consistency', company ? { company } : {});
         const wrap = $('result'); wrap.innerHTML = '';
         renderAudit(wrap, report, 'full scan' + (company ? ' · ' + company : ''));
         $('status').textContent = '';
       } catch (e) { $('status').className = 'err'; $('status').textContent = 'Audit failed: ' + e.message; }
-    });
+    }
+    $('auditBtn').addEventListener('click', runFullAudit);
 
     // ── Meaning-level audit (authenticated because it spends Qwen calls) ──────
     $('semanticBtn').addEventListener('click', async () => {
@@ -687,6 +936,7 @@
       }
       const btn = $('semanticBtn'); btn.disabled = true; statusBusy('Running semantic audit…');
       try {
+        await ensureSeeded();
         const report = await api('POST', '/consistency/semantic', company ? { company } : {});
         const wrap = $('result'); wrap.innerHTML = '';
         renderSemanticAudit(wrap, report, 'bounded Qwen scan' + (company ? ' · ' + company : ''));
@@ -759,22 +1009,24 @@
 
       setTimeout(() => {
         const r = target.getBoundingClientRect(); const pad = 8;
-        spot.style.left = (r.left - pad) + 'px'; spot.style.top = (r.top - pad) + 'px';
-        spot.style.width = (r.width + pad * 2) + 'px'; spot.style.height = (r.height + pad * 2) + 'px';
+        setCssRule('#tour-spot', {
+          left: (r.left - pad) + 'px', top: (r.top - pad) + 'px',
+          width: (r.width + pad * 2) + 'px', height: (r.height + pad * 2) + 'px'
+        });
         $('tour-title').textContent = step.title; $('tour-body').textContent = step.body;
         $('tour-step').textContent = (tourIdx + 1) + ' / ' + TOUR.length;
-        $('tour-back').style.visibility = tourIdx === 0 ? 'hidden' : 'visible';
+        $('tour-back').classList.toggle('is-invisible', tourIdx === 0);
         $('tour-next').textContent = tourIdx === TOUR.length - 1 ? 'Done' : 'Next';
-        overlay.style.display = 'block'; tip.style.display = 'block';
+        overlay.classList.add('tour-open'); tip.classList.add('tour-open');
         const belowTop = r.bottom + 14; const tipH = tip.offsetHeight || 150;
         const top = (belowTop + tipH < window.innerHeight) ? belowTop : Math.max(14, r.top - tipH - 14);
         const left = Math.min(Math.max(14, r.left), window.innerWidth - (tip.offsetWidth || 320) - 14);
-        tip.style.top = top + 'px'; tip.style.left = left + 'px';
+        setCssRule('#tour-tip', { top: top + 'px', left: left + 'px' });
       }, 50);
     }
     function startTour() { tourIdx = 0; positionTour(); }
     function endTour() {
-      $('tour-overlay').style.display = 'none'; $('tour-tip').style.display = 'none';
+      $('tour-overlay').classList.remove('tour-open'); $('tour-tip').classList.remove('tour-open');
       $('recordsPanel').classList.remove('show');
       $('drawerOverlay').classList.remove('show');
       try { localStorage.setItem('archon_tour_done', '1'); } catch (_) {}
@@ -783,11 +1035,11 @@
     $('tour-back').addEventListener('click', () => { if (tourIdx > 0) { tourIdx--; positionTour(); } });
     $('tour-skip').addEventListener('click', endTour);
     $('tourBtn').addEventListener('click', startTour);
-    window.addEventListener('resize', () => { if ($('tour-overlay').style.display === 'block') positionTour(); });
+    window.addEventListener('resize', () => { if ($('tour-overlay').classList.contains('tour-open')) positionTour(); });
 
     // ── Boot ────────────────────────────────────────────────────────────────────
     renderChips();
-    refreshAll().then(() => {
+    ($('judgeToken').value.trim() ? activateReviewerTenant() : refreshAll()).then(() => {
       let seen = false; try { seen = localStorage.getItem('archon_tour_done') === '1'; } catch (_) {}
       if (!seen) setTimeout(startTour, 600); // auto-run on first visit
     });

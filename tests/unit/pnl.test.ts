@@ -12,6 +12,7 @@ const EVENT: PayrollEvent = {
   event_id: "evt-bytecraft-2026-05",
   company: "ByteCraft",
   period: "2026-05",
+  currency: "EUR",
   employee_count: 2,
   bank_net_total: 6500,
   gross_total: 7000,
@@ -22,6 +23,7 @@ const EVENT: PayrollEvent = {
   cost_gap_amount: 1600,
   cost_gap_pct: 24.6,
   off_bank_cost: 2100,
+  off_bank_cost_pct: 32.3,
   employees: [
     { employee_id: "E-01", name: "Ana Cole", gross: 4000, employee_social_security: 100, tax: 200, net: 3700, employer_social_security: 500, employer_cost: 4500 },
     { employee_id: "E-02", name: "Tom Reed", gross: 3000, employee_social_security: 80, tax: 120, net: 2800, employer_social_security: 1100, employer_cost: 4100 },
@@ -48,6 +50,8 @@ test("pnlForEvent: cost_gap_pct = employer social security over net", () => {
   const p = pnlForEvent(EVENT);
   // 1600 / 6500 * 100 = 24.615… → 24.62
   assert.equal(p.cost_gap_pct, 24.62);
+  // The full employer-cost/bank difference is a separate, larger ratio.
+  assert.equal(p.off_bank_cost_pct, 32.31);
 });
 
 test("pnlForEvent: top_employees are sorted by employer_cost, capped at 5", () => {
@@ -59,15 +63,17 @@ test("pnlForEvent: top_employees are sorted by employer_cost, capped at 5", () =
 test("pnlForEvent: zero employees → no divide-by-zero", () => {
   const empty: PayrollEvent = { ...EVENT, employee_count: 0, bank_net_total: 0, employees: [] };
   const p = pnlForEvent(empty);
-  assert.equal(p.avg_cost_per_employee, 0);
-  assert.equal(p.cost_gap_pct, 0);
+  assert.equal(p.avg_cost_per_employee, null);
+  assert.equal(p.cost_gap_pct, null);
+  assert.equal(p.off_bank_cost_pct, null);
+  assert.equal(p.net_profit_margin_pct, null);
 });
 
 test("aggregatePnl: sums only event-summary memories (metadata has employer_cost_total)", () => {
   const memories: PnlSourceMemory[] = [
     // Two event summaries for two companies.
-    { company: "ByteCraft", period: "2026-05", metadata: { employer_cost_total: 8600, gross_total: 7000, bank_net_total: 6500, employee_count: 2 } },
-    { company: "Helios", period: "2026-05", metadata: { employer_cost_total: 4000, gross_total: 3200, bank_net_total: 3000, employee_count: 1 } },
+    { company: "ByteCraft", period: "2026-05", metadata: { employer_cost_total: 8600, gross_total: 7000, bank_net_total: 6500, employee_count: 2, currency: "EUR" } },
+    { company: "Helios", period: "2026-05", metadata: { employer_cost_total: 4000, gross_total: 3200, bank_net_total: 3000, employee_count: 1, currency: "EUR" } },
     // A per-employee line (NO employer_cost_total) — must be ignored.
     { company: "ByteCraft", period: "2026-05", metadata: { employee_id: "E-01", net: 3700, gross: 4000 } },
     // An insight (no metadata employer cost) — ignored.
@@ -84,7 +90,7 @@ test("aggregatePnl: sums only event-summary memories (metadata has employer_cost
 
 test("aggregatePnl: derives employer social security when not carried (cost - gross)", () => {
   const memories: PnlSourceMemory[] = [
-    { company: "ByteCraft", period: "2026-05", metadata: { employer_cost_total: 8600, gross_total: 7000, bank_net_total: 6500, employee_count: 2 } },
+    { company: "ByteCraft", period: "2026-05", metadata: { employer_cost_total: 8600, gross_total: 7000, bank_net_total: 6500, employee_count: 2, currency: "EUR" } },
   ];
   const p = aggregatePnl(memories);
   assert.equal(p.employer_social_security_total, 1600);
@@ -98,7 +104,7 @@ test("aggregatePnl: carries employee contributions and tax when the summary stor
       metadata: {
         employer_cost_total: 8600, gross_total: 7000, bank_net_total: 6500,
         employer_social_security_total: 1600, employee_social_security_total: 180,
-        tax_withheld_total: 320, employee_count: 2,
+        tax_withheld_total: 320, employee_count: 2, currency: "EUR",
       },
     },
   ]);
@@ -110,18 +116,20 @@ test("aggregatePnl: payable purchases are expenses but not cash without payment 
   const p = aggregatePnl([
     {
       kind: "invoice", company: "ByteCraft", period: "2026-05", sourceRef: "INV-1",
-      metadata: { vendor: "PaperCo", vendor_ref: "INV-1", total: 1000, invoice_date: "2026-05-01" },
+      metadata: { vendor: "PaperCo", vendor_ref: "INV-1", total: 1000, invoice_date: "2026-05-01", currency: "EUR" },
     },
     {
       kind: "invoice", company: "ByteCraft", period: "2026-05", sourceRef: "INV-2",
-      metadata: { vendor: "PowerCo", vendor_ref: "INV-2", total: 500, invoice_date: "2026-05-02", payment_status: "paid" },
+      metadata: { vendor: "PowerCo", vendor_ref: "INV-2", total: 500, invoice_date: "2026-05-02", payment_status: "paid", currency: "EUR" },
     },
   ]);
   assert.equal(p.purchases_total, 1500);
   assert.equal(p.purchase_cash_out_total, 500);
-  assert.equal(p.purchase_cash_unknown_total, 0);
-  assert.equal(p.net_cash_outflow, 500);
+  assert.equal(p.purchase_cash_unknown_total, 1000);
+  assert.equal(p.purchase_cash_unknown_count, 1);
+  assert.equal(p.net_cash_outflow, null, "an exact cash total is withheld while payment evidence is incomplete");
   assert.deepEqual(p.purchases.map((x) => x.paid), [false, true]);
+  assert.deepEqual(p.purchases.map((x) => x.cash_status), ["unknown", "paid"]);
   assert.deepEqual(p.by_company, [], "vendors are not fabricated as reporting companies");
 });
 
@@ -147,7 +155,7 @@ test("aggregatePnl: partial payments, refunds and unknown evidence use honest ca
   assert.equal(p.purchase_cash_out_total, 350, "400 partial outflow less a 50 refund");
   assert.equal(p.purchase_cash_unknown_total, 750, "unknown invoice face values are flagged, not counted as paid");
   assert.equal(p.purchase_cash_unknown_count, 2);
-  assert.equal(p.net_cash_outflow, 350);
+  assert.equal(p.net_cash_outflow, null, "known cash remains available but an exact combined outflow is withheld");
   assert.deepEqual(p.purchases.map((x) => x.cash_status), ["partial", "unknown", "refund", "unknown"]);
   assert.deepEqual(p.purchases.map((x) => x.paid_amount), [400, null, -50, null]);
 });
@@ -188,7 +196,7 @@ test("aggregatePnl: mixed currencies are separated and top-level money is never 
 });
 
 test("aggregatePnl: repeated memories for one business record do not double-count", () => {
-  const metadata = { employer_cost_total: 1000, gross_total: 800, bank_net_total: 700, employee_count: 1 };
+  const metadata = { employer_cost_total: 1000, gross_total: 800, bank_net_total: 700, employee_count: 1, currency: "EUR" };
   const p = aggregatePnl([
     { kind: "payroll_event", company: "A", period: "2026-01", sourceRef: "evt-a-2026-01", createdAt: "2026-01-01T00:00:00Z", metadata },
     { kind: "payroll_event", company: "A", period: "2026-01", sourceRef: "evt-a-2026-01", createdAt: "2026-01-02T00:00:00Z", metadata },
@@ -197,12 +205,44 @@ test("aggregatePnl: repeated memories for one business record do not double-coun
   assert.equal(p.employer_cost_total, 1000);
 });
 
+test("aggregatePnl: currency-less records are counted but never cross-summed", () => {
+  const p = aggregatePnl([
+    {
+      kind: "payroll_event", company: "A", period: "2026-01", sourceRef: "E-1",
+      metadata: { employer_cost_total: 1000, gross_total: 800, bank_net_total: 700, employee_count: 1 },
+    },
+    {
+      kind: "invoice", company: "A", period: "2026-01", sourceRef: "INV-1",
+      metadata: { vendor: "V", total: 500, payment_status: "paid" },
+    },
+  ]);
+  assert.equal(p.currency_status, "unknown");
+  assert.equal(p.unknown_currency_records, 2);
+  assert.equal(p.events, 2);
+  assert.equal(p.employer_cost_total, null);
+  assert.equal(p.purchases_total, null);
+  assert.equal(p.net_cash_outflow, null);
+  assert.deepEqual(p.by_currency, []);
+});
+
+test("aggregatePnl: fictional three-letter currencies are treated as unknown evidence", () => {
+  const p = aggregatePnl([{
+    kind: "invoice", company: "A", period: "2026-01", sourceRef: "INV-ABC",
+    metadata: { vendor: "V", total: 500, payment_status: "paid", currency: "ABC" },
+  }]);
+  assert.equal(p.currency_status, "unknown");
+  assert.equal(p.unknown_currency_records, 1);
+  assert.equal(p.purchases_total, null);
+  assert.deepEqual(p.by_currency, []);
+});
+
 test("aggregatePnl: empty memory set → all zeros, no NaN", () => {
   const p = aggregatePnl([]);
   assert.equal(p.events, 0);
   assert.equal(p.employer_cost_total, 0);
-  assert.equal(p.cost_gap_pct, 0);
-  assert.equal(p.avg_cost_per_employee, 0);
+  assert.equal(p.cost_gap_pct, null);
+  assert.equal(p.avg_cost_per_employee, null);
+  assert.equal(p.net_profit_margin_pct, null);
   assert.deepEqual(p.by_company, []);
   assert.equal(p.currency_status, "empty");
   assert.deepEqual(p.by_currency, []);

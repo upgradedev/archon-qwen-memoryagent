@@ -2,12 +2,12 @@
 
 Updated: **2026-07-15**. This is the authoritative hardened live-release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
 
-> **Status: LIVE and production-verified over HTTPS.**
+> **Status: LAST VERIFIED LIVE BASELINE; the current final-hardening working tree requires redeploy and re-verification.**
 > <https://memory.43.106.13.19.sslip.io>
 >
 > Runtime code commit: [`1f3688a`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/1f3688a57e8ae3fa2869f1dbba8d18dee35da93b), including the production-image closure hotfix. The final hardening landed through [PR #56](https://github.com/upgradedev/archon-qwen-memoryagent/pull/56) and the Docker runtime gate through [PR #57](https://github.com/upgradedev/archon-qwen-memoryagent/pull/57).
 >
-> Verified on the live host: real `text-embedding-v4` / `qwen-plus`; `/ready` 200 with database, Qwen and judge auth ready; authenticated ingest→recall and semantic-audit success; unauthenticated protected route 401; backend loopback-only; PostgreSQL has no host port; direct public 9000/5432 blocked; container limits and read-only/cap-drop controls active; zero smoke rows remain.
+> That baseline was verified on the live host with real `text-embedding-v4` / `qwen-plus`; `/ready` 200 with database, Qwen and judge auth ready; authenticated ingest→recall and semantic-audit success; unauthenticated protected route 401; backend loopback-only; PostgreSQL has no host port; direct public 9000/5432 blocked; container limits and read-only/cap-drop controls active; zero smoke rows remained. Do not treat it as proof of the un-deployed current working tree.
 
 ## Historical note — do not operate from the old snapshot
 
@@ -87,24 +87,33 @@ chmod 600 .env
 # chat, CI logs, screenshots, or shell history.
 ```
 
-Use one URL-safe random database password in `POSTGRES_PASSWORD`, in the
-host-side `DATABASE_URL`, and in the container-side `COMPOSE_DATABASE_URL`
-(`db` is the latter hostname). Generate a separate random 32+ character
-`JUDGE_API_KEY`; blank values are intentional and make a copied example fail
-closed until configured.
+Use two independent URL-safe random database passwords. `POSTGRES_PASSWORD`
+belongs to the bootstrap owner named by `POSTGRES_USER`; its
+`MIGRATION_DATABASE_URL` is exposed only to the one-shot `db-init` service.
+`MEMORY_APP_DB_PASSWORD` belongs to the fixed non-superuser
+`memoryagent_app`; only that role appears in host-side `DATABASE_URL` and
+container-side `COMPOSE_DATABASE_URL` (`db` is the latter hostname). Generate a
+third, separate random 32+ character `JUDGE_API_KEY`. Blank values intentionally
+make a copied example fail closed.
 
 Required production values include:
 
-- distinct, long random `POSTGRES_PASSWORD` and `JUDGE_API_KEY` values;
-- matching `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD`, and `COMPOSE_DATABASE_URL` values;
-- `DASHSCOPE_API_KEY` and the international DashScope base URL;
+- distinct, long random `POSTGRES_PASSWORD`, `MEMORY_APP_DB_PASSWORD`, and `JUDGE_API_KEY` values;
+- an admin-only `MIGRATION_DATABASE_URL` plus runtime URLs authenticating only as `memoryagent_app`;
+- `DASHSCOPE_API_KEY` and an allowlisted official Alibaba Model Studio base URL
+  (the current baseline uses the international shared endpoint; deploy and
+  runtime both reject trial/token/coding-plan hosts and arbitrary proxies);
 - `JUDGE_AUTH_REQUIRED=true`, the intended tenant mapping, exact CORS/proxy settings, and quota limits.
 
 Never run `docker compose config` in a public log because it can render interpolated secrets. `docker compose config --services` is safe for checking service names.
 
 ## Existing-volume database password rotation
 
-Changing `POSTGRES_PASSWORD` in `.env` does **not** change the role password inside an already-initialized official PostgreSQL volume. Rotate the live role first with the supplied script; it passes the new value over stdin to `psql` and does not print it.
+Changing `POSTGRES_PASSWORD` in `.env` does **not** change the bootstrap role
+password inside an already-initialized official PostgreSQL volume. Rotate that
+admin role first with the supplied script; it passes the new value over stdin to
+`psql` and does not print it. This operation must not change
+`MEMORY_APP_DB_PASSWORD` or either runtime URL.
 
 ```bash
 cd /root/memoryagent
@@ -117,8 +126,8 @@ export NEW_POSTGRES_PASSWORD
 # actually initialized that volume. Defaults are postgres/postgres.
 bash deploy/rotate-compose-db-password.sh
 
-# Securely update POSTGRES_PASSWORD and COMPOSE_DATABASE_URL in .env to the same
-# new value, then remove it from the current shell.
+# Securely update POSTGRES_PASSWORD and the password component of
+# MIGRATION_DATABASE_URL only. Leave memoryagent_app runtime credentials intact.
 unset NEW_POSTGRES_PASSWORD
 chmod 600 .env
 ```
@@ -129,7 +138,20 @@ For a brand-new empty volume, set the final random credentials before the first 
 
 ## Schema-first redeploy
 
-The one-command deployment helper refuses missing judge/Qwen credentials, applies the schema before serving new code, checks `/health` and `/ready`, performs an authenticated ingest→recall smoke, and removes its smoke rows.
+The one-command deployment helper refuses missing judge/Qwen credentials, runs
+the admin-only schema/grant job before serving new code, verifies that
+`memoryagent_app` has DML-only access (and cannot enter the configured cross-app
+database), checks `/health` and `/ready`, performs an authenticated ingest→recall
+smoke, and removes its smoke rows. Production refuses to proceed without
+`CROSS_APP_DATABASE_NAME`; add
+`CROSS_APP_DATABASE_HOST`/`PORT` only when the other app has a separate server.
+
+For a cluster shared with Autopilot, keep both backends stopped, run both
+one-shot admin migrations (`memoryagent`/`memoryagent_app` and
+`autopilot`/`autopilot_app`), then run both runtime verifiers before starting
+either backend. Each migration revokes additive `PUBLIC` cross-database access;
+the two completed migrations restore only the owning app role on its own
+database. A 42501 denial in both directions is the required release result.
 
 ```bash
 ssh <restricted-admin-host-alias>

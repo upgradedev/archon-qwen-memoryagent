@@ -14,6 +14,7 @@ import { dirname } from "node:path";
 import { CORPUS, QUERIES } from "./dataset.js";
 import { RERANK_FIXTURE_PATH, type RerankFixture } from "./fixture.js";
 import { defaultReranker } from "../src/memory/rerank.js";
+import { sanitizedOperationalFailure } from "../src/server/error-sanitization.js";
 
 async function main() {
   const reranker = defaultReranker();
@@ -47,7 +48,7 @@ async function main() {
   console.log(`Wrote ${RERANK_FIXTURE_PATH} (${Object.keys(scores).length} query score-rows).`);
 }
 
-main().catch((err) => {
-  console.error("bench:rerank failed:", err);
+main().catch((error) => {
+  console.error("bench:rerank failed", sanitizedOperationalFailure("rerank_fixture", error));
   process.exit(1);
 });

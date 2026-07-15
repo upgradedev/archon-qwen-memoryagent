@@ -26,13 +26,15 @@ Env:
   TITLE_DUR     leading title-card seconds (default 3.0)
   LEAD          gap kept between last caption end and screencast end (default 0.3)
   FONT          drawtext fontfile
-  CAPS_DIR      output dir for cap_<i>.txt (default caps)
-  CAPTION_WINDOWS_JSON  output path (default caption_windows.json)
-  CAPTION_FILTER_FILE   if set, also write the filter chain here (in addition to stdout)
+  CAPS_DIR      repo-contained output dir for cap_<i>.txt (default caps)
+  CAPTION_WINDOWS_JSON  repo-contained output path (default caption_windows.json)
+  CAPTION_FILTER_FILE   repo-contained optional filter-chain output path
 """
 import json
 import os
 import sys
+
+from repo_paths import inside_repo
 
 
 def _f(name: str) -> float:
@@ -43,14 +45,23 @@ def _f(name: str) -> float:
 
 
 def main() -> int:
-    captions_file = os.environ.get("CAPTIONS_FILE", "scripts/captions.txt")
+    captions_file = inside_repo(
+        os.environ.get("CAPTIONS_FILE", "scripts/captions.txt"),
+        "CAPTIONS_FILE",
+        must_exist=True,
+    )
     a_main = _f("A_MAIN")
     s_eff = _f("S_EFF")
     title_dur = float(os.environ.get("TITLE_DUR", "3.0"))
     lead = float(os.environ.get("LEAD", "0.3"))
     font = os.environ.get("FONT", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
-    caps_dir = os.environ.get("CAPS_DIR", "caps")
-    windows_json = os.environ.get("CAPTION_WINDOWS_JSON", "caption_windows.json")
+    caps_dir = inside_repo(os.environ.get("CAPS_DIR", "caps"), "CAPS_DIR")
+    windows_json = inside_repo(
+        os.environ.get("CAPTION_WINDOWS_JSON", "caption_windows.json"),
+        "CAPTION_WINDOWS_JSON",
+    )
+    filter_file_raw = os.environ.get("CAPTION_FILTER_FILE")
+    filter_file = inside_repo(filter_file_raw, "CAPTION_FILTER_FILE") if filter_file_raw else None
 
     rows = []
     with open(captions_file, encoding="utf-8") as fh:
@@ -83,6 +94,7 @@ def main() -> int:
     k = target_span / cap_end
 
     os.makedirs(caps_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(windows_json), exist_ok=True)
     pieces = []
     windows = []
     prev_e = 0.0
@@ -109,8 +121,8 @@ def main() -> int:
     with open(windows_json, "w", encoding="utf-8") as wf:
         json.dump(windows, wf, ensure_ascii=False, indent=2)
 
-    filter_file = os.environ.get("CAPTION_FILTER_FILE")
     if filter_file:
+        os.makedirs(os.path.dirname(filter_file), exist_ok=True)
         with open(filter_file, "w", encoding="utf-8") as ff:
             ff.write(chain)
 

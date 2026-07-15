@@ -13,17 +13,19 @@
 | Persistent/queryable cross-session memory | Ready | `tests/e2e/cross-session.test.ts`, pgvector schema/store |
 | Rule + semantic self-audit | Ready | `BENCHMARK.md`, `bench:consistency`, `bench:semantic`, `bench:resolution` |
 | Auth, tenant isolation, quotas, idempotency | Ready in source | security/e2e suites and [`CLAIM_EVIDENCE_MATRIX.md`](./CLAIM_EVIDENCE_MATRIX.md) |
-| Submission architecture image | Ready | `architecture.mmd`, `architecture.svg`, `architecture.png` |
+| Submission architecture image | Ready | [`judge-architecture.svg`](./judge-architecture.svg) plus [`demo/final-media/judge-architecture.jpg`](../demo/final-media/judge-architecture.jpg); dense appendix in `architecture.*` |
 | Judge path + private-credential instructions | Ready as copy | [`JUDGE-GUIDE.md`](./JUDGE-GUIDE.md) and media checklist |
 
-Verified full test/coverage result: **300 total, 285 pass, 0 fail, 15 real-DB skips**; **91.96% statements, 84.96% branches, 91.25% functions, 91.96% lines**.
+Exact test and coverage values must be copied only from the final immutable CI
+artifact. Real-DB slices skip explicitly when no integration database is supplied.
 
 ## Final release gate
 
 Immediately before recording or submitting:
 
 1. Deploy the final image.
-2. Require `GET /ready` → `200` with database/Qwen/auth checks ready.
+2. Require cheap `GET /ready` → `200`, then authenticated `GET /ready/deep` →
+   `200` twice to verify database, embedding, narration, and the bounded cache.
 3. Require `GET /health` to report `text-embedding-v4` and `qwen-plus`.
 4. Confirm `/openapi.json` contains `/ready`, `/ingest/invoice`, `/feedback`, `/consistency/semantic`, `/consolidate`, and `/forget`.
 5. Exercise the public seed/recall/rule-audit path and the private-token semantic path.

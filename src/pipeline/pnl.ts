@@ -11,6 +11,7 @@
 //   EmployeeAgent → per-employee cost analytics.
 
 import type { PayrollEvent } from "../types.js";
+import { normalizeIso4217Currency } from "./currency.js";
 
 export interface EmployeePnl {
   employee_id: string;
@@ -22,7 +23,10 @@ export interface EmployeePnl {
 
 export interface PnlReport {
   currency: string | null;
-  currency_status: "empty" | "single" | "mixed";
+  currency_status: "empty" | "single" | "mixed" | "unknown";
+  // Records excluded from monetary aggregation because no ISO currency was
+  // evidenced. Unknown is never treated as a combinable pseudo-currency.
+  unknown_currency_records: number;
   // Complete, independently summed views. Top-level monetary totals are null
   // when more than one currency is present; callers must use this breakdown.
   by_currency: CurrencyPnl[];
@@ -35,7 +39,8 @@ export interface PnlReport {
   employee_social_security_total: number | null;
   tax_withheld_total: number | null;
   cash_out_total: number | null; // net salaries paid
-  off_bank_cost: number | null;  // employer taxes/ss
+  off_bank_cost: number | null;  // full employer cost minus bank salary transfer
+  off_bank_cost_pct: number | null;
   cost_gap_pct: number | null;
   avg_cost_per_employee: number | null;
   
@@ -61,7 +66,9 @@ export interface PnlReport {
   
   // Combined P&L totals
   total_expenses: number | null; // employer_cost_total + purchases_total
-  net_cash_outflow: number | null; // payroll cash + purchase invoices with known paid amount
+  // Null whenever any purchase lacks payment evidence. In that case,
+  // purchase_cash_out_total remains the known-only/minimum observed amount.
+  net_cash_outflow: number | null;
   
   // Profitability
   net_profit: number | null; // revenue_total - total_expenses
@@ -82,17 +89,18 @@ export interface CurrencyPnl {
   tax_withheld_total: number;
   cash_out_total: number;
   off_bank_cost: number;
-  cost_gap_pct: number;
-  avg_cost_per_employee: number;
+  off_bank_cost_pct: number | null;
+  cost_gap_pct: number | null;
+  avg_cost_per_employee: number | null;
   purchases_total: number;
   purchase_cash_out_total: number;
   purchase_cash_unknown_total: number;
   purchase_cash_unknown_count: number;
   revenue_total: number;
   total_expenses: number;
-  net_cash_outflow: number;
+  net_cash_outflow: number | null;
   net_profit: number;
-  net_profit_margin_pct: number;
+  net_profit_margin_pct: number | null;
 }
 
 export interface CompanyPnl {
@@ -109,14 +117,15 @@ function round(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-const DEFAULT_CURRENCY = "UNSPECIFIED";
-
 // Per-event P&L view (EmployeeAgent + PnLAgent) directly from a fused event.
 export function pnlForEvent(event: PayrollEvent): PnlReport {
+  const currency = normalizeCurrency(event.currency);
   const cash_out_total = event.bank_net_total;
   const off_bank_cost = event.employer_cost_total - cash_out_total;
+  const off_bank_cost_pct =
+    cash_out_total > 0 ? (off_bank_cost / cash_out_total) * 100 : null;
   const cost_gap_pct =
-    cash_out_total > 0 ? (event.employer_social_security_total / cash_out_total) * 100 : 0;
+    cash_out_total > 0 ? (event.employer_social_security_total / cash_out_total) * 100 : null;
   const top_employees: EmployeePnl[] = [...event.employees]
     .sort((a, b) => b.employer_cost - a.employer_cost)
     .slice(0, 5)
@@ -127,11 +136,12 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
       net: e.net,
       employer_cost: e.employer_cost,
     }));
-  return {
-    currency: DEFAULT_CURRENCY,
-    currency_status: "single",
-    by_currency: [{
-      currency: DEFAULT_CURRENCY,
+  const report: PnlReport = {
+    currency,
+    currency_status: currency ? "single" : "unknown",
+    unknown_currency_records: currency ? 0 : 1,
+    by_currency: currency ? [{
+      currency,
       events: 1,
       employee_count: event.employee_count,
       employer_cost_total: round(event.employer_cost_total),
@@ -141,8 +151,9 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
       tax_withheld_total: round(event.tax_withheld_total),
       cash_out_total: round(cash_out_total),
       off_bank_cost: round(off_bank_cost),
-      cost_gap_pct: round(cost_gap_pct),
-      avg_cost_per_employee: event.employee_count > 0 ? round(event.employer_cost_total / event.employee_count) : 0,
+      off_bank_cost_pct: off_bank_cost_pct == null ? null : round(off_bank_cost_pct),
+      cost_gap_pct: cost_gap_pct == null ? null : round(cost_gap_pct),
+      avg_cost_per_employee: event.employee_count > 0 ? round(event.employer_cost_total / event.employee_count) : null,
       purchases_total: 0,
       purchase_cash_out_total: 0,
       purchase_cash_unknown_total: 0,
@@ -151,8 +162,8 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
       total_expenses: round(event.employer_cost_total),
       net_cash_outflow: round(cash_out_total),
       net_profit: -round(event.employer_cost_total),
-      net_profit_margin_pct: 0,
-    }],
+      net_profit_margin_pct: null,
+    }] : [],
     events: 1,
     employee_count: event.employee_count,
     employer_cost_total: round(event.employer_cost_total),
@@ -162,9 +173,10 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
     tax_withheld_total: round(event.tax_withheld_total),
     cash_out_total: round(cash_out_total),
     off_bank_cost: round(off_bank_cost),
-    cost_gap_pct: round(cost_gap_pct),
+    off_bank_cost_pct: off_bank_cost_pct == null ? null : round(off_bank_cost_pct),
+    cost_gap_pct: cost_gap_pct == null ? null : round(cost_gap_pct),
     avg_cost_per_employee:
-      event.employee_count > 0 ? round(event.employer_cost_total / event.employee_count) : 0,
+      event.employee_count > 0 ? round(event.employer_cost_total / event.employee_count) : null,
     purchases_total: 0,
     purchase_cash_out_total: 0,
     purchase_cash_unknown_total: 0,
@@ -175,7 +187,7 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
     total_expenses: round(event.employer_cost_total),
     net_cash_outflow: round(cash_out_total),
     net_profit: -round(event.employer_cost_total),
-    net_profit_margin_pct: 0,
+    net_profit_margin_pct: null,
     by_company: [
       {
         company: event.company,
@@ -184,11 +196,13 @@ export function pnlForEvent(event: PayrollEvent): PnlReport {
         cash_out_total: round(cash_out_total),
         off_bank_cost: round(off_bank_cost),
         employee_count: event.employee_count,
-        currency: DEFAULT_CURRENCY,
+        currency: currency ?? "UNSPECIFIED",
       },
     ],
     top_employees,
   };
+  if (currency) return report;
+  return maskUnknownCurrencyMoney(report);
 }
 
 // A stored event-summary memory as seen by the audit read (store.listForAudit)
@@ -217,9 +231,10 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
   );
   if (relevant.length === 0) return emptyPnlReport();
 
+  const unknownCurrency = relevant.filter((memory) => currencyOf(memory) == null);
   const byCurrency = new Map<string, PnlSourceMemory[]>();
-  for (const memory of relevant) {
-    const currency = currencyOf(memory);
+  for (const memory of relevant.filter((item) => currencyOf(item) != null)) {
+    const currency = currencyOf(memory)!;
     (byCurrency.get(currency) ?? byCurrency.set(currency, []).get(currency)!).push(memory);
   }
   const details = [...byCurrency]
@@ -227,11 +242,49 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
     .map(([currency, scoped]) => aggregateCurrency(scoped, currency));
   const breakdowns = details.map(({ purchases: _p, sales: _s, by_company: _b, ...totals }) => totals);
 
+  if (unknownCurrency.length > 0) {
+    const unknownEmployeeCount = unknownCurrency
+      .filter((memory) => memory.kind === "payroll_event" || !memory.kind)
+      .reduce((sum, memory) => sum + num(memory.metadata?.employee_count), 0);
+    return {
+      currency: null,
+      currency_status: details.length === 0 ? "unknown" : "mixed",
+      unknown_currency_records: unknownCurrency.length,
+      by_currency: breakdowns,
+      events: details.reduce((sum, item) => sum + item.events, 0) + unknownCurrency.length,
+      employee_count: details.reduce((sum, item) => sum + item.employee_count, 0) + unknownEmployeeCount,
+      employer_cost_total: null,
+      gross_total: null,
+      employer_social_security_total: null,
+      employee_social_security_total: null,
+      tax_withheld_total: null,
+      cash_out_total: null,
+      off_bank_cost: null,
+      off_bank_cost_pct: null,
+      cost_gap_pct: null,
+      avg_cost_per_employee: null,
+      purchases_total: null,
+      purchase_cash_out_total: null,
+      purchase_cash_unknown_total: null,
+      purchase_cash_unknown_count: details.reduce((sum, item) => sum + item.purchase_cash_unknown_count, 0),
+      purchases: details.flatMap((item) => item.purchases),
+      revenue_total: null,
+      sales: details.flatMap((item) => item.sales),
+      total_expenses: null,
+      net_cash_outflow: null,
+      net_profit: null,
+      net_profit_margin_pct: null,
+      by_company: details.flatMap((item) => item.by_company),
+      top_employees: [],
+    };
+  }
+
   if (details.length === 1) {
     const detail = details[0]!;
     return {
       ...detail,
       currency_status: "single",
+      unknown_currency_records: 0,
       by_currency: breakdowns,
       top_employees: [],
     };
@@ -242,6 +295,7 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
   return {
     currency: null,
     currency_status: "mixed",
+    unknown_currency_records: 0,
     by_currency: breakdowns,
     events: details.reduce((sum, item) => sum + item.events, 0),
     employee_count: details.reduce((sum, item) => sum + item.employee_count, 0),
@@ -252,6 +306,7 @@ export function aggregatePnl(memories: PnlSourceMemory[]): PnlReport {
     tax_withheld_total: null,
     cash_out_total: null,
     off_bank_cost: null,
+    off_bank_cost_pct: null,
     cost_gap_pct: null,
     avg_cost_per_employee: null,
     purchases_total: null,
@@ -389,8 +444,9 @@ function aggregateCurrency(memories: PnlSourceMemory[], currency: string): Curre
     tax_withheld_total: round(tax),
     cash_out_total: round(payrollCash),
     off_bank_cost: round(offBank),
-    cost_gap_pct: payrollCash > 0 ? round((employerSs / payrollCash) * 100) : 0,
-    avg_cost_per_employee: employeeCount > 0 ? round(employerCost / employeeCount) : 0,
+    off_bank_cost_pct: payrollCash > 0 ? round((offBank / payrollCash) * 100) : null,
+    cost_gap_pct: payrollCash > 0 ? round((employerSs / payrollCash) * 100) : null,
+    avg_cost_per_employee: employeeCount > 0 ? round(employerCost / employeeCount) : null,
     purchases_total: round(purchaseAccrual),
     purchase_cash_out_total: round(purchaseCash),
     purchase_cash_unknown_total: round(unknownCashFace),
@@ -399,9 +455,9 @@ function aggregateCurrency(memories: PnlSourceMemory[], currency: string): Curre
     revenue_total: round(revenue),
     sales: salesRows,
     total_expenses: round(expenses),
-    net_cash_outflow: round(payrollCash + purchaseCash),
+    net_cash_outflow: unknownCashCount > 0 ? null : round(payrollCash + purchaseCash),
     net_profit: round(profit),
-    net_profit_margin_pct: revenue > 0 ? round((profit / revenue) * 100) : 0,
+    net_profit_margin_pct: revenue > 0 ? round((profit / revenue) * 100) : null,
     by_company: [...companyRows.values()].map((row) => ({
       ...row,
       employer_cost_total: round(row.employer_cost_total),
@@ -415,6 +471,7 @@ function emptyPnlReport(): PnlReport {
   return {
     currency: null,
     currency_status: "empty",
+    unknown_currency_records: 0,
     by_currency: [],
     events: 0,
     employee_count: 0,
@@ -425,8 +482,9 @@ function emptyPnlReport(): PnlReport {
     tax_withheld_total: 0,
     cash_out_total: 0,
     off_bank_cost: 0,
-    cost_gap_pct: 0,
-    avg_cost_per_employee: 0,
+    off_bank_cost_pct: null,
+    cost_gap_pct: null,
+    avg_cost_per_employee: null,
     purchases_total: 0,
     purchase_cash_out_total: 0,
     purchase_cash_unknown_total: 0,
@@ -437,7 +495,7 @@ function emptyPnlReport(): PnlReport {
     total_expenses: 0,
     net_cash_outflow: 0,
     net_profit: 0,
-    net_profit_margin_pct: 0,
+    net_profit_margin_pct: null,
     by_company: [],
     top_employees: [],
   };
@@ -464,10 +522,13 @@ function purchaseCashEvidence(
   if (["unknown", "partial"].includes(status)) {
     return { status: "unknown", amount: null };
   }
+  if (status === "unpaid") return { status: "unpaid", amount: 0 };
   if (typeof meta.payment_date === "string" && meta.payment_date.trim().length > 0) {
     return { status: "unknown", amount: null };
   }
-  return { status: "unpaid", amount: 0 };
+  // An invoice is an accrual record, not proof that zero cash moved. Preserve
+  // the epistemic gap unless an explicit unpaid/zero signal exists.
+  return { status: "unknown", amount: null };
 }
 
 function payrollBusinessKey(memory: PnlSourceMemory): string {
@@ -503,14 +564,42 @@ function invoiceBusinessKey(memory: PnlSourceMemory): string {
   ]);
 }
 
-function currencyOf(memory: PnlSourceMemory): string {
-  return normalizeCurrency(memory.metadata?.currency) ?? "UNSPECIFIED";
+function currencyOf(memory: PnlSourceMemory): string | null {
+  return normalizeCurrency(memory.metadata?.currency);
 }
 
 function normalizeCurrency(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const currency = value.normalize("NFKC").trim().toUpperCase();
-  return /^[A-Z]{3}$/.test(currency) ? currency : null;
+  return normalizeIso4217Currency(value);
+}
+
+function maskUnknownCurrencyMoney(report: PnlReport): PnlReport {
+  return {
+    ...report,
+    currency: null,
+    currency_status: "unknown",
+    unknown_currency_records: 1,
+    by_currency: [],
+    employer_cost_total: null,
+    gross_total: null,
+    employer_social_security_total: null,
+    employee_social_security_total: null,
+    tax_withheld_total: null,
+    cash_out_total: null,
+    off_bank_cost: null,
+    off_bank_cost_pct: null,
+    cost_gap_pct: null,
+    avg_cost_per_employee: null,
+    purchases_total: null,
+    purchase_cash_out_total: null,
+    purchase_cash_unknown_total: null,
+    revenue_total: null,
+    total_expenses: null,
+    net_cash_outflow: null,
+    net_profit: null,
+    net_profit_margin_pct: null,
+    by_company: [],
+    top_employees: [],
+  };
 }
 
 function canonical(value: string): string {

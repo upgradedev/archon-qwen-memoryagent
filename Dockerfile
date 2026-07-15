@@ -1,7 +1,7 @@
 # Reproducible multi-stage production image. TypeScript and tests exist only in
 # the build stage; the runtime executes compiled JavaScript as an unprivileged
 # user and never invokes npx or downloads packages at startup.
-FROM node:24.18.0-bookworm-slim AS build
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -13,7 +13,7 @@ COPY scripts ./scripts
 COPY bench ./bench
 RUN npm run build
 
-FROM node:24.18.0-bookworm-slim AS runtime
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runtime
 
 ENV NODE_ENV=production \
     PORT=9000
@@ -42,7 +42,6 @@ EXPOSE 9000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:9000/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
 
-# Function Compute has no external schema-migration job inside the private VPC.
-# Its manifest sets APPLY_SCHEMA_ON_START=true; ECS keeps schema-first deployment
-# in redeploy.sh and leaves this false. Only compiled runtime files are invoked.
-CMD ["sh", "-c", "if [ \"${APPLY_SCHEMA_ON_START:-false}\" = \"true\" ]; then node dist/scripts/apply-schema.js; fi; exec node dist/src/server.js"]
+# Schema migration is an explicit privileged one-shot job. The long-lived
+# container never receives migration credentials and cannot execute DDL.
+CMD ["node", "dist/src/server.js"]

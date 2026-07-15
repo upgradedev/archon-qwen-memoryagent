@@ -21,6 +21,7 @@ Env:
   DEMO_BASE_URL  live base URL (default https://memory.43.106.13.19.sslip.io)
   WEB_COMPANY    company to type      (default "Northwind Trading" — the seed company)
   WEB_QUESTION   question to type     (default the verified template question)
+  WEB_SHOTS_DIR  repo-contained output directory (default web_shots)
 """
 from __future__ import annotations
 
@@ -30,6 +31,7 @@ import sys
 import pathlib
 
 from playwright.sync_api import sync_playwright
+from repo_paths import inside_repo
 
 BASE = os.environ.get("DEMO_BASE_URL", "https://memory.43.106.13.19.sslip.io").rstrip("/")
 COMPANY = os.environ.get("WEB_COMPANY", "Northwind Trading")
@@ -40,8 +42,8 @@ QUESTION = os.environ.get("WEB_QUESTION", "What did it really cost to employ the
 # appear in anything the browser puts on screen.
 FORBIDDEN = re.compile(r"hidden|ika|efka|mydata|greek|greece|αφμ|aade", re.IGNORECASE)
 
-OUT = pathlib.Path("web_shots")
-OUT.mkdir(exist_ok=True)
+OUT = pathlib.Path(inside_repo(os.environ.get("WEB_SHOTS_DIR", "web_shots"), "WEB_SHOTS_DIR"))
+OUT.mkdir(parents=True, exist_ok=True)
 
 
 def fail(msg: str) -> None:

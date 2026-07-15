@@ -45,20 +45,23 @@ resources:
       environmentVariables:
         PORT: "9000"
         NODE_ENV: production
-        APPLY_SCHEMA_ON_START: "true"
         DATABASE_URL: ${env('DATABASE_URL')}
         DASHSCOPE_API_KEY: ${env('DASHSCOPE_API_KEY')}
         DASHSCOPE_BASE_URL: ${env('DASHSCOPE_BASE_URL', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1')}
         QWEN_MODEL: ${env('QWEN_MODEL', 'qwen-plus')}
+        QWEN_JUDGE_MODEL: ${env('QWEN_JUDGE_MODEL', 'qwen-plus')}
         QWEN_EMBED_MODEL: ${env('QWEN_EMBED_MODEL', 'text-embedding-v4')}
         EMBED_DIM: ${env('EMBED_DIM', '1024')}
+        EMBEDDING_CONCURRENCY: ${env('EMBEDDING_CONCURRENCY', '4')}
         JUDGE_API_KEY: ${env('JUDGE_API_KEY')}
-        JUDGE_TENANT_ID: ${env('JUDGE_TENANT_ID', '_public')}
+        JUDGE_TENANT_ID: ${env('JUDGE_TENANT_ID', '_judge_demo')}
         JUDGE_AUTH_REQUIRED: "true"
         PUBLIC_TENANT_ID: ${env('PUBLIC_TENANT_ID', '_public')}
         CORS_ORIGIN: ${env('CORS_ORIGIN', '')}
         QWEN_RERANK_MODEL: ${env('QWEN_RERANK_MODEL', 'qwen-plus')}
         RERANK_TIMEOUT_MS: ${env('RERANK_TIMEOUT_MS', '3000')}
+        DEEP_READINESS_DAILY_LIMIT: ${env('DEEP_READINESS_DAILY_LIMIT', '30')}
+        DEEP_READINESS_DAILY_LIMIT_GLOBAL: ${env('DEEP_READINESS_DAILY_LIMIT_GLOBAL', '300')}
         SEMANTIC_JUDGE_TIMEOUT_MS: ${env('SEMANTIC_JUDGE_TIMEOUT_MS', '8000')}
         SEMANTIC_EMBED_TIMEOUT_MS: ${env('SEMANTIC_EMBED_TIMEOUT_MS', '10000')}
       triggers:

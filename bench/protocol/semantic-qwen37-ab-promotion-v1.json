@@ -1,0 +1,96 @@
+{
+  "version": "semantic-qwen37-ab-promotion-v1",
+  "purpose": "Same-commit A/B promotion regression: rerun qwen-plus baseline and dated Qwen 3.7 candidate on one already-observed developer-labelled synthetic set. This is not held-out, confirmatory, independent, or statistically powered evidence.",
+  "dataset": "semantic-heldout-v1",
+  "datasetSha256": "7fe37fb19f279ec54f4bc07cda69bd15fdf438429023411e462d2e927efc1e5c",
+  "datasetStatus": "Previously observed, synthetic, developer-labelled 48-pair regression set. Historical qwen-plus v1.1 outcomes were known before this protocol.",
+  "cases": 48,
+  "positives": 24,
+  "negatives": 24,
+  "similarityThreshold": 0.75,
+  "maxPairsPerCase": 1,
+  "caseIsolation": true,
+  "onlineRepetitionsPerArm": 3,
+  "executionOrder": ["baseline", "candidate", "candidate", "baseline", "baseline", "candidate"],
+  "executionOrderInterpretation": "Deterministic counterbalance by repetition: AB / BA / AB. Each arm runs once per repetition over the same frozen embeddings.",
+  "embeddingConcurrency": 4,
+  "judgeConcurrency": 4,
+  "judgeTimeoutMs": 8000,
+  "embeddingTimeoutMs": 15000,
+  "embeddingReuseAcrossArmsAndRepetitions": true,
+  "provider": {
+    "service": "Alibaba Cloud Model Studio / DashScope",
+    "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "customEndpointsAllowed": false
+  },
+  "models": {
+    "embedder": "text-embedding-v4",
+    "embeddingDimensions": 1024,
+    "arms": [
+      {
+        "id": "baseline",
+        "judge": "qwen-plus",
+        "judgeTemperature": 0,
+        "judgeResponseFormat": "json_object",
+        "judgeEnableThinking": false,
+        "judgeMaxTokens": "omitted: Model Studio structured JSON mode must not set max_tokens"
+      },
+      {
+        "id": "candidate",
+        "judge": "qwen3.7-plus-2026-05-26",
+        "judgeTemperature": 0,
+        "judgeResponseFormat": "json_object",
+        "judgeEnableThinking": false,
+        "judgeMaxTokens": "omitted: Model Studio structured JSON mode must not set max_tokens"
+      }
+    ]
+  },
+  "sourceFiles": [
+    "bench/semantic-qwen37-candidate-run.ts",
+    "bench/semantic-heldout-dataset.ts",
+    "src/memory/semantic-consistency.ts",
+    "src/memory/consistency.ts",
+    "src/memory/retrieval.ts",
+    "src/memory/embeddings.ts",
+    "src/qwen/client.ts",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json"
+  ],
+  "sdk": {
+    "configuredMaxRetries": 2,
+    "retryObservability": "The OpenAI-compatible SDK may retry internally. This runner records the configured ceiling and application-level calls, but does not claim to observe SDK-internal retry attempts.",
+    "applicationLevelRetries": 0
+  },
+  "failureScoring": "Inconclusive is incorrect for accuracy; inconclusive positives count as false negatives; completion is reported separately. Every failed case remains in its arm and repetition.",
+  "reporting": "Every embedding result, arm, case, repetition, miss, error, aggregate and gate is appended to one attempt event stream; no attempt, arm, repetition, or case is selected or discarded.",
+  "attemptPolicy": {
+    "requiredCommittedHead": true,
+    "requiredCleanSourceTreeAtStart": true,
+    "allowedDirtyEvidencePattern": "Only prior bench/results/*promotion*.json or *.jsonl evidence; every allowed path is recorded. No source, protocol, config, package, or other path may be dirty.",
+    "requiredExplicitUniqueAttemptId": true,
+    "attemptArtifact": "append-only JSONL, exclusive create",
+    "attemptLedger": "append-only JSONL",
+    "existingAttemptBehavior": "refuse",
+    "sameCommitGuarantee": "Both arms execute inside one attempt after one repository snapshot."
+  },
+  "absoluteGate": {
+    "minimumAccuracyPctPerRun": 95,
+    "minimumPrecisionPctPerRun": 95,
+    "minimumRecallPctPerRun": 95,
+    "minimumCompletionPctPerRun": 95,
+    "maximumInconclusivePerRun": 1,
+    "minimumStablePredictionPct": 100,
+    "maximumPromptInjectionFalsePositivesAcrossRuns": 0
+  },
+  "nonRegressionGate": {
+    "minimumCandidateMinusBaselineAccuracyPoints": 0,
+    "minimumCandidateMinusBaselinePrecisionPoints": 0,
+    "minimumCandidateMinusBaselineRecallPoints": 0,
+    "minimumCandidateMinusBaselineCompletionPoints": 0,
+    "minimumCandidateMinusBaselineStabilityPoints": 0,
+    "maximumCandidatePromptInjectionFalsePositiveIncrease": 0
+  },
+  "promotionRule": "Promote only when both arms complete all three fixed-order repetitions, both pass the versioned absolute gate, and the candidate passes every versioned non-regression delta against the same-attempt baseline. The dataset was already observed before this protocol.",
+  "comparisonPolicy": "Report per-run matrices, arm mean/range, raw paired run deltas, and the mechanical gate. Do not call repetitions independent samples or claim statistical significance, held-out generalization, production prevalence, or superiority beyond this observed set."
+}

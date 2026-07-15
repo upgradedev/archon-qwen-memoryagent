@@ -13,10 +13,10 @@
 #   DIFFERENTIATOR
 #                POST /ingest x2       -> two SEPARATE write events remember ONE record with a
 #                POST /consistency        DIFFERENT value; the agent DETECTS the contradiction
-#                                         and RECOMMENDS which value to trust (never mutates).
+#                                         and RECOMMENDS which value to trust (the audit is read-only).
 #   SEMANTIC     POST /demo/seed       -> seeds two memories that OPPOSE in MEANING with no
 #                POST /consistency/semantic  shared field ("on time" vs "chronically late"); the
-#                                         LIVE qwen-plus judge flags the meaning-level contradiction
+#                                         configured live Qwen judge flags the contradiction
 #                                         the rule-based audit is blind to. Also an MCP tool arg.
 #
 # HARD-CHECKED end to end (structured jq gates, not string-matching), so a box that
@@ -33,19 +33,30 @@
 #
 # Env:
 #   DEMO_BASE_URL  live base URL (default https://memory.43.106.13.19.sslip.io)
+#   DEMO_JUDGE_API_KEY  private reviewer credential (required; never printed)
 #   GITHUB_RUN_ID  used to make the companies/events unique (falls back to a timestamp)
-#   TRANSCRIPT     output transcript path (default docs/screencast_transcript.txt)
+#   TRANSCRIPT     repo-contained output path (default docs/screencast_transcript.txt)
 set -euo pipefail
+
+fail() { echo "::error::$*" >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || fail "python3 is required for repo-contained capture paths"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 BASE="${DEMO_BASE_URL:-https://memory.43.106.13.19.sslip.io}"
 RUN="${GITHUB_RUN_ID:-local$(date +%s)}"
 COMPANY="DemoRun ${RUN}"
 AUDIT_COMPANY="DemoRun ${RUN} audit"
-OUT="${TRANSCRIPT:-docs/screencast_transcript.txt}"
+OUT_RAW="${TRANSCRIPT:-docs/screencast_transcript.txt}"
+OUT="$(python3 "$SCRIPT_DIR/repo_paths.py" "$OUT_RAW" --label TRANSCRIPT)" \
+  || fail "TRANSCRIPT must resolve inside the MemoryAgent repository"
 mkdir -p "$(dirname "$OUT")"
 
 command -v jq >/dev/null 2>&1 || { echo "::error::jq is required"; exit 1; }
-fail() { echo "::error::$*" >&2; exit 1; }
+DEMO_JUDGE_API_KEY="${DEMO_JUDGE_API_KEY:-}"
+[ "${#DEMO_JUDGE_API_KEY}" -ge 32 ] \
+  || fail "DEMO_JUDGE_API_KEY must be provided as a 32+ character private Actions secret"
+AUTH=(-H "Authorization: Bearer ${DEMO_JUDGE_API_KEY}")
 
 # Positioning guard: the memory is a PURE, domain-neutral financial engine. No
 # country/authority-specific terms may appear in a recalled, on-screen answer.
@@ -57,9 +68,10 @@ echo "== driving live box: $BASE (company='$COMPANY') =="
 HEALTH=$(curl -fsS -m 25 "$BASE/health") \
   || fail "live Alibaba box unreachable at $BASE/health — the ECS instance may be stopped"
 echo "health: $HEALTH"
-echo "$HEALTH" | jq -e '.embedder=="text-embedding-v4" and .narrator=="qwen-plus" and .embedDim==1024' >/dev/null \
+echo "$HEALTH" | jq -e '.embedder=="text-embedding-v4" and .narrator=="qwen-plus" and (.judge|type)=="string" and (.judge|startswith("fake-")|not) and .embedDim==1024' >/dev/null \
   || fail "/health is not real Qwen (got: $HEALTH) — the box may have restarted WITHOUT DASHSCOPE_API_KEY (reverts to fake-hash-embedder)"
 HEALTH_C=$(echo "$HEALTH" | jq -c .)
+JUDGE_MODEL=$(echo "$HEALTH" | jq -r '.judge')
 
 # The live count the Explorer UI renders as a badge (proves persistence, not a mock).
 COUNT_JSON=$(curl -fsS -m 25 "$BASE/memory/count") || fail "/memory/count failed — box unreachable"
@@ -76,7 +88,7 @@ EVENT=$(cat <<JSON
 {"event":{"event_id":"evt-${RUN}","company":"${COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":2000,"employer_cost_total":15800,"cost_gap_amount":5800,"cost_gap_pct":58.0,"off_bank_cost":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":1600,"net":5800,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
 JSON
 )
-INGEST=$(curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$EVENT") \
+INGEST=$(curl -fsS -m 60 -X POST "$BASE/ingest" "${AUTH[@]}" -H 'Content-Type: application/json' -d "$EVENT") \
   || fail "/ingest (Session A) failed"
 echo "ingest: $INGEST"
 echo "$INGEST" | jq -e '.written>=1' >/dev/null || fail "/ingest wrote no memories (got: $INGEST)"
@@ -95,7 +107,7 @@ INGEST_C=$(echo "$INGEST" | jq -c '{written, ids: (.ids[0:2] + ["..."])}')
 # scores are RANK-based, not cosine — see BENCHMARK.md; the DEMO reports the honest,
 # human-meaningful metric its own narration promises.
 Q1="What was the true cost of employing our team last month compared with what actually left the bank account?"
-R1=$(curl -fsS -m 90 -X POST "$BASE/recall" -H 'Content-Type: application/json' \
+R1=$(curl -fsS -m 90 -X POST "$BASE/recall" "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d "$(jq -n --arg q "$Q1" --arg c "$COMPANY" '{question:$q, company:$c, kind:"payroll_event", limit:3, hybrid:false}')") \
   || fail "/recall (Session B, Q1) failed"
 echo "recall1: $R1"
@@ -106,7 +118,7 @@ A1=$(echo "$R1" | jq -r '.answer' | tr '\n' ' ' | tr -s ' ')
 SCORES1=$(echo "$R1" | jq -r '.citations[] | "  \(.marker) kind=\(.kind)  cosine=\(((.score*1000)|round)/1000)  ref=\(.sourceRef)"')
 
 Q2="What was the total cost of employing Elena last month?"
-R2=$(curl -fsS -m 90 -X POST "$BASE/recall" -H 'Content-Type: application/json' \
+R2=$(curl -fsS -m 90 -X POST "$BASE/recall" "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d "$(jq -n --arg q "$Q2" --arg c "$COMPANY" '{question:$q, company:$c, kind:"payroll_event", limit:3, hybrid:false}')") \
   || fail "/recall (Session B, Q2) failed"
 echo "recall2: $R2"
@@ -124,7 +136,7 @@ fi
 # Self-auditing memory: two SEPARATE write events remember the SAME record with a
 # DIFFERENT value (a later reconciliation "corrected" it). A plain recall would
 # silently return one; /consistency DETECTS the disagreement and RECOMMENDS which
-# side to trust (importance -> source-authority -> recency). Never mutates memory.
+# side to trust (importance -> source-authority -> recency). The audit is read-only.
 audit_event() { # $1 = employer_cost_total
 cat <<JSON
 {"event":{"event_id":"evt-audit-${RUN}","company":"${AUDIT_COMPANY}","period":"2026-05","employee_count":2,"bank_net_total":10000,"gross_total":13000,"employer_social_security_total":2800,"employee_social_security_total":1000,"tax_withheld_total":2000,"employer_cost_total":$1,"cost_gap_amount":5800,"cost_gap_pct":58.0,"off_bank_cost":5800,"employees":[{"employee_id":"E-01","name":"Elena Novak","gross":8000,"employee_social_security":600,"tax":1600,"net":5800,"employer_social_security":1800,"employer_cost":9800},{"employee_id":"E-02","name":"David Chen","gross":5000,"employee_social_security":400,"tax":400,"net":4200,"employer_social_security":1000,"employer_cost":6000}],"linked_docs":["doc-bank-1","doc-reg-1"]}}
@@ -132,13 +144,13 @@ JSON
 }
 
 # Write event #1 — employer cost recorded as €18,000.
-curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$(audit_event 18000)" >/dev/null \
+curl -fsS -m 60 -X POST "$BASE/ingest" "${AUTH[@]}" -H 'Content-Type: application/json' -d "$(audit_event 18000)" >/dev/null \
   || fail "/ingest (audit write #1) failed"
 # Write event #2 — a LATER session records €19,000 for the SAME event.
-curl -fsS -m 60 -X POST "$BASE/ingest" -H 'Content-Type: application/json' -d "$(audit_event 19000)" >/dev/null \
+curl -fsS -m 60 -X POST "$BASE/ingest" "${AUTH[@]}" -H 'Content-Type: application/json' -d "$(audit_event 19000)" >/dev/null \
   || fail "/ingest (audit write #2) failed"
 
-CONS=$(curl -fsS -m 60 -X POST "$BASE/consistency" -H 'Content-Type: application/json' \
+CONS=$(curl -fsS -m 60 -X POST "$BASE/consistency" "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d "$(jq -n --arg c "$AUDIT_COMPANY" '{company:$c}')") \
   || fail "/consistency (self-audit) failed"
 echo "consistency: $CONS"
@@ -165,22 +177,22 @@ CONS_OTHER=$(echo "$CONS" | jq -r '.contradictions[0] as $c | ($c.values|map(.va
 # time" vs "vendor is chronically late"). The seeded demo (/demo/seed — idempotent,
 # free offline extractor) plants exactly that pair under "Northwind Trading" as
 # `insight` memories; POST /consistency/semantic embeds each, keeps same-subject
-# pairs by cosine, and asks the LIVE qwen-plus judge whether they contradict. Scoped
+# pairs by cosine, and asks the configured live Qwen judge whether they contradict. Scoped
 # to kind=insight so it is fast and returns the single meaning-level finding. A box
 # on the offline Fakes (fake-polarity-judge) or without the seed FAILS the jq gate.
 SEM_COMPANY="Northwind Trading"
-curl -fsS -m 60 -X POST "$BASE/demo/seed" >/dev/null \
+curl -fsS -m 60 -X POST "$BASE/demo/seed" "${AUTH[@]}" >/dev/null \
   || fail "/demo/seed failed — cannot seed the meaning-level contradiction pair"
-SEM=$(curl -fsS -m 90 -X POST "$BASE/consistency/semantic" -H 'Content-Type: application/json' \
+SEM=$(curl -fsS -m 90 -X POST "$BASE/consistency/semantic" "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d "$(jq -n --arg c "$SEM_COMPANY" '{company:$c, kind:"insight"}')") \
   || fail "/consistency/semantic (meaning-level self-audit) failed"
 echo "semantic: $SEM"
-echo "$SEM" | jq -e '
+echo "$SEM" | jq -e --arg model "$JUDGE_MODEL" '
   .ok==false
   and (.semanticContradictions|length)>=1
-  and (.semanticContradictions[0].judge.model=="qwen-plus")
+  and (.semanticContradictions[0].judge.model==$model)
   and (.semanticContradictions[0].resolution!=null)' >/dev/null \
-  || fail "/consistency/semantic did not flag the seeded meaning-level contradiction via the REAL qwen-plus judge (got: $(echo "$SEM" | jq -c '{ok, n:(.semanticContradictions|length), judge:.semanticContradictions[0].judge}'))"
+  || fail "/consistency/semantic did not flag the seeded meaning-level contradiction via the configured live Qwen judge (got: $(echo "$SEM" | jq -c '{ok, n:(.semanticContradictions|length), judge:.semanticContradictions[0].judge}'))"
 # The two opposing memories, earliest first (session ordering), for the transcript.
 SEM_A=$(echo "$SEM" | jq -r '.semanticContradictions[0].memories[0].content' | tr '\n' ' ' | tr -s ' ')
 SEM_B=$(echo "$SEM" | jq -r '.semanticContradictions[0].memories[1].content' | tr '\n' ' ' | tr -s ' ')
@@ -251,26 +263,26 @@ t "77.0 \$ # ---- ⭐ THE DIFFERENTIATOR · memory that AUDITS ITSELF ----"
 t "79.0 \$ # Two SEPARATE sessions wrote ONE record with a DIFFERENT value."
 t "81.0 \$ curl -X POST $BASE/ingest -d @a.json   # write #1: employer cost €18,000"
 t "83.0 \$ curl -X POST $BASE/ingest -d @a.json   # write #2 (a LATER session): €19,000"
-t "85.0 \$ # Mem0 / Zep would MUTATE — silently overwrite. Archon NEVER mutates. Ask it to audit:"
+t "85.0 \$ # Pinned Mem0 dir() probe found no separately named public contradiction/resolution method. Archon audits read-only:"
 t "88.0 \$ curl -X POST $BASE/consistency -d '{\"company\":\"$AUDIT_COMPANY\"}'"
 t "90.5 → CONTRADICTION on '$CONS_SUBJECT' · attribute employer_cost_total · $CONS_VALS"
 t "94.5 → RESOLUTION (read-only recommender): trust $CONS_REC  [rule=$CONS_RULE · confidence=$CONS_CONF]"
 t "98.5   Rationale: the more recent write ($CONS_REC) supersedes the earlier value ($CONS_OTHER)."
-t "102.5 >> DETECTED its own cross-session disagreement · RECOMMENDED which to trust · never mutated."
-t "106.5   Measured: 5/5 issues detected · 0 false positives · read-only recommender 4/4 correct"
+t "102.5 >> DETECTED its own cross-session disagreement · RECOMMENDED read-only · human action is separate."
+t "106.5   Measured: 5/5 field issues · 0 false positives · 4/4 declared-policy conformance"
 # --- SEMANTIC · meaning-level self-audit (the class the rule-based audit is blind to) ---
 t "110.0 \$ # ---- ⭐ MEANING-LEVEL self-audit · fields match nothing; the meaning opposes ----"
 t "112.0 \$ # Two memories OPPOSE in MEANING with NO comparable field — the prose is the only signal:"
 t "114.0   A: $SEM_A"
 t "116.0   B: $SEM_B"
 t "118.0 \$ curl -X POST $BASE/consistency/semantic -d '{\"company\":\"$SEM_COMPANY\", \"kind\":\"insight\"}'"
-t "120.5 → embed each → same subject by cosine ($SEM_SIM) → LIVE qwen-plus judge: CONTRADICT [confidence=$SEM_CONF]"
-t "123.5 >> Caught what the field-level audit CANNOT see · same read-only recommendation · never mutated."
+t "120.5 → embed each → same subject by cosine ($SEM_SIM) → LIVE $JUDGE_MODEL judge: CONTRADICT [confidence=$SEM_CONF]"
+t "123.5 >> Caught what the field-level audit CANNOT see · same read-only recommendation."
 t "126.0 \$ # Every op — recall · ingest · audit · count — is also an MCP tool (audit takes semantic:true)."
 # --- MEASURED (retrieval) ---
 t "129.0 \$ # ---- MEASURED · labelled datasets (npm run bench) ----"
 t "131.0   Retrieval: reranked-hybrid beats dense — Recall@3 90.0% → 96.7% · MRR 0.883 → 0.911"
-t "135.0   Grounded answers: 100% correctness · 90.9% grounding (every euro traces to a memory)"
+t "135.0   Number checks: gold-figure hit 11/11 · complete euro traceability 10/11"
 # --- CLOSE · deployment ---
 t "138.5 \$ # ---- LIVE · Alibaba Cloud ----"
 t "140.5   Live URL :  $BASE/           (Explorer UI · public · reachable now)"

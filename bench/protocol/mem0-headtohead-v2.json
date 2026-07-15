@@ -1,0 +1,45 @@
+{
+  "version": "mem0-headtohead-v2",
+  "purpose": "Pinned, fixture-bounded retrieval and public-method-name probe against Mem0. This does not establish universal product capability or superiority.",
+  "dataset": "bench/external/data.json",
+  "datasetSha256": "e30304fed53375845681d95ca665eded94e425fa5d369519b9c883e1cb69335f",
+  "hashPolicy": "SHA-256 over repository text bytes after CRLF and CR are normalized to LF, so attestations are stable across Git checkout platforms.",
+  "conflictPairs": 4,
+  "retrievalProbes": 5,
+  "provider": {
+    "service": "Alibaba Cloud Model Studio / DashScope",
+    "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "region": "international",
+    "customEndpointsAllowed": false
+  },
+  "models": {
+    "llm": "qwen-plus",
+    "llmTemperature": 0,
+    "embedder": "text-embedding-v4",
+    "embeddingDimensions": 1024,
+    "vectorStore": "Qdrant local in-process"
+  },
+  "dependencies": {
+    "requiredMem0Version": "2.0.11",
+    "qdrantClientVersionPolicy": "Record the exact installed version. Do not compare attempts across different versions without disclosing the change."
+  },
+  "publicMethodNameProbe": {
+    "mechanism": "Filter public names returned by Python dir(memory) for consist, contradict, conflict, resolve, or audit substrings.",
+    "safeInterpretation": "An empty match means only that this pinned object exposed no separately named public method matching those substrings. It does not prove absence of internal, undocumented, differently named, or newer-version conflict handling."
+  },
+  "sourceFiles": [
+    "bench/external/mem0_headtohead.py",
+    "bench/external/data.json",
+    "bench/protocol/mem0-headtohead-v2.json"
+  ],
+  "attemptPolicy": {
+    "requiredExplicitUniqueAttemptId": true,
+    "requiredCommittedHead": true,
+    "requiredCleanWholeRepositoryAtStart": true,
+    "artifact": "One complete, versioned JSON document published with exclusive non-overwrite semantics.",
+    "ledger": "Append-only JSONL summary; the artifact remains authoritative if ledger append fails.",
+    "existingAttemptBehavior": "refuse",
+    "historicalArtifactPolicy": "bench/external/mem0-evidence.json is immutable historical evidence and must never be overwritten by this protocol."
+  },
+  "reporting": "Retain every conflict pair, retrieval probe, returned memory string, method-name match, completion state and categorical failure. Do not select attempts or infer capabilities not directly inspected."
+}

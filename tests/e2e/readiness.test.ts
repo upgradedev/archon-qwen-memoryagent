@@ -7,6 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { runChecks } from "../../scripts/readiness.js";
 
 test("readiness gate runs offline and clears the 95% automatable bar", async () => {
@@ -53,6 +54,33 @@ test("readiness surfaces the measured semantic number and it is internally consi
   assert.equal(p2.status, "pass", `impact number must be consistent (computed==golden==docs): ${p2.detail}`);
 });
 
+test("readiness requires access-free public video visibility without naming alternate modes", async () => {
+  const report = await runChecks();
+  const mediaContract = report.criteria
+    .find((c) => c.criterion === "Presentation")!
+    .checks.find((r) => r.id === "Pr2-final-media-contract")!;
+  assert.equal(mediaContract.status, "pass", `final-media contract must pass: ${mediaContract.detail}`);
+  assert.match(mediaContract.detail, /public=true/);
+
+  const checklist = readFileSync(new URL("../../demo/FINAL_MEDIA_CHECKLIST.md", import.meta.url), "utf8");
+  assert.match(checklist, /Public visibility with no login or access request/i);
+  assert.doesNotMatch(checklist, /Public\s*\(not\s+(?:Unlisted|Private)/i);
+});
+
+test("judge-facing handoff uses the canonical 16:9 architecture hero", () => {
+  const checklist = readFileSync(new URL("../../demo/FINAL_MEDIA_CHECKLIST.md", import.meta.url), "utf8");
+  const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf8");
+  const story = readFileSync(new URL("../../demo/PROJECT_STORY.md", import.meta.url), "utf8");
+
+  assert.match(checklist, /0:12–0:28[^\n]+demo\/final-media\/judge-architecture\.jpg/);
+  assert.match(checklist, /Architecture: use the canonical 16:9[^\n]+final-media\/judge-architecture\.jpg/i);
+  assert.match(checklist, /Architecture: upload the canonical 16:9[^\n]+final-media\/judge-architecture\.jpg/i);
+  assert.doesNotMatch(checklist, /Architecture: (?:export\/use|upload)[^\n]+docs\/architecture\.png/i);
+  assert.match(readme, /Judge-facing 16:9 submission hero:[^\n]+demo\/final-media\/judge-architecture\.jpg/i);
+  assert.match(story, /canonical judge-facing asset is the 16:9[^\n]+demo\/final-media\/judge-architecture\.jpg/i);
+  assert.match(story, /dense[^\n]+docs\/architecture\.png[^\n]+technical appendix/i);
+});
+
 test("readiness gates the NEW assurance dimension (security / load / e2e) on top of the rubric", async () => {
   delete process.env.DASHSCOPE_API_KEY;
   const report = await runChecks();
@@ -89,5 +117,6 @@ test("live-deploy and hosted-video checks are correctly classed user-gated (excl
   const ids = report.userGated.map((r) => r.id).sort();
   assert.ok(ids.includes("UG1-live-semantic-route"), "live-box probe must be user-gated");
   assert.ok(ids.includes("UG2-video-hosted"), "hosted-video must be user-gated");
+  assert.ok(ids.includes("UG3-final-video-reviewed"), "new canonical video review must be user-gated");
   for (const r of report.userGated) assert.equal(r.status, "user-gated");
 });

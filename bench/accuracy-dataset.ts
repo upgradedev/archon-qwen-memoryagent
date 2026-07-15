@@ -1,4 +1,4 @@
-// Labelled QA set for the grounded-answer accuracy benchmark — the H0-style
+// Labelled QA set for the objective figure-traceability benchmark.
 // "hard, measured number on our own pipeline".
 //
 // Each row reuses a FROZEN retrieval query (so its real text-embedding-v4 vector
@@ -8,9 +8,10 @@
 // presence, no LLM-judge, no prose grading — see BENCHMARK.md on why this
 // sidesteps the brittleness/circularity we otherwise avoid):
 //
-//   CORRECTNESS — at least one gold figure appears in the narrated answer.
-//   GROUNDING   — every euro figure in the narrated answer traces back to a
-//                 recalled memory (no invented/hallucinated figures = faithful RAG).
+//   GOLD EUR-TOKEN HIT — at least one developer-labelled amount appears with an
+//                 explicit € / EUR marker in the answer.
+//   COMPLETE EUR-LABELLED TRACEABILITY — every explicitly EUR-labelled amount
+//                 in the answer also occurs, EUR-labelled, in recalled memory.
 //
 // Only number-bearing queries are included (preference/percentage-only queries
 // like q05/q09/q15 have no single gold euro figure to grade objectively).
@@ -18,7 +19,7 @@
 export interface AccuracyQuery {
   id: string; // matches a query id in bench/dataset.ts (reuses its cached embedding)
   question: string; // the exact frozen query text (embedded + narrated)
-  goldFigures: number[]; // euro figures that correctly answer it (>=1 present ⇒ correct)
+  goldFigures: number[]; // labelled euro figures (>=1 present ⇒ gold-figure hit)
   goldMemory: string; // the gold memory the figure comes from (provenance, not graded)
 }
 

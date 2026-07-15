@@ -1,4 +1,6 @@
-0.0 $ # Archon MemoryAgent  ·  persistent, queryable memory across sessions
+0.0 $ # HISTORICAL PRE-HARDENING CAPTURE TRANSCRIPT — DO NOT RECORD OR PUBLISH
+0.1 $ # Protected routes below omit current reviewer auth. Use demo/FINAL_MEDIA_CHECKLIST.md for the final video.
+0.2 $ # Archon MemoryAgent  ·  persistent, queryable memory across sessions
 2.5 $ # An agent that forgets across sessions is useless for recurring back-office work.
 4.5 $ # The ONLY shared state across sessions is pgvector on Alibaba Cloud.
 6.0 $ # ---- PROOF · real Qwen, live on Alibaba Cloud ----
@@ -44,24 +46,24 @@
 79.0 $ # Two SEPARATE sessions wrote ONE record with a DIFFERENT value.
 81.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/ingest -d @a.json   # write #1: employer cost €18,000
 83.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/ingest -d @a.json   # write #2 (a LATER session): €19,000
-85.0 $ # Mem0 / Zep would MUTATE — silently overwrite. Archon NEVER mutates. Ask it to audit:
+85.0 $ # In the pinned Mem0 object, our disclosed public-name dir() filter matched no separately named contradiction/resolution method; Archon audits read-only:
 88.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/consistency -d '{"company":"DemoRun 29207837521 audit"}'
 90.5 → CONTRADICTION on 'evt-audit-29207837521' · attribute employer_cost_total · 18000 vs 19000
 94.5 → RESOLUTION (read-only recommender): trust 19000  [rule=recency · confidence=0.5]
 98.5   Rationale: the more recent write (19000) supersedes the earlier value (18000).
-102.5 >> DETECTED its own cross-session disagreement · RECOMMENDED which to trust · never mutated.
-106.5   Measured: 5/5 issues detected · 0 false positives · read-only recommender 4/4 correct
+102.5 >> DETECTED its own cross-session disagreement · RECOMMENDED read-only · human action is separate.
+106.5   Measured: 5/5 field issues · 0 false positives · 4/4 declared-policy conformance
 110.0 $ # ---- ⭐ MEANING-LEVEL self-audit · fields match nothing; the meaning opposes ----
 112.0 $ # Two memories OPPOSE in MEANING with NO comparable field — the prose is the only signal:
 114.0   A: Vendor Northwind Trading always pays its supplier invoices on time. 
 116.0   B: Vendor Northwind Trading is chronically late paying its supplier invoices. 
 118.0 $ curl -X POST https://memory.43.106.13.19.sslip.io/consistency/semantic -d '{"company":"Northwind Trading", "kind":"insight"}'
 120.5 → embed each → same subject by cosine (0.894) → LIVE qwen-plus judge: CONTRADICT [confidence=0.99]
-123.5 >> Caught what the field-level audit CANNOT see · same read-only recommendation · never mutated.
+123.5 >> Caught what the field-level audit CANNOT see · same read-only recommendation.
 126.0 $ # Every op — recall · ingest · audit · count — is also an MCP tool (audit takes semantic:true).
 129.0 $ # ---- MEASURED · labelled datasets (npm run bench) ----
 131.0   Retrieval: reranked-hybrid beats dense — Recall@3 90.0% → 96.7% · MRR 0.883 → 0.911
-135.0   Grounded answers: 100% correctness · 90.9% grounding (every euro traces to a memory)
+135.0   Number checks: gold-figure hit 11/11 · complete euro traceability 10/11
 138.5 $ # ---- LIVE · Alibaba Cloud ----
 140.5   Live URL :  https://memory.43.106.13.19.sslip.io/           (Explorer UI · public · reachable now)
 142.5   Compute  :  Alibaba Cloud ECS · ecs.e-c1m2.large · ap-southeast-1 (Singapore)

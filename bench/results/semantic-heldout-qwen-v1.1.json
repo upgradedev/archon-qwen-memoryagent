@@ -1,0 +1,2844 @@
+{
+  "schemaVersion": "1.1",
+  "mode": "online",
+  "dataset": {
+    "name": "semantic-heldout-v1",
+    "sha256": "7fe37fb19f279ec54f4bc07cda69bd15fdf438429023411e462d2e927efc1e5c",
+    "cases": 48,
+    "positives": 24,
+    "negatives": 24
+  },
+  "protocol": {
+    "version": "1.1",
+    "dataset": "semantic-heldout-v1",
+    "datasetSha256": "7fe37fb19f279ec54f4bc07cda69bd15fdf438429023411e462d2e927efc1e5c",
+    "developerLabelledBeforeOnlineEvaluation": true,
+    "cases": 48,
+    "positives": 24,
+    "negatives": 24,
+    "similarityThreshold": 0.75,
+    "maxPairsPerCase": 1,
+    "caseIsolation": true,
+    "onlineRepetitions": 3,
+    "embeddingConcurrency": 4,
+    "judgeConcurrency": 4,
+    "judgeTimeoutMs": 8000,
+    "embeddingTimeoutMs": 15000,
+    "embeddingReuseAcrossRepetitions": true,
+    "models": {
+      "embedder": "text-embedding-v4",
+      "judge": "qwen-plus",
+      "embeddingDimensions": 1024,
+      "judgeTemperature": 0,
+      "judgeMaxTokens": 200,
+      "judgeResponseFormat": "json_object"
+    },
+    "failureScoring": "inconclusive is always incorrect for accuracy; inconclusive positives count as false negatives; completion is reported separately",
+    "primaryReporting": "per-run metrics plus mean/range and cross-run stability; repetitions are not independent samples",
+    "selection": "all cases, all three repetitions, all misses and errors; no best-run selection",
+    "offlineGate": {
+      "minimumAccuracyPct": 70,
+      "minimumPrecisionPct": 70,
+      "minimumRecallPct": 70,
+      "maximumInconclusive": 0,
+      "maximumPromptInjectionFalsePositives": 0
+    },
+    "changeControl": {
+      "supersedesProtocol": "semantic-heldout-v1",
+      "evaluationBehaviorChanged": false,
+      "datasetOrLabelsChanged": false,
+      "modelOrThresholdChanged": false,
+      "reportingOnlyFix": "Preserve a successful embedding pair's null error instead of serializing it as the string 'missing'.",
+      "preservedPriorArtifact": "bench/results/semantic-heldout-qwen-v1-reporting-bug.json"
+    },
+    "sha256": "4dc677361632c1d4f5ebfc0878715137ae1453048343aef45c414ee6fd894bce"
+  },
+  "models": {
+    "embedder": "text-embedding-v4",
+    "judge": "qwen-plus"
+  },
+  "repository": {
+    "gitCommit": "7a6f06d23d83b510b1edec802679ff0ad49bdc9d",
+    "gitDirty": true,
+    "command": "C:\\Program Files\\nodejs\\node.exe C:\\dev\\solutions\\private_nebius_aiserverless_challenge\\repos\\qwen-memoryagent\\bench\\semantic-heldout-run.ts --online --repetitions=3 --write",
+    "node": "v20.20.2",
+    "appVersion": "0.1.0",
+    "openaiSdkVersion": "4.104.0"
+  },
+  "embedding": {
+    "pairs": 48,
+    "failures": 1,
+    "pairLatencyMs": {
+      "p50": 398.17,
+      "p95": 4524.95,
+      "max": 15016.31
+    },
+    "cases": [
+      {
+        "id": "p01",
+        "latencyMs": 3927.93,
+        "error": null
+      },
+      {
+        "id": "p02",
+        "latencyMs": 4524.95,
+        "error": null
+      },
+      {
+        "id": "p03",
+        "latencyMs": 6190.63,
+        "error": null
+      },
+      {
+        "id": "p04",
+        "latencyMs": 15016.31,
+        "error": "embedding unavailable or timed out"
+      },
+      {
+        "id": "p05",
+        "latencyMs": 406.15,
+        "error": null
+      },
+      {
+        "id": "p06",
+        "latencyMs": 406.08,
+        "error": null
+      },
+      {
+        "id": "p07",
+        "latencyMs": 402.36,
+        "error": null
+      },
+      {
+        "id": "p08",
+        "latencyMs": 405.56,
+        "error": null
+      },
+      {
+        "id": "p09",
+        "latencyMs": 411.96,
+        "error": null
+      },
+      {
+        "id": "p10",
+        "latencyMs": 455.58,
+        "error": null
+      },
+      {
+        "id": "p11",
+        "latencyMs": 402.59,
+        "error": null
+      },
+      {
+        "id": "p12",
+        "latencyMs": 399.07,
+        "error": null
+      },
+      {
+        "id": "p13",
+        "latencyMs": 408.74,
+        "error": null
+      },
+      {
+        "id": "p14",
+        "latencyMs": 405.99,
+        "error": null
+      },
+      {
+        "id": "p15",
+        "latencyMs": 388.16,
+        "error": null
+      },
+      {
+        "id": "p16",
+        "latencyMs": 396.14,
+        "error": null
+      },
+      {
+        "id": "p17",
+        "latencyMs": 399.71,
+        "error": null
+      },
+      {
+        "id": "p18",
+        "latencyMs": 405.57,
+        "error": null
+      },
+      {
+        "id": "p19",
+        "latencyMs": 387.03,
+        "error": null
+      },
+      {
+        "id": "p20",
+        "latencyMs": 392.59,
+        "error": null
+      },
+      {
+        "id": "p21",
+        "latencyMs": 403.44,
+        "error": null
+      },
+      {
+        "id": "p22",
+        "latencyMs": 389.42,
+        "error": null
+      },
+      {
+        "id": "p23",
+        "latencyMs": 392.76,
+        "error": null
+      },
+      {
+        "id": "p24",
+        "latencyMs": 384.29,
+        "error": null
+      },
+      {
+        "id": "n01",
+        "latencyMs": 385.25,
+        "error": null
+      },
+      {
+        "id": "n02",
+        "latencyMs": 389.7,
+        "error": null
+      },
+      {
+        "id": "n03",
+        "latencyMs": 394.83,
+        "error": null
+      },
+      {
+        "id": "n04",
+        "latencyMs": 381.27,
+        "error": null
+      },
+      {
+        "id": "n05",
+        "latencyMs": 390.31,
+        "error": null
+      },
+      {
+        "id": "n06",
+        "latencyMs": 412.55,
+        "error": null
+      },
+      {
+        "id": "n07",
+        "latencyMs": 398.63,
+        "error": null
+      },
+      {
+        "id": "n08",
+        "latencyMs": 414.3,
+        "error": null
+      },
+      {
+        "id": "n09",
+        "latencyMs": 398.17,
+        "error": null
+      },
+      {
+        "id": "n10",
+        "latencyMs": 405.34,
+        "error": null
+      },
+      {
+        "id": "n11",
+        "latencyMs": 396.85,
+        "error": null
+      },
+      {
+        "id": "n12",
+        "latencyMs": 393.56,
+        "error": null
+      },
+      {
+        "id": "n13",
+        "latencyMs": 393.05,
+        "error": null
+      },
+      {
+        "id": "n14",
+        "latencyMs": 405.43,
+        "error": null
+      },
+      {
+        "id": "n15",
+        "latencyMs": 379.97,
+        "error": null
+      },
+      {
+        "id": "n16",
+        "latencyMs": 391.14,
+        "error": null
+      },
+      {
+        "id": "n17",
+        "latencyMs": 389.44,
+        "error": null
+      },
+      {
+        "id": "n18",
+        "latencyMs": 386.64,
+        "error": null
+      },
+      {
+        "id": "n19",
+        "latencyMs": 404.51,
+        "error": null
+      },
+      {
+        "id": "n20",
+        "latencyMs": 394.5,
+        "error": null
+      },
+      {
+        "id": "n21",
+        "latencyMs": 387.7,
+        "error": null
+      },
+      {
+        "id": "n22",
+        "latencyMs": 395.61,
+        "error": null
+      },
+      {
+        "id": "n23",
+        "latencyMs": 400.45,
+        "error": null
+      },
+      {
+        "id": "n24",
+        "latencyMs": 387.01,
+        "error": null
+      }
+    ]
+  },
+  "startedAt": "2026-07-15T06:32:14.326Z",
+  "completedAt": "2026-07-15T06:33:24.933Z",
+  "completed": true,
+  "runs": [
+    {
+      "repetition": 1,
+      "startedAt": "2026-07-15T06:32:35.487Z",
+      "completedAt": "2026-07-15T06:32:50.889Z",
+      "metrics": {
+        "cases": 48,
+        "completedCases": 47,
+        "completionPct": 97.92,
+        "truePositives": 23,
+        "trueNegatives": 24,
+        "falsePositives": 0,
+        "falseNegatives": 1,
+        "inconclusive": 1,
+        "accuracyPct": 97.92,
+        "precisionPct": 100,
+        "recallPct": 95.83,
+        "specificityPct": 100,
+        "f1Pct": 97.87,
+        "detectorJudgeP50Ms": 1546.48,
+        "detectorJudgeP95Ms": 2744.55
+      },
+      "cases": [
+        {
+          "id": "p01",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8764,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing universal claims about the same behavior (timeliness of supplier invoice payments) — 'on time' vs. 'chronically late' — and cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 3772,
+          "error": null
+        },
+        {
+          "id": "p02",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9259,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite states about the same invoice (ZX-41): 'settled in full' vs 'outstanding in full' — mutually exclusive conditions.",
+            "status": "ok"
+          },
+          "latencyMs": 2744.55,
+          "error": null
+        },
+        {
+          "id": "p03",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8879,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about the same subject (revenue change for the frozen reporting period) — 'increased' vs 'decreased' — which cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 2801.44,
+          "error": null
+        },
+        {
+          "id": "p04",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": false,
+          "status": "inconclusive",
+          "similarity": null,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.02,
+          "error": "embedding unavailable or timed out"
+        },
+        {
+          "id": "p05",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9571,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite outcomes (approved vs. rejected) for the same credit request CR-8; they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 2620.5,
+          "error": null
+        },
+        {
+          "id": "p06",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8951,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert mutually exclusive states (active vs. terminated) about the same customer account C-18 at the same logical time; an account cannot be both active and terminated simultaneously.",
+            "status": "ok"
+          },
+          "latencyMs": 1728.26,
+          "error": null
+        },
+        {
+          "id": "p07",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9348,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements refer to the same signed review and assert opposite financial statuses (solvent vs. insolvent) for the same entity (Oriole Ltd); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1673.29,
+          "error": null
+        },
+        {
+          "id": "p08",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9176,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing truth claims about the same supplier (S-7) and same control (C4): one asserts compliance, the other asserts breach — mutually exclusive states.",
+            "status": "ok"
+          },
+          "latencyMs": 1557.06,
+          "error": null
+        },
+        {
+          "id": "p09",
+          "category": "negated-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9582,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "The statements make opposing universal claims about the same behavior (punctuality of invoice payments by Vendor Aster): 'never late' vs 'repeatedly late' — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1639.27,
+          "error": null
+        },
+        {
+          "id": "p10",
+          "category": "negated-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9761,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing truth claims about the same invoice's outstanding status at the same logical time; 'not outstanding' and 'still outstanding' are direct logical negations.",
+            "status": "ok"
+          },
+          "latencyMs": 1550.66,
+          "error": null
+        },
+        {
+          "id": "p11",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8945,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements refer to unit volume in the same weekly window but assert opposite directions (rose vs. fell); they cannot both be true simultaneously.",
+            "status": "ok"
+          },
+          "latencyMs": 1564.73,
+          "error": null
+        },
+        {
+          "id": "p12",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9257,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements make opposing claims about the current activity status of the same subscription (S-20): 'remains active' vs 'was cancelled and is no longer active' — mutually exclusive states.",
+            "status": "ok"
+          },
+          "latencyMs": 1773.44,
+          "error": null
+        },
+        {
+          "id": "p13",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8993,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite outcomes (accepted vs. denied) for the same application (A-91) by the same authority (the committee); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1541.98,
+          "error": null
+        },
+        {
+          "id": "p14",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8835,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.98,
+            "reason": "A debt cannot both be paid and defaulted before the same cutoff; these are mutually exclusive states.",
+            "status": "ok"
+          },
+          "latencyMs": 1313.35,
+          "error": null
+        },
+        {
+          "id": "p15",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8383,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.98,
+            "reason": "Reliable and delinquent are logically opposite assessments of payer behavior in the same audit; cannot both be true simultaneously.",
+            "status": "ok"
+          },
+          "latencyMs": 1383.75,
+          "error": null
+        },
+        {
+          "id": "p16",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.979,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite compliance statuses for the same control owner (O-2) at the same point in time (the review date); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1550.88,
+          "error": null
+        },
+        {
+          "id": "p17",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9529,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite financial outcomes (surplus vs. deficit) for the same event (Project Atlas closing) and cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1932.68,
+          "error": null
+        },
+        {
+          "id": "p18",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9403,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements refer to the same subject (June sales in the board pack) and assert opposite trends (growth vs. decline), which cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1837.9,
+          "error": null
+        },
+        {
+          "id": "p19",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9632,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements assert opposite arrival timing relative to the same promised date for SH-4: 'two days before' vs 'three days after' — mutually exclusive.",
+            "status": "ok"
+          },
+          "latencyMs": 1702.01,
+          "error": null
+        },
+        {
+          "id": "p20",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9212,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about the same contract (K-2) and same subject (subcontractors for this work package): one asserts permission, the other prohibition — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1699.75,
+          "error": null
+        },
+        {
+          "id": "p21",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9737,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements refer to the same policy (P-6) and the same requirement (record retention duration), but assert incompatible durations: 30 days vs. 90 days.",
+            "status": "ok"
+          },
+          "latencyMs": 1665.42,
+          "error": null
+        },
+        {
+          "id": "p22",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9025,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.98,
+            "reason": "Both statements refer to the same subject (Berlin office weekday customer access) and assert incompatible opening times: 08:00 vs. not before 10:00.",
+            "status": "ok"
+          },
+          "latencyMs": 1683.12,
+          "error": null
+        },
+        {
+          "id": "p23",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9427,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements make opposing claims about the same warranty (W-3) and the same item (replacement batteries): one asserts inclusion, the other explicit exclusion — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1598.52,
+          "error": null
+        },
+        {
+          "id": "p24",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9888,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about whether VAT is included in the displayed total of the same quote (Q-55); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1480.32,
+          "error": null
+        },
+        {
+          "id": "n01",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8354,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements affirm timely payment behavior; 'pays supplier invoices on time' and 'reliable and punctual payer' are consistent and mutually supportive.",
+            "status": "ok"
+          },
+          "latencyMs": 1558.61,
+          "error": null
+        },
+        {
+          "id": "n02",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9265,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "A paid invoice is by definition not outstanding; the statements are logically consistent and mutually supportive.",
+            "status": "ok"
+          },
+          "latencyMs": 1283.82,
+          "error": null
+        },
+        {
+          "id": "n03",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7338,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.08,
+          "error": null
+        },
+        {
+          "id": "n04",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8139,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Profit and surplus are synonymous in many business contexts (especially accounting/finance), both indicating positive net financial outcome; no direct opposition in meaning.",
+            "status": "ok"
+          },
+          "latencyMs": 1437.6,
+          "error": null
+        },
+        {
+          "id": "n05",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7663,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements assert a positive outcome for application C-5; 'approved' and 'accepted' are synonymous in this context and do not oppose each other.",
+            "status": "ok"
+          },
+          "latencyMs": 1546.48,
+          "error": null
+        },
+        {
+          "id": "n06",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9573,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements assert that Account T-3 is in an active state; 'no longer inactive' logically implies 'active' in a binary active/inactive schema.",
+            "status": "ok"
+          },
+          "latencyMs": 1569.29,
+          "error": null
+        },
+        {
+          "id": "n07",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8198,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Outstanding on Monday morning and settled on Friday afternoon are temporally compatible; an invoice can be outstanding early in the week and settled later.",
+            "status": "ok"
+          },
+          "latencyMs": 1551.32,
+          "error": null
+        },
+        {
+          "id": "n08",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9268,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Statements refer to different time periods (before vs. after merger); an account can be active before and terminated after — no logical inconsistency.",
+            "status": "ok"
+          },
+          "latencyMs": 1434.37,
+          "error": null
+        },
+        {
+          "id": "n09",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7258,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.07,
+          "error": null
+        },
+        {
+          "id": "n10",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6429,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.05,
+          "error": null
+        },
+        {
+          "id": "n11",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9128,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Statements refer to different time periods (before vs. after rule change); compliance status can legally and logically change over time.",
+            "status": "ok"
+          },
+          "latencyMs": 1415.01,
+          "error": null
+        },
+        {
+          "id": "n12",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6726,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.09,
+          "error": null
+        },
+        {
+          "id": "n13",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6988,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.05,
+          "error": null
+        },
+        {
+          "id": "n14",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6146,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.06,
+          "error": null
+        },
+        {
+          "id": "n15",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7409,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.04,
+          "error": null
+        },
+        {
+          "id": "n16",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7579,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 1,
+            "reason": "The statements describe different attributes (arrival day vs. carton count) of the same shipment; no logical or factual opposition exists.",
+            "status": "ok"
+          },
+          "latencyMs": 1729.21,
+          "error": null
+        },
+        {
+          "id": "n17",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.579,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.08,
+          "error": null
+        },
+        {
+          "id": "n18",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8257,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 1,
+            "reason": "Statements refer to different invoices (I-1 and I-2), so they cannot contradict each other.",
+            "status": "ok"
+          },
+          "latencyMs": 1260.9,
+          "error": null
+        },
+        {
+          "id": "n19",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6207,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.09,
+          "error": null
+        },
+        {
+          "id": "n20",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7854,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 1,
+            "reason": "Statements refer to different accounts (A vs B) and different statuses (active vs terminated); no shared subject or opposing claim.",
+            "status": "ok"
+          },
+          "latencyMs": 1610.57,
+          "error": null
+        },
+        {
+          "id": "n21",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7768,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements assert that Invoice J-1 is paid/settled; 'paid' and 'settled' are synonymous in this financial context.",
+            "status": "ok"
+          },
+          "latencyMs": 1515.64,
+          "error": null
+        },
+        {
+          "id": "n22",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.61,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.1,
+          "error": null
+        },
+        {
+          "id": "n23",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7075,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.05,
+          "error": null
+        },
+        {
+          "id": "n24",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.61,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.04,
+          "error": null
+        }
+      ]
+    },
+    {
+      "repetition": 2,
+      "startedAt": "2026-07-15T06:32:52.104Z",
+      "completedAt": "2026-07-15T06:33:06.131Z",
+      "metrics": {
+        "cases": 48,
+        "completedCases": 47,
+        "completionPct": 97.92,
+        "truePositives": 23,
+        "trueNegatives": 24,
+        "falsePositives": 0,
+        "falseNegatives": 1,
+        "inconclusive": 1,
+        "accuracyPct": 97.92,
+        "precisionPct": 100,
+        "recallPct": 95.83,
+        "specificityPct": 100,
+        "f1Pct": 97.87,
+        "detectorJudgeP50Ms": 1485.75,
+        "detectorJudgeP95Ms": 1700.04
+      },
+      "cases": [
+        {
+          "id": "p01",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8764,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing universal claims about the same behavior (timeliness of supplier invoice payments) — 'on time' vs. 'chronically late' — and cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1594.61,
+          "error": null
+        },
+        {
+          "id": "p02",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9259,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert mutually exclusive states about the same invoice (ZX-41): 'settled in full' vs. 'outstanding in full'; they cannot both be true simultaneously.",
+            "status": "ok"
+          },
+          "latencyMs": 1652.5,
+          "error": null
+        },
+        {
+          "id": "p03",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8879,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about the same subject (revenue change for the frozen reporting period); 'increased' and 'decreased' are logical negations and cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1682.9,
+          "error": null
+        },
+        {
+          "id": "p04",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": false,
+          "status": "inconclusive",
+          "similarity": null,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.01,
+          "error": "embedding unavailable or timed out"
+        },
+        {
+          "id": "p05",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9571,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite outcomes (approved vs. rejected) for the same credit request CR-8; they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1462.3,
+          "error": null
+        },
+        {
+          "id": "p06",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8951,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert mutually exclusive states (active vs. terminated) about the same customer account C-18 at the same logical time; an account cannot be both active and terminated simultaneously.",
+            "status": "ok"
+          },
+          "latencyMs": 1584.22,
+          "error": null
+        },
+        {
+          "id": "p07",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9348,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements refer to the same signed review and assert opposite financial statuses (solvent vs. insolvent) for the same entity (Oriole Ltd); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1650.85,
+          "error": null
+        },
+        {
+          "id": "p08",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9176,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing truth claims about the same supplier (S-7) and same control (C4): one asserts compliance, the other asserts breach — mutually exclusive states.",
+            "status": "ok"
+          },
+          "latencyMs": 1601.95,
+          "error": null
+        },
+        {
+          "id": "p09",
+          "category": "negated-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9582,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements make opposing universal claims about the same behavior (timeliness of invoice payments by Vendor Aster): 'never late' vs 'repeatedly late' — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1581.73,
+          "error": null
+        },
+        {
+          "id": "p10",
+          "category": "negated-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9761,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing truth claims about the same invoice (N-9) regarding its outstanding status; 'not outstanding' and 'still outstanding' are logical negations of each other.",
+            "status": "ok"
+          },
+          "latencyMs": 1592.03,
+          "error": null
+        },
+        {
+          "id": "p11",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8945,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements refer to unit volume in the same weekly window but assert opposite directions (rose vs. fell); they cannot both be true simultaneously.",
+            "status": "ok"
+          },
+          "latencyMs": 1489.96,
+          "error": null
+        },
+        {
+          "id": "p12",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9257,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about the current activity status of the same subscription (S-20): 'remains active' vs 'was cancelled and is no longer active' — mutually exclusive states.",
+            "status": "ok"
+          },
+          "latencyMs": 1681.67,
+          "error": null
+        },
+        {
+          "id": "p13",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8993,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite outcomes (accepted vs. denied) for the same application (A-91) by the same authority (the committee); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1622.01,
+          "error": null
+        },
+        {
+          "id": "p14",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8835,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.98,
+            "reason": "A debt cannot both be paid and defaulted before the same cutoff; these are mutually exclusive states.",
+            "status": "ok"
+          },
+          "latencyMs": 1396.57,
+          "error": null
+        },
+        {
+          "id": "p15",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8383,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.98,
+            "reason": "Reliable and delinquent are logically incompatible characterizations of a payer in the same audit.",
+            "status": "ok"
+          },
+          "latencyMs": 1453.49,
+          "error": null
+        },
+        {
+          "id": "p16",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.979,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite compliance statuses for the same control owner (O-2) at the same point in time (the review date); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1540.87,
+          "error": null
+        },
+        {
+          "id": "p17",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9529,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite financial outcomes (surplus vs. deficit) for the same project at closure; they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1374.31,
+          "error": null
+        },
+        {
+          "id": "p18",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9403,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements refer to the same subject (June sales in the board pack) and assert opposite trends (growth vs. decline); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1455.6,
+          "error": null
+        },
+        {
+          "id": "p19",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9632,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite arrival time relationships for the same shipment (SH-4) relative to its promised date: 'two days before' vs 'three days after'; they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1652.01,
+          "error": null
+        },
+        {
+          "id": "p20",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9212,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about the same contract (K-2) and same subject (subcontractors for this work package): one asserts permission, the other prohibition — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1642.59,
+          "error": null
+        },
+        {
+          "id": "p21",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9737,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements refer to the same policy (P-6) and the same requirement (retention duration for the same records), but assert incompatible durations: 30 days vs. 90 days.",
+            "status": "ok"
+          },
+          "latencyMs": 1760.81,
+          "error": null
+        },
+        {
+          "id": "p22",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9025,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.98,
+            "reason": "Both statements refer to the same subject (Berlin office weekday customer access) and assert incompatible opening times: 08:00 vs. 10:00.",
+            "status": "ok"
+          },
+          "latencyMs": 1679.03,
+          "error": null
+        },
+        {
+          "id": "p23",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9427,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements make opposing claims about the same warranty (W-3) and the same item (replacement batteries): one asserts inclusion, the other explicit exclusion — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1555.17,
+          "error": null
+        },
+        {
+          "id": "p24",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9888,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about whether VAT is included in the displayed total for the same quote (Q-55); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1485.75,
+          "error": null
+        },
+        {
+          "id": "n01",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8354,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.98,
+            "reason": "Both statements affirm timely payment behavior; 'pays supplier invoices on time' and 'reliable and punctual payer' are semantically aligned, not contradictory.",
+            "status": "ok"
+          },
+          "latencyMs": 2230.79,
+          "error": null
+        },
+        {
+          "id": "n02",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9265,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Not outstanding and having been paid are logically consistent; an invoice is typically not outstanding *because* it has been paid.",
+            "status": "ok"
+          },
+          "latencyMs": 1622.92,
+          "error": null
+        },
+        {
+          "id": "n03",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7338,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.07,
+          "error": null
+        },
+        {
+          "id": "n04",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8139,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Profit and surplus are synonymous in many business contexts (especially accounting/finance), both indicating positive net financial outcome; no direct opposition in meaning.",
+            "status": "ok"
+          },
+          "latencyMs": 1441.75,
+          "error": null
+        },
+        {
+          "id": "n05",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7663,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements assert a positive outcome for application C-5; 'approved' and 'accepted' are synonymous in this context and do not oppose each other.",
+            "status": "ok"
+          },
+          "latencyMs": 1515.77,
+          "error": null
+        },
+        {
+          "id": "n06",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9573,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements assert that Account T-3 is in an active state; 'no longer inactive' logically implies 'active' in standard binary account status models.",
+            "status": "ok"
+          },
+          "latencyMs": 1640.72,
+          "error": null
+        },
+        {
+          "id": "n07",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8198,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Outstanding on Monday morning and settled on Friday afternoon are temporally compatible; an invoice can be outstanding early in the week and settled later.",
+            "status": "ok"
+          },
+          "latencyMs": 1484.12,
+          "error": null
+        },
+        {
+          "id": "n08",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9268,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Statements refer to different time periods (before vs. after merger); an account can be active before and terminated after — no logical inconsistency.",
+            "status": "ok"
+          },
+          "latencyMs": 1489.87,
+          "error": null
+        },
+        {
+          "id": "n09",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7258,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.07,
+          "error": null
+        },
+        {
+          "id": "n10",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6429,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.03,
+          "error": null
+        },
+        {
+          "id": "n11",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9128,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Statements refer to different time periods (before vs. after rule change) and different compliance states; a supplier can be compliant before and in breach after — no logical contradiction.",
+            "status": "ok"
+          },
+          "latencyMs": 1594.26,
+          "error": null
+        },
+        {
+          "id": "n12",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6726,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.09,
+          "error": null
+        },
+        {
+          "id": "n13",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6988,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.04,
+          "error": null
+        },
+        {
+          "id": "n14",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6146,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.04,
+          "error": null
+        },
+        {
+          "id": "n15",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7409,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.03,
+          "error": null
+        },
+        {
+          "id": "n16",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7579,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 1,
+            "reason": "The statements describe different attributes (arrival day vs. carton count) of the same shipment; no logical or factual opposition exists.",
+            "status": "ok"
+          },
+          "latencyMs": 1424.86,
+          "error": null
+        },
+        {
+          "id": "n17",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.579,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.08,
+          "error": null
+        },
+        {
+          "id": "n18",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8257,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 1,
+            "reason": "Statements refer to different invoices (I-1 and I-2); payment status of one does not logically contradict the status of the other.",
+            "status": "ok"
+          },
+          "latencyMs": 1422.22,
+          "error": null
+        },
+        {
+          "id": "n19",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6207,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.09,
+          "error": null
+        },
+        {
+          "id": "n20",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7854,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 1,
+            "reason": "Statements refer to different accounts (A vs B) and different statuses (active vs terminated); no shared subject or opposing claim.",
+            "status": "ok"
+          },
+          "latencyMs": 1700.04,
+          "error": null
+        },
+        {
+          "id": "n21",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7768,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements assert that Invoice J-1 is paid/settled; 'paid' and 'settled' are synonymous in this financial context.",
+            "status": "ok"
+          },
+          "latencyMs": 1432.3,
+          "error": null
+        },
+        {
+          "id": "n22",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.61,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.08,
+          "error": null
+        },
+        {
+          "id": "n23",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7075,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.05,
+          "error": null
+        },
+        {
+          "id": "n24",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.61,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.04,
+          "error": null
+        }
+      ]
+    },
+    {
+      "repetition": 3,
+      "startedAt": "2026-07-15T06:33:07.710Z",
+      "completedAt": "2026-07-15T06:33:22.695Z",
+      "metrics": {
+        "cases": 48,
+        "completedCases": 47,
+        "completionPct": 97.92,
+        "truePositives": 23,
+        "trueNegatives": 24,
+        "falsePositives": 0,
+        "falseNegatives": 1,
+        "inconclusive": 1,
+        "accuracyPct": 97.92,
+        "precisionPct": 100,
+        "recallPct": 95.83,
+        "specificityPct": 100,
+        "f1Pct": 97.87,
+        "detectorJudgeP50Ms": 1520.05,
+        "detectorJudgeP95Ms": 2346.82
+      },
+      "cases": [
+        {
+          "id": "p01",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8764,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements make opposing universal claims about the same behavior (timeliness of supplier invoice payments) — 'on time' vs. 'chronically late' — and cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1689.51,
+          "error": null
+        },
+        {
+          "id": "p02",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9259,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about the payment status of the same invoice (ZX-41): one asserts it is fully settled, the other that it remains fully outstanding—mutually exclusive states.",
+            "status": "ok"
+          },
+          "latencyMs": 1688.47,
+          "error": null
+        },
+        {
+          "id": "p03",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8879,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about the same subject (revenue for the frozen reporting period): one asserts it increased, the other that it decreased — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1526.67,
+          "error": null
+        },
+        {
+          "id": "p04",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": false,
+          "status": "inconclusive",
+          "similarity": null,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.01,
+          "error": "embedding unavailable or timed out"
+        },
+        {
+          "id": "p05",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9571,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite outcomes (approved vs. rejected) for the same credit request CR-8; they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1483.28,
+          "error": null
+        },
+        {
+          "id": "p06",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8951,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert mutually exclusive states (active vs. terminated) about the same customer account C-18 at the same logical time; an account cannot be both active and terminated simultaneously.",
+            "status": "ok"
+          },
+          "latencyMs": 1609.73,
+          "error": null
+        },
+        {
+          "id": "p07",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9348,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements refer to the same signed review and assert opposite financial statuses (solvent vs. insolvent) for the same entity (Oriole Ltd); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1586.34,
+          "error": null
+        },
+        {
+          "id": "p08",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9176,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing truth claims about the same supplier (S-7) and same control (C4): one asserts compliance, the other breach — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1647.84,
+          "error": null
+        },
+        {
+          "id": "p09",
+          "category": "negated-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9582,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements make opposing universal claims about the same behavior (timeliness of invoice payments by Vendor Aster): 'never late' vs 'repeatedly late' — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1565.33,
+          "error": null
+        },
+        {
+          "id": "p10",
+          "category": "negated-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9761,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing truth claims about the same invoice (N-9) regarding its outstanding status; 'not outstanding' and 'still outstanding' are logical negations.",
+            "status": "ok"
+          },
+          "latencyMs": 2346.82,
+          "error": null
+        },
+        {
+          "id": "p11",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8945,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements refer to unit volume in the same weekly window but assert opposite directions (rose vs. fell); they cannot both be true simultaneously.",
+            "status": "ok"
+          },
+          "latencyMs": 1482.65,
+          "error": null
+        },
+        {
+          "id": "p12",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9257,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about the current activity status of the same subscription (S-20): 'remains active' vs 'was cancelled and is no longer active' — mutually exclusive states.",
+            "status": "ok"
+          },
+          "latencyMs": 2549.36,
+          "error": null
+        },
+        {
+          "id": "p13",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8993,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite outcomes (accepted vs. denied) for the same application (A-91) by the same authority (the committee); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 2469.68,
+          "error": null
+        },
+        {
+          "id": "p14",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8835,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.98,
+            "reason": "A debt cannot both be paid and defaulted before the same cutoff; these are mutually exclusive states.",
+            "status": "ok"
+          },
+          "latencyMs": 1321.43,
+          "error": null
+        },
+        {
+          "id": "p15",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.8383,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.98,
+            "reason": "Reliable and delinquent are logically incompatible characterizations of a payer in the same audit.",
+            "status": "ok"
+          },
+          "latencyMs": 1645.62,
+          "error": null
+        },
+        {
+          "id": "p16",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.979,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite compliance statuses for the same control owner (O-2) at the same point in time (the review date); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1523.79,
+          "error": null
+        },
+        {
+          "id": "p17",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9529,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite financial outcomes (surplus vs. deficit) for the same project's closure; they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1416.55,
+          "error": null
+        },
+        {
+          "id": "p18",
+          "category": "lexical-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9403,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements refer to the same subject (June sales in the board pack) and assert logically opposite facts (growth vs. decline); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1539.3,
+          "error": null
+        },
+        {
+          "id": "p19",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9632,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements assert opposite arrival time relationships for the same shipment (SH-4) relative to its promised date: 'two days before' vs 'three days after'; they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1773.94,
+          "error": null
+        },
+        {
+          "id": "p20",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9212,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about the same contract (K-2) and same subject (subcontractors for this work package): one asserts permission, the other prohibition — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1567.84,
+          "error": null
+        },
+        {
+          "id": "p21",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9737,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements refer to the same policy (P-6) and the same requirement (record retention duration), but assert incompatible durations: 30 days vs. 90 days.",
+            "status": "ok"
+          },
+          "latencyMs": 1658.44,
+          "error": null
+        },
+        {
+          "id": "p22",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9025,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.98,
+            "reason": "Both statements refer to the same subject (Berlin office customer access on weekdays) and assert incompatible opening times: 'opens at 08:00' vs 'stays locked until 10:00' — they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1805.26,
+          "error": null
+        },
+        {
+          "id": "p23",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9427,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 0.99,
+            "reason": "Both statements make opposing claims about the same warranty (W-3) and the same item (replacement batteries): one asserts inclusion, the other exclusion — logically incompatible.",
+            "status": "ok"
+          },
+          "latencyMs": 1548.49,
+          "error": null
+        },
+        {
+          "id": "p24",
+          "category": "cue-free-contradiction",
+          "expected": true,
+          "predicted": true,
+          "status": "complete",
+          "similarity": 0.9888,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": true,
+            "confidence": 1,
+            "reason": "Both statements make opposing claims about whether VAT is included in the displayed total for the same quote (Q-55); they cannot both be true.",
+            "status": "ok"
+          },
+          "latencyMs": 1535.71,
+          "error": null
+        },
+        {
+          "id": "n01",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8354,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements affirm timely payment behavior; 'pays supplier invoices on time' and 'reliable and punctual payer' are consistent and mutually supportive.",
+            "status": "ok"
+          },
+          "latencyMs": 1572.42,
+          "error": null
+        },
+        {
+          "id": "n02",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9265,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "A paid invoice is by definition not outstanding; the statements are logically consistent and mutually supportive.",
+            "status": "ok"
+          },
+          "latencyMs": 1283.85,
+          "error": null
+        },
+        {
+          "id": "n03",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7338,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.08,
+          "error": null
+        },
+        {
+          "id": "n04",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8139,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Profit and surplus are synonymous in many business contexts (especially accounting/finance), both indicating positive net financial outcome; no direct opposition in meaning.",
+            "status": "ok"
+          },
+          "latencyMs": 1458.68,
+          "error": null
+        },
+        {
+          "id": "n05",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7663,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements assert a positive outcome for application C-5; 'approved' and 'accepted' are synonymous in this context and do not oppose each other.",
+            "status": "ok"
+          },
+          "latencyMs": 1546.38,
+          "error": null
+        },
+        {
+          "id": "n06",
+          "category": "agreement-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9573,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements assert that Account T-3 is in an active state; 'no longer inactive' logically implies 'active' in standard binary account status models.",
+            "status": "ok"
+          },
+          "latencyMs": 1541.15,
+          "error": null
+        },
+        {
+          "id": "n07",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8198,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Outstanding on Monday morning and settled on Friday afternoon are temporally compatible; an invoice can be outstanding early in the week and settled later.",
+            "status": "ok"
+          },
+          "latencyMs": 1443.59,
+          "error": null
+        },
+        {
+          "id": "n08",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9268,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Statements refer to different time periods (before vs. after merger); an account can be active before and terminated after — no logical inconsistency.",
+            "status": "ok"
+          },
+          "latencyMs": 1473.07,
+          "error": null
+        },
+        {
+          "id": "n09",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7258,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.1,
+          "error": null
+        },
+        {
+          "id": "n10",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6429,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.04,
+          "error": null
+        },
+        {
+          "id": "n11",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.9128,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Statements refer to different time periods (before vs. after rule change) and different compliance states; a supplier can be compliant before and breach after — no logical contradiction.",
+            "status": "ok"
+          },
+          "latencyMs": 1553.38,
+          "error": null
+        },
+        {
+          "id": "n12",
+          "category": "temporal-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6726,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.14,
+          "error": null
+        },
+        {
+          "id": "n13",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6988,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.05,
+          "error": null
+        },
+        {
+          "id": "n14",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6146,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.04,
+          "error": null
+        },
+        {
+          "id": "n15",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7409,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.04,
+          "error": null
+        },
+        {
+          "id": "n16",
+          "category": "complementary-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7579,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 1,
+            "reason": "The statements describe different attributes (arrival day vs. carton count) of the same shipment; no logical or factual opposition exists.",
+            "status": "ok"
+          },
+          "latencyMs": 1462.02,
+          "error": null
+        },
+        {
+          "id": "n17",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.579,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.07,
+          "error": null
+        },
+        {
+          "id": "n18",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.8257,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 1,
+            "reason": "Statements refer to different invoices (I-1 and I-2); payment status of one does not logically contradict the status of the other.",
+            "status": "ok"
+          },
+          "latencyMs": 1448.53,
+          "error": null
+        },
+        {
+          "id": "n19",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.6207,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.1,
+          "error": null
+        },
+        {
+          "id": "n20",
+          "category": "different-subject-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7854,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 1,
+            "reason": "Statements refer to different accounts (A vs B) and different statuses (active vs terminated); no shared subject or opposing claim about the same entity.",
+            "status": "ok"
+          },
+          "latencyMs": 1544.66,
+          "error": null
+        },
+        {
+          "id": "n21",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7768,
+          "subjectGatePassed": true,
+          "judgeCalled": true,
+          "judgeVerdict": {
+            "contradict": false,
+            "confidence": 0.95,
+            "reason": "Both statements assert that Invoice J-1 is paid/settled; 'paid' and 'settled' are synonymous in this financial context.",
+            "status": "ok"
+          },
+          "latencyMs": 1520.05,
+          "error": null
+        },
+        {
+          "id": "n22",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.61,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.08,
+          "error": null
+        },
+        {
+          "id": "n23",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.7075,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.05,
+          "error": null
+        },
+        {
+          "id": "n24",
+          "category": "prompt-injection-control",
+          "expected": false,
+          "predicted": false,
+          "status": "complete",
+          "similarity": 0.61,
+          "subjectGatePassed": false,
+          "judgeCalled": false,
+          "judgeVerdict": null,
+          "latencyMs": 0.05,
+          "error": null
+        }
+      ]
+    }
+  ],
+  "aggregate": {
+    "repetitions": 3,
+    "note": "Per-run mean/range only; repeated runs are not treated as independent samples.",
+    "meanRange": {
+      "accuracyPct": {
+        "mean": 97.92,
+        "min": 97.92,
+        "max": 97.92
+      },
+      "precisionPct": {
+        "mean": 100,
+        "min": 100,
+        "max": 100
+      },
+      "recallPct": {
+        "mean": 95.83,
+        "min": 95.83,
+        "max": 95.83
+      },
+      "specificityPct": {
+        "mean": 100,
+        "min": 100,
+        "max": 100
+      },
+      "f1Pct": {
+        "mean": 97.87,
+        "min": 97.87,
+        "max": 97.87
+      },
+      "completionPct": {
+        "mean": 97.92,
+        "min": 97.92,
+        "max": 97.92
+      }
+    },
+    "unstableCases": [],
+    "stablePredictionPct": 100
+  },
+  "caveats": [
+    "Synthetic, hand-authored business-memory pairs are not a production prevalence sample.",
+    "Confidence is an ordinal model output, not a calibrated probability.",
+    "Offline vectors isolate judge behavior; online vectors exercise text-embedding-v4 subject gating.",
+    "Online embeddings are frozen once and reused across repetitions, matching production persisted-vector reuse.",
+    "All cases, misses, errors and repetitions are retained; no run is selected or discarded.",
+    "Each pair is evaluated in isolation. This measures subject gating plus opposition judgement, not full-corpus O(n²) candidate ranking or maxPairs truncation.",
+    "The 48 labels are synthetic and developer-authored before the online run; they are not independent expert annotations.",
+    "Detector/judge p50 and p95 exclude the one-time embedding step; embedding latency is reported separately.",
+    "Three repetitions measure output stability on one frozen set; they are not 144 independent samples.",
+    "Protocol v1.1 changes reporting only: it preserves null for successful embedding pairs. Dataset, labels, model, thresholds, calls, scoring and selection are unchanged from v1.",
+    "The contradictory v1 artifact is retained verbatim at bench/results/semantic-heldout-qwen-v1-reporting-bug.json; v1.1 never overwrites it."
+  ]
+}

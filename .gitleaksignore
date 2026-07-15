@@ -1,0 +1,5 @@
+# Deterministic, non-secret reviewer credentials used only by the admission/quota
+# test fixtures in the immutable freeze commit. Keep these fingerprint-specific:
+# never allowlist the tests directory or the generic-api-key rule globally.
+aba117506134485e184efcd13417b639ad9f12f0:tests/unit/server.test.ts:generic-api-key:625
+aba117506134485e184efcd13417b639ad9f12f0:tests/unit/server.test.ts:generic-api-key:681
