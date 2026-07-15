@@ -3,7 +3,7 @@
 // Offline (deterministic CI):
 //   npm run bench:semantic:heldout -- --gate
 //
-// Online (real persisted-vector equivalent: text-embedding-v4 + qwen-plus):
+// Online v1.1 (real persisted-vector equivalent: text-embedding-v4 + qwen-plus):
 //   npm run bench:semantic:heldout -- --online --repetitions=3 --write
 //
 // The dataset and protocol SHA-256 values are computed before any model call and
@@ -25,16 +25,16 @@ import { cosineSimilarity } from "../src/memory/retrieval.js";
 import { HELDOUT_SEMANTIC_CASES, assertHeldoutDatasetInvariant, type HeldoutSemanticCase } from "./semantic-heldout-dataset.js";
 
 const DATASET_NAME = "semantic-heldout-v1";
-const PROTOCOL_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "protocol", "semantic-heldout-v1.json");
-const OUTPUT = resolve(dirname(fileURLToPath(import.meta.url)), "results", "semantic-heldout-qwen.json");
+const PROTOCOL_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "protocol", "semantic-heldout-v1.1.json");
+const OUTPUT = resolve(dirname(fileURLToPath(import.meta.url)), "results", "semantic-heldout-qwen-v1.1.json");
 const PREREGISTERED_PATHS = [
   "bench/semantic-heldout-dataset.ts",
   "bench/semantic-heldout-run.ts",
-  "bench/protocol/semantic-heldout-v1.json",
+  "bench/protocol/semantic-heldout-v1.1.json",
 ] as const;
 
 interface Protocol {
-  version: number;
+  version: string;
   dataset: string;
   datasetSha256: string;
   developerLabelledBeforeOnlineEvaluation: boolean;
@@ -55,6 +55,14 @@ interface Protocol {
   primaryReporting: string;
   selection: string;
   offlineGate: { minimumAccuracyPct: number; minimumPrecisionPct: number; minimumRecallPct: number; maximumInconclusive: number; maximumPromptInjectionFalsePositives: number };
+  changeControl: {
+    supersedesProtocol: string;
+    evaluationBehaviorChanged: boolean;
+    datasetOrLabelsChanged: boolean;
+    modelOrThresholdChanged: boolean;
+    reportingOnlyFix: string;
+    preservedPriorArtifact: string;
+  };
 }
 
 const protocolBytes = readFileSync(PROTOCOL_PATH, "utf8");
@@ -102,7 +110,7 @@ export interface HeldoutRun {
   cases: HeldoutCaseResult[];
 }
 
-interface EmbeddingPair {
+export interface EmbeddingPair {
   a: number[];
   b: number[];
   error: string | null;
@@ -277,12 +285,22 @@ function aggregateRuns(runs: HeldoutRun[]) {
   };
 }
 
-function embeddingEvidence(pairs: Map<string, EmbeddingPair>) {
-  const cases = HELDOUT_SEMANTIC_CASES.map((c) => ({ id: c.id, latencyMs: pairs.get(c.id)?.latencyMs ?? 0, error: pairs.get(c.id)?.error ?? "missing" }));
+export function embeddingEvidence(pairs: Map<string, EmbeddingPair>) {
+  // v1 reporting bug: `pair?.error ?? "missing"` converted the intentional
+  // success sentinel `null` into a false "missing" error for every embedded
+  // case. v1.1 distinguishes an absent map entry from a present successful pair.
+  const cases = HELDOUT_SEMANTIC_CASES.map((c) => {
+    const pair = pairs.get(c.id);
+    return {
+      id: c.id,
+      latencyMs: pair?.latencyMs ?? 0,
+      error: pair ? pair.error : "missing",
+    };
+  });
   const latencies = cases.map((c) => c.latencyMs).sort((a, b) => a - b);
   return {
     pairs: cases.length,
-    failures: cases.filter((c) => c.error).length,
+    failures: cases.filter((c) => c.error !== null).length,
     pairLatencyMs: { p50: round(percentile(latencies, .5)), p95: round(percentile(latencies, .95)), max: round(latencies.at(-1) ?? 0) },
     cases,
   };
@@ -305,7 +323,7 @@ function repositoryMetadata() {
 
 function snapshot(mode: "offline" | "online", startedAt: string, runs: HeldoutRun[], pairs: Map<string, EmbeddingPair>, models: { embedder: string; judge: string }, completed = false) {
   return {
-    schemaVersion: 1,
+    schemaVersion: "1.1",
     mode,
     dataset: { name: DATASET_NAME, sha256: HELDOUT_DATASET_SHA256, cases: 48, positives: 24, negatives: 24 },
     protocol: { ...protocol, sha256: HELDOUT_PROTOCOL_SHA256 },
@@ -327,6 +345,8 @@ function snapshot(mode: "offline" | "online", startedAt: string, runs: HeldoutRu
       "The 48 labels are synthetic and developer-authored before the online run; they are not independent expert annotations.",
       "Detector/judge p50 and p95 exclude the one-time embedding step; embedding latency is reported separately.",
       "Three repetitions measure output stability on one frozen set; they are not 144 independent samples.",
+      "Protocol v1.1 changes reporting only: it preserves null for successful embedding pairs. Dataset, labels, model, thresholds, calls, scoring and selection are unchanged from v1.",
+      "The contradictory v1 artifact is retained verbatim at bench/results/semantic-heldout-qwen-v1-reporting-bug.json; v1.1 never overwrites it.",
     ],
   };
 }
@@ -362,12 +382,16 @@ async function main(): Promise<void> {
   const startedAt = new Date().toISOString();
 
   if (protocol.dataset !== DATASET_NAME || protocol.datasetSha256 !== HELDOUT_DATASET_SHA256 || protocol.cases !== 48 || protocol.positives !== 24 || protocol.negatives !== 24) {
-    throw new Error("dataset no longer matches the pre-registered v1 protocol; create v2 instead of editing v1");
+    throw new Error("dataset no longer matches the pre-registered v1.1 protocol; create v2 instead of editing v1.1");
   }
-  if (online && repetitions !== protocol.onlineRepetitions) throw new Error(`v1 online protocol requires exactly ${protocol.onlineRepetitions} repetitions`);
-  if (online && !write) throw new Error("v1 online protocol requires --write so partial runs and every failure are preserved");
+  if (protocol.version !== "1.1" || protocol.changeControl.evaluationBehaviorChanged || protocol.changeControl.datasetOrLabelsChanged || protocol.changeControl.modelOrThresholdChanged) {
+    throw new Error("v1.1 is a reporting-only revision; protocol change-control invariant failed");
+  }
+  if (online && repetitions !== protocol.onlineRepetitions) throw new Error(`v1.1 online protocol requires exactly ${protocol.onlineRepetitions} repetitions`);
+  if (online && !write) throw new Error("v1.1 online protocol requires --write so partial runs and every failure are preserved");
 
   console.log(`Archon MemoryAgent — ${DATASET_NAME}`);
+  console.log(`protocol version: ${protocol.version} (reporting-only revision of v1)`);
   console.log(`dataset sha256 : ${HELDOUT_DATASET_SHA256}`);
   console.log(`protocol sha256: ${HELDOUT_PROTOCOL_SHA256}`);
   console.log(`mode=${online ? "online" : "offline"} · cases=48 (24 positive / 24 hard control) · repetitions=${repetitions}`);
@@ -380,7 +404,7 @@ async function main(): Promise<void> {
         execFileSync("git", ["diff", "--quiet", "HEAD", "--", file], { cwd: repo, stdio: "ignore" });
         execFileSync("git", ["diff", "--cached", "--quiet", "HEAD", "--", file], { cwd: repo, stdio: "ignore" });
       } catch {
-        throw new Error(`online v1 refuses an uncommitted preregistration file: ${file}`);
+        throw new Error(`online v1.1 refuses an uncommitted preregistration file: ${file}`);
       }
     }
   }
