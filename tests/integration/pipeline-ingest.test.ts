@@ -55,7 +55,15 @@ test("POST /ingest/documents fuses the triplet and feeds memory", { skip: !HAS_D
   assert.equal(result.pnl.currency_status, "single");
   assert.equal(result.pnl.currency, "EUR");
   assert.equal(result.pnl.off_bank_cost, 2100);
-  assert.equal(result.validation.length, 4);
+  assert.deepEqual(
+    result.validation.map((finding: { rule: string }) => finding.rule.split(":", 1)[0]),
+    ["R1", "R2", "R3", "R4", "R5", "R6"],
+    "the real-DB journey must execute the complete validation contract",
+  );
+  assert.ok(
+    result.validation.every((finding: { status: string }) => finding.status === "passed"),
+    "the internally consistent EUR fixture must pass every validation rule",
+  );
 });
 
 test("GET /pnl aggregates the pipeline-fed memories", { skip: !HAS_DB }, async () => {
