@@ -576,6 +576,24 @@ test("POST /demo/seed upgrades a completed legacy seed without idempotency confl
       metadata: { demoSeedVersion: "memoryagent-demo-v2", status: "complete" },
       idempotencyKey: "demo-seed:memoryagent-demo-v2:complete", embedding, embedModel: "legacy-fixture",
     },
+    {
+      kind: "invoice", company: DEMO_COMPANY, period: "2026-05",
+      content: "Sales invoice INV-SALES-101 issued to Chop Suey Chinese for 28500.00 dated 2026-05-10.",
+      metadata: {
+        invoice_number: "INV-SALES-101", customer: "Chop Suey Chinese", total: 28500,
+        invoice_date: "2026-05-10", type: "sales",
+      },
+      idempotencyKey: "legacy-demo-sale-0", embedding, embedModel: "legacy-fixture",
+    },
+    {
+      kind: "invoice", company: DEMO_COMPANY, period: "2026-05",
+      content: "Sales invoice INV-SALES-102 issued to Alfreds Futterkiste for 14200.00 dated 2026-05-20.",
+      metadata: {
+        invoice_number: "INV-SALES-102", customer: "Alfreds Futterkiste", total: 14200,
+        invoice_date: "2026-05-20", type: "sales",
+      },
+      idempotencyKey: "legacy-demo-sale-1", embedding, embedModel: "legacy-fixture",
+    },
   ]);
   const local = await buildServer({ store, embedder: new FakeEmbedder(), narrator: new FakeNarrator() });
   await local.ready();
@@ -588,6 +606,9 @@ test("POST /demo/seed upgrades a completed legacy seed without idempotency confl
     const active = await store.listForAudit({ company: DEMO_COMPANY });
     assert.equal(active.some((memory) => memory.sourceRef?.startsWith(legacyEventId)), false);
     assert.equal(active.filter((memory) => memory.kind === "payroll_event" && /Workforce cost/.test(memory.content)).length, 1);
+    const activeSales = active.filter((memory) => memory.kind === "invoice" && memory.metadata?.type === "sales");
+    assert.equal(activeSales.length, 2, "v4 must retire the two recognizable pre-currency demo sales rows");
+    assert.ok(activeSales.every((memory) => memory.metadata?.currency === "EUR"));
     const currentInsight = active.find((memory) =>
       memory.kind === "insight" && /Off-bank workforce-cost comparison/.test(memory.content)
     );
