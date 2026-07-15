@@ -24,14 +24,17 @@ part that's usually missing: **the memory audits itself.**
 
 Below is the system architecture diagram showing the ingestion pipeline, MemoryAgent core, and Qwen Cloud / Alibaba Cloud integration:
 
-![Archon MemoryAgent architecture](../docs/architecture.svg)
+![Archon MemoryAgent judge architecture](./final-media/judge-architecture.jpg)
 
 The trust boundary matters as much as the model graph. The public surface is a fixed,
 idempotent demo plus public-tenant reads; public seed and recall are quota-bounded.
 Writes, feedback, lifecycle operations, meaning-level audit, and Streamable HTTP MCP
 are authenticated and mapped to a tenant by the server. The event linker groups by
 `company + period + event_ref`, and P&L totals stay separated by currency. The editable
-source and PNG/SVG renders live in [`docs/`](../docs/architecture.mmd).
+The judge-facing image above is the canonical 16:9 submission hero. The editable
+hero source is [`docs/judge-architecture.svg`](../docs/judge-architecture.svg);
+the denser technical appendix and its PNG/SVG renders remain under
+[`docs/architecture.mmd`](../docs/architecture.mmd).
 
 ## The innovation: detect → resolve
 

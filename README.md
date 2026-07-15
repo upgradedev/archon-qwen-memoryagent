@@ -286,7 +286,7 @@ flowchart TB
     DB -. drop-in swap .-> RDS
 ```
 
-Submission-ready rendered assets: [`docs/architecture.svg`](./docs/architecture.svg) · [`docs/architecture.png`](./docs/architecture.png) · source [`docs/architecture.mmd`](./docs/architecture.mmd).
+Judge-facing 16:9 submission hero: [`demo/final-media/judge-architecture.jpg`](./demo/final-media/judge-architecture.jpg), with editable source [`docs/judge-architecture.svg`](./docs/judge-architecture.svg). The dense technical appendix remains available as [`docs/architecture.svg`](./docs/architecture.svg) / [`docs/architecture.png`](./docs/architecture.png), from [`docs/architecture.mmd`](./docs/architecture.mmd).
 
 Both surfaces — the HTTP routes and the MCP tools / custom skills — go through the **same injectable `MemoryAgent`** via the shared `SkillDispatcher`. There is one implementation of recall / ingest / audit / count, exposed three ways (REST, MCP, and Qwen function-calling), so the protocol layer never duplicates the memory logic.
 

@@ -33,9 +33,9 @@ Four ideas make the memory *strong*, not merely present:
 
 Below is the system architecture diagram showing the ingestion pipeline, MemoryAgent core, and Qwen Cloud / Alibaba Cloud integration:
 
-![Archon MemoryAgent architecture](../docs/architecture.svg)
+![Archon MemoryAgent judge architecture](./final-media/judge-architecture.jpg)
 
-The canonical diagram source is [`docs/architecture.mmd`](../docs/architecture.mmd), with submission-ready [SVG](../docs/architecture.svg) and [PNG](../docs/architecture.png) renders. It distinguishes the public fixed-demo/read path from authenticated tenant mutations and semantic audit, shows durable Qwen quotas, and records the exact event-link key (`company + period + event_ref`) and mixed-currency boundary.
+The canonical judge-facing asset is the 16:9 [`demo/final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg), generated from [`docs/judge-architecture.svg`](../docs/judge-architecture.svg). The dense [`docs/architecture.svg`](../docs/architecture.svg) / [`docs/architecture.png`](../docs/architecture.png) render remains a technical appendix. Together they distinguish the public fixed-demo/read path from authenticated tenant mutations and semantic audit, show durable Qwen quotas, and record the exact event-link key (`company + period + event_ref`) and mixed-currency boundary.
 
 ## How we built it
 

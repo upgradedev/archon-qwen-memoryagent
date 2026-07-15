@@ -26,7 +26,7 @@ Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use 
 | Time | Visual | Narration point |
 |---:|---|---|
 | 0:00–0:12 | Title, live URL, Track 1 | “A persistent Qwen memory that tells you when its own memories disagree.” |
-| 0:12–0:28 | `docs/architecture.png` | Alibaba ECS, pgvector, Qwen models, public/auth trust boundary, four MCP tools. |
+| 0:12–0:28 | `demo/final-media/judge-architecture.jpg` | Alibaba ECS, pgvector, Qwen models, public/auth trust boundary, four MCP tools. |
 | 0:28–0:42 | `/ready` then `/health` | Real deployment and real model ids. Never show environment variables. |
 | 0:42–1:12 | Explorer → **Run demo** → cited recall | Fixed idempotent seed, bounded recall, numbered evidence citations. |
 | 1:12–1:40 | **Run self-audit** | `INV-5521`, `8400` vs `8900`, recency recommendation, no mutation. |
@@ -59,7 +59,7 @@ Capture clean 16:9 or high-resolution browser images; hide bookmarks, personal t
 - [ ] Field self-audit: `INV-5521`, both values, and the recency recommendation visible.
 - [ ] Semantic self-audit: meaning-level pair and read-only resolution visible; clear/crop out the Judge token field and all auth details.
 - [ ] Feedback/lifecycle: correction result or dry-run preview with `confirm` semantics visible.
-- [ ] Architecture: export/use [`../docs/architecture.png`](../docs/architecture.png), not a screenshot of raw Mermaid.
+- [ ] Architecture: use the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg), not a screenshot of raw Mermaid. Keep [`../docs/architecture.png`](../docs/architecture.png) only as the dense technical appendix.
 - [ ] Live proof: `/ready` and `/health` showing ready + real Qwen model ids.
 - [ ] Alibaba proof: ECS/container service and live endpoint in one safe frame; redact account IDs/IP metadata not needed for proof.
 - [ ] Repository proof: public repo landing page with MIT license detection and latest commit.
@@ -84,7 +84,7 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
 - [ ] Public repository: <https://github.com/upgradedev/archon-qwen-memoryagent>
 - [ ] Live app: <https://memory.43.106.13.19.sslip.io>
 - [ ] Alibaba/Qwen code proof: <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts>
-- [ ] Architecture: upload [`../docs/architecture.png`](../docs/architecture.png).
+- [ ] Architecture: upload the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg).
 - [ ] Public video: paste the URL recorded above.
 - [ ] Blog/social: paste the public URL recorded above.
 - [ ] Testing instructions: paste the public click path from [`../docs/JUDGE-GUIDE.md`](../docs/JUDGE-GUIDE.md), then add the reviewer token **only in Devpost's private testing-instructions/credentials area**.

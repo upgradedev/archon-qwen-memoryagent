@@ -67,6 +67,20 @@ test("readiness requires access-free public video visibility without naming alte
   assert.doesNotMatch(checklist, /Public\s*\(not\s+(?:Unlisted|Private)/i);
 });
 
+test("judge-facing handoff uses the canonical 16:9 architecture hero", () => {
+  const checklist = readFileSync(new URL("../../demo/FINAL_MEDIA_CHECKLIST.md", import.meta.url), "utf8");
+  const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf8");
+  const story = readFileSync(new URL("../../demo/PROJECT_STORY.md", import.meta.url), "utf8");
+
+  assert.match(checklist, /0:12–0:28[^\n]+demo\/final-media\/judge-architecture\.jpg/);
+  assert.match(checklist, /Architecture: use the canonical 16:9[^\n]+final-media\/judge-architecture\.jpg/i);
+  assert.match(checklist, /Architecture: upload the canonical 16:9[^\n]+final-media\/judge-architecture\.jpg/i);
+  assert.doesNotMatch(checklist, /Architecture: (?:export\/use|upload)[^\n]+docs\/architecture\.png/i);
+  assert.match(readme, /Judge-facing 16:9 submission hero:[^\n]+demo\/final-media\/judge-architecture\.jpg/i);
+  assert.match(story, /canonical judge-facing asset is the 16:9[^\n]+demo\/final-media\/judge-architecture\.jpg/i);
+  assert.match(story, /dense[^\n]+docs\/architecture\.png[^\n]+technical appendix/i);
+});
+
 test("readiness gates the NEW assurance dimension (security / load / e2e) on top of the rubric", async () => {
   delete process.env.DASHSCOPE_API_KEY;
   const report = await runChecks();
