@@ -2,7 +2,7 @@ An agent that forgets between sessions is useless for recurring back-office work
 
 First, proof it's real: the health endpoint shows Qwen text-embedding-v4 and qwen-plus, with genuine 1024-dimension vectors, and a live badge counts the memories persisted.
 
-Every event, finding and insight is embedded with text-embedding-v4 and written to pgvector on Alibaba — durable, not in-process. Recall is hybrid: dense plus BM25 fused with reciprocal rank fusion, a cross-encoder rerank, then a grounded qwen-plus answer.
+Every event, finding and insight is embedded with text-embedding-v4 and written to pgvector on Alibaba — durable, not in-process. Recall is hybrid: dense plus PostgreSQL full-text retrieval fused with reciprocal rank fusion, a cross-encoder rerank, then a grounded qwen-plus answer.
 
 Now, live in the Explorer. In Session A an agent commits fused financial facts — invoices, cash positions, workforce cost. Then the session ends; nothing stays in process.
 

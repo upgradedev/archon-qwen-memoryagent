@@ -9,10 +9,15 @@
 [![Project Story](https://img.shields.io/badge/Project%20Story-Devpost-003e54)](demo/PROJECT_STORY.md)
 <!-- USER: replace with YouTube URL before submit — make the Demo Video badge a link to the uploaded video -->
 
+**Final recording pack:** [`VIDEO_SCRIPT.md`](demo/VIDEO_SCRIPT.md) ·
+[`VIDEO_RECORDING_CHECKLIST.md`](demo/VIDEO_RECORDING_CHECKLIST.md) ·
+[`BUILD_RECORDING.md`](demo/BUILD_RECORDING.md) ·
+[`FINAL_MEDIA_CHECKLIST.md`](demo/FINAL_MEDIA_CHECKLIST.md). Security and private
+reporting guidance lives in [`SECURITY.md`](SECURITY.md).
 
 > **Track 1 only: MemoryAgent** — an agent with *persistent, queryable memory that retains, recalls, audits, corrects, consolidates, and forgets information across sessions*. This entry is intentionally independent from the separate Autopilot submission: it neither executes accounts-payable actions nor contains an approval workflow; its product boundary is trustworthy long-term memory.
 
-> **Live:** [`https://memory.43.106.13.19.sslip.io`](https://memory.43.106.13.19.sslip.io) — open the URL for the memory explorer (public recall + field audit + P&L). Judges can paste the private Devpost reviewer token into the password-type **Judge token** field to run the protected semantic audit; the token is never published in this repo.
+> **Live:** [`https://memory.43.106.13.19.sslip.io`](https://memory.43.106.13.19.sslip.io) — open the URL for the memory explorer (public recall + field audit + P&L). Judges can paste the dedicated Devpost reviewer credential into the password-type **Judge token** field to run the protected semantic audit; the credential is never published in this repo.
 
 > **Judges:** [`docs/JUDGE-GUIDE.md`](docs/JUDGE-GUIDE.md) is a 2-minute click path — see a cross-session contradiction, its read-only recommendation, and the separate authenticated human Accept / Override / Defer loop.
 
@@ -444,7 +449,7 @@ or database creation. The long-lived backend receives only its runtime
 for every production redeploy, requires `CROSS_APP_DATABASE_NAME` and an ACL/authentication
 denial against the neighbouring app database before deployment proceeds.
 
-The Explorer exposes a password-type **Judge token** field and a **Run semantic audit** button for the protected judge path. Paste only the credential supplied in Devpost's private testing instructions; clear it before screenshots/recording cuts and never place it in source, URLs, posts, or public video descriptions.
+The Explorer exposes a password-type **Judge token** field and a **Run semantic audit** button for the protected judge path. Paste only the dedicated credential supplied in Devpost testing instructions; clear it before screenshots/recording cuts and never place it in source, URLs, posts, or public video descriptions. The entrant must verify the form field's actual visibility and rotate/revoke the low-privilege credential after judging.
 
 ### Resilience
 
@@ -527,9 +532,9 @@ Both surfaces are covered by offline unit tests ([`tests/unit/mcp.test.ts`](./te
 
 ### Live path — ECS + docker-compose (backend + pgvector container)
 
-This is how the entry actually runs on Alibaba Cloud. A single ECS instance (`ecs.e-c1m2.large`, ap-southeast-1) runs docker-compose with the backend container plus a self-hosted `pgvector/pgvector` container as the memory store, behind one public URL.
+This is how the entry actually runs on Alibaba Cloud. A single ECS instance (`ecs.e-c1m2.large`, ap-southeast-1) runs docker-compose with the backend container plus a self-hosted `pgvector/pgvector` container as the memory store, behind one public URL. The final verified live runtime source is exact commit [`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd). Later documentation, sanitized-media, or non-runtime recording-tooling commits may move repository HEAD without changing that runtime; any runtime-affecting descendant requires a fresh exact deploy.
 
-[`deploy/redeploy.sh`](./deploy/redeploy.sh) is the schema-first redeploy helper. Treat [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) as an operational history, not current proof; the release contract is `/ready` 200, real-model `/health`, and the final OpenAPI smoke in [`demo/FINAL_MEDIA_CHECKLIST.md`](./demo/FINAL_MEDIA_CHECKLIST.md).
+[`deploy/redeploy.sh`](./deploy/redeploy.sh) is the schema-first redeploy helper. [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) records the exact verified runtime commit and the secret-safe release contract; current public proof is `/ready` 200, real-model `/health`, and the final OpenAPI smoke in [`demo/FINAL_MEDIA_CHECKLIST.md`](./demo/FINAL_MEDIA_CHECKLIST.md). Any later runtime-code change requires a new deploy and a refreshed exact-SHA record before recording.
 
 ```bash
 # On the ECS box:
@@ -571,7 +576,7 @@ Because the store is pg-wire, switching between the two is a `DATABASE_URL` swap
 
 This backend's qualifying path runs on **Alibaba Cloud ECS**. Two halves of proof:
 
-**1. Runtime recording** — create the app-specific `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` after the final deploy. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized sequence; never reuse another entry's recording. Keep raw console footage only in ignored `demo/private-originals/`.
+**1. Runtime recording** — capture the app-specific `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` from the verified live deployment during final media production. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized sequence; never reuse another entry's recording. Keep raw console footage only in ignored `demo/private-originals/`.
 
 ```text
 $ aliyun ecs DescribeInstances --RegionId ap-southeast-1 --InstanceIds "['<redacted-instance-id>']"
