@@ -75,6 +75,21 @@ def canonical_text_bytes(value: bytes) -> bytes:
     return value.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
 
 
+def owner_only_descriptor(path: pathlib.Path, flags: int) -> int:
+    """Open an evidence file without exposing provider output to other host users."""
+    hardened_flags = flags | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, hardened_flags, 0o600)
+    try:
+        fchmod = getattr(os, "fchmod", None)
+        if fchmod is not None:
+            # Tighten a pre-existing ledger too; the create mode only applies to new files.
+            fchmod(descriptor, 0o600)
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def validate_attempt_id(value: str | None) -> str:
     if value is None or ATTEMPT_ID.fullmatch(value) is None:
         raise PreflightError("--attempt-id must be 8-80 safe letters, digits, dot, underscore or hyphen")
@@ -170,7 +185,8 @@ def publish_exclusive(path: pathlib.Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}-{uuid.uuid4().hex}")
     try:
-        with temporary.open("x", encoding="utf-8", newline="\n") as handle:
+        descriptor = owner_only_descriptor(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(value, handle, indent=2, ensure_ascii=False)
             handle.write("\n")
             handle.flush()
@@ -183,9 +199,9 @@ def publish_exclusive(path: pathlib.Path, value: dict[str, Any]) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def append_ledger(value: dict[str, Any]) -> None:
+def append_ledger(value: dict[str, Any], path: pathlib.Path = LEDGER_PATH) -> None:
     line = (json.dumps(value, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
-    descriptor = os.open(LEDGER_PATH, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
+    descriptor = owner_only_descriptor(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY)
     try:
         os.write(descriptor, line)
         os.fsync(descriptor)
@@ -436,6 +452,7 @@ def run_attempt(attempt_id: str) -> pathlib.Path:
                 "failure": f"{stage}_failed",
             })
         except OSError:
+            # The complete failure artifact is authoritative; this ledger is a best-effort index.
             pass
         raise RuntimeError("Mem0 comparison attempt failed; inspect the repo-local attempt artifact") from None
     finally:
@@ -460,20 +477,34 @@ def self_test() -> None:
     test_dir = REPO / ".artifacts" / "mem0-evidence-self-test"
     test_dir.mkdir(parents=True, exist_ok=True)
     path = test_dir / f"exclusive-{os.getpid()}-{uuid.uuid4().hex}.json"
+    ledger_path = test_dir / f"ledger-{os.getpid()}-{uuid.uuid4().hex}.jsonl"
     try:
         publish_exclusive(path, {"complete": True})
         assert json.loads(path.read_text(encoding="utf-8")) == {"complete": True}
+        if os.name == "posix":
+            assert path.stat().st_mode & 0o077 == 0, "published evidence must be owner-only"
         try:
             publish_exclusive(path, {"complete": False})
         except PreflightError:
+            # Refusal is the expected proof that immutable evidence cannot be overwritten.
             pass
         else:
             raise AssertionError("evidence overwrite was accepted")
+        append_ledger({"sequence": 1}, ledger_path)
+        append_ledger({"sequence": 2}, ledger_path)
+        assert [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines()] == [
+            {"sequence": 1},
+            {"sequence": 2},
+        ]
+        if os.name == "posix":
+            assert ledger_path.stat().st_mode & 0o077 == 0, "attempt ledger must be owner-only"
     finally:
         path.unlink(missing_ok=True)
+        ledger_path.unlink(missing_ok=True)
         try:
             test_dir.rmdir()
         except OSError:
+            # A concurrent repo-local self-test may still own its own file in this directory.
             pass
     print("mem0 evidence self-test passed")
 

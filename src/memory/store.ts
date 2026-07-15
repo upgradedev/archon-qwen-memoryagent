@@ -1490,7 +1490,7 @@ export class InMemoryStore implements MemoryStore {
     const scoped = this.rows
       .filter((row) => row.tenantId === opts.tenantId && row.supersededAt === null)
       .filter((row) => (opts.company ? companyKey(row.company) === companyKey(opts.company) : true))
-      .filter((row) => (opts.embedModel ? row.embedModel === opts.embedModel : true))
+      .filter((row) => (opts.embedModel ? row.embedModel === opts.embedModel : true));
     if (scoped.length > candidateCap) throw lifecycleScopeTooLarge(candidateCap);
     const memories: ConsolidatableMemory[] = scoped
       .map((row) => ({
@@ -1554,7 +1554,7 @@ export class InMemoryStore implements MemoryStore {
       }
     }
     const scoped = this.rows
-      .filter((row) => row.tenantId === opts.tenantId && (opts.company ? companyKey(row.company) === companyKey(opts.company) : true))
+      .filter((row) => row.tenantId === opts.tenantId && (opts.company ? companyKey(row.company) === companyKey(opts.company) : true));
     if (scoped.length > candidateCap) throw lifecycleScopeTooLarge(candidateCap);
     const candidates: ForgetCandidate[] = scoped
       .map((row) => ({ id: row.id, importance: row.importance, createdAt: row.createdAt, supersededAt: row.supersededAt }));

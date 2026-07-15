@@ -610,6 +610,7 @@ export async function buildServer(deps: ServerDeps = {}) {
     | { expiresAt: number; failure: DeepReadinessError };
   let deepReadinessCache: DeepReadinessCache | undefined;
   let deepReadinessInFlight: Promise<DeepReadinessValue> | undefined;
+  let deepReadinessInFlightOwner: symbol | undefined;
 
   const runDeepReadinessProbe = async (): Promise<DeepReadinessValue> => {
     let stage: DeepReadinessStage = "configuration";
@@ -696,6 +697,7 @@ export async function buildServer(deps: ServerDeps = {}) {
     // Publish the pending promise before awaiting the durable reservation. This
     // makes exactly one same-process cache-miss owner reserve work units; every
     // concurrent follower shares that result and starts no extra provider work.
+    const owner = Symbol("deep-readiness-owner");
     const pending = (async () => {
       const release = acquireAdmission();
       if (!release) throw new DeepReadinessAdmissionError();
@@ -716,6 +718,7 @@ export async function buildServer(deps: ServerDeps = {}) {
       }
     })();
     deepReadinessInFlight = pending;
+    deepReadinessInFlightOwner = owner;
     try {
       const value = await pending;
       deepReadinessCache = {
@@ -734,7 +737,12 @@ export async function buildServer(deps: ServerDeps = {}) {
       };
       throw failure;
     } finally {
-      if (deepReadinessInFlight === pending) deepReadinessInFlight = undefined;
+      // Compare an explicit owner token rather than promise values. Awaiting either
+      // promise here would compare results and could clear a different owner.
+      if (deepReadinessInFlightOwner === owner) {
+        deepReadinessInFlight = undefined;
+        deepReadinessInFlightOwner = undefined;
+      }
     }
   };
 
