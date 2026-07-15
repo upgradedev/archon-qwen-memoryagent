@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "dataset": "semantic-heldout-v1",
+  "datasetSha256": "7fe37fb19f279ec54f4bc07cda69bd15fdf438429023411e462d2e927efc1e5c",
+  "developerLabelledBeforeOnlineEvaluation": true,
+  "cases": 48,
+  "positives": 24,
+  "negatives": 24,
+  "similarityThreshold": 0.75,
+  "maxPairsPerCase": 1,
+  "caseIsolation": true,
+  "onlineRepetitions": 3,
+  "embeddingConcurrency": 4,
+  "judgeConcurrency": 4,
+  "judgeTimeoutMs": 8000,
+  "embeddingTimeoutMs": 15000,
+  "embeddingReuseAcrossRepetitions": true,
+  "models": {
+    "embedder": "text-embedding-v4",
+    "judge": "qwen-plus",
+    "embeddingDimensions": 1024,
+    "judgeTemperature": 0,
+    "judgeMaxTokens": 200,
+    "judgeResponseFormat": "json_object"
+  },
+  "failureScoring": "inconclusive is always incorrect for accuracy; inconclusive positives count as false negatives; completion is reported separately",
+  "primaryReporting": "per-run metrics plus mean/range and cross-run stability; repetitions are not independent samples",
+  "selection": "all cases, all three repetitions, all misses and errors; no best-run selection",
+  "offlineGate": {
+    "minimumAccuracyPct": 70,
+    "minimumPrecisionPct": 70,
+    "minimumRecallPct": 70,
+    "maximumInconclusive": 0,
+    "maximumPromptInjectionFalsePositives": 0
+  }
+}
