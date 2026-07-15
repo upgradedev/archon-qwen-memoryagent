@@ -37,8 +37,17 @@ import {
   type Narrator,
   type NarratorFailureCode,
 } from "./agents/narrator.js";
-import { defaultSemanticJudge, type SemanticJudge } from "./memory/semantic-consistency.js";
-import { PgVectorStore, type MemoryKind, type MemoryStore, type RecallHit } from "./memory/store.js";
+import {
+  defaultSemanticJudge,
+  type SemanticJudge,
+} from "./memory/semantic-consistency.js";
+import type { AuditMemory } from "./memory/consistency.js";
+import {
+  PgVectorStore,
+  type MemoryKind,
+  type MemoryStore,
+  type RecallHit,
+} from "./memory/store.js";
 import { defaultReranker, type Reranker } from "./memory/rerank.js";
 import { MemoryAgent } from "./agents/memory-agent.js";
 import { MAX_MEMORY_BATCH } from "./memory/memory.js";
@@ -1286,14 +1295,30 @@ export async function buildServer(deps: ServerDeps = {}) {
           idempotencyKey: `demo:contradiction:${index}`,
         });
       }
-      // Seed sales invoices (revenue)
+      // Seed sales invoices (revenue). Capture the canonical row ids so the v4
+      // reconciliation below can retire the exact pre-currency demo rows that
+      // early live deployments wrote without an idempotency key. Those legacy
+      // rows are otherwise correctly treated as unknown-currency invoices by
+      // aggregatePnl and would withhold the curated demo's top-level totals.
+      const currentDemoSales = new Map<string, string>();
       for (const [index, s] of DEMO_SALES.entries()) {
-        await demoAgent.remember("invoice", s.content, {
+        const id = await demoAgent.remember("invoice", s.content, {
           company: DEMO_COMPANY,
           period: "2026-05",
           metadata: s.metadata,
           idempotencyKey: `demo:sale:${index}`,
         });
+        currentDemoSales.set(String(s.metadata.invoice_number), id);
+      }
+      for (const sale of DEMO_SALES) {
+        const winnerId = currentDemoSales.get(String(sale.metadata.invoice_number));
+        if (!winnerId) throw new Error("built-in demo sale reconciliation has no canonical row");
+        const legacySaleIds = existing
+          .filter((memory) => memory.id !== winnerId && isRecognizableDemoSale(memory, sale.metadata))
+          .map((memory) => memory.id);
+        if (legacySaleIds.length > 0) {
+          await store.supersede(legacySaleIds, winnerId, seedTenantId);
+        }
       }
       // Seed the MEANING-level contradiction (opposite prose, no shared attribute)
       // so POST /consistency/semantic has a real finding to surface.
@@ -1815,6 +1840,23 @@ function isLegacyDemoPayrollMemory(
     ["Ana Cole", "Tom Reed", "Mia Novak"].some((name) =>
       content.startsWith(`${name} (id `) && content.includes(` at ${DEMO_COMPANY} in 2026-05:`)
     )
+  );
+}
+
+function isRecognizableDemoSale(
+  memory: AuditMemory,
+  expected: Record<string, unknown>,
+): boolean {
+  const metadata = memory.metadata;
+  return (
+    memory.kind === "invoice" &&
+    memory.company === DEMO_COMPANY &&
+    memory.period === "2026-05" &&
+    metadata?.type === "sales" &&
+    metadata.invoice_number === expected.invoice_number &&
+    metadata.customer === expected.customer &&
+    metadata.total === expected.total &&
+    metadata.invoice_date === expected.invoice_date
   );
 }
 

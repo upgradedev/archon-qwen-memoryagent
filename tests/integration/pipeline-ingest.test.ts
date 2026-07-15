@@ -101,6 +101,10 @@ test("POST /demo/seed feeds the demo memories + a contradiction the self-audit f
 
   // Idempotent: a second seed must NOT double the P&L or re-write.
   const pnlBefore = (await app.inject({ method: "GET", url: "/pnl?company=Northwind Trading" })).json();
+  assert.equal(pnlBefore.currency_status, "single");
+  assert.equal(pnlBefore.currency, "EUR");
+  assert.equal(pnlBefore.unknown_currency_records, 0);
+  assert.equal(pnlBefore.employer_cost_total, 14600);
   const again = await app.inject({ method: "POST", url: "/demo/seed" });
   assert.equal(again.json().alreadySeeded, true);
   const pnlAfter = (await app.inject({ method: "GET", url: "/pnl?company=Northwind Trading" })).json();

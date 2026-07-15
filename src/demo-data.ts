@@ -16,7 +16,11 @@ const PERIOD = "2026-05";
 // Written LAST by /demo/seed after every independently idempotent component.
 // Its presence is the only completion test: a payroll row alone may be the
 // residue of a crashed/failed partial seed and must never make retries no-op.
-export const DEMO_SEED_VERSION = "memoryagent-demo-v3";
+// v4 also reconciles the two pre-currency demo sales rows that early public
+// deployments wrote before invoice currency became mandatory. Keeping the
+// version in the completion sentinel makes every existing v3 tenant run the
+// one-time, idempotent cleanup on its next Run demo click.
+export const DEMO_SEED_VERSION = "memoryagent-demo-v4";
 export const DEMO_SEED_SENTINEL_SOURCE_REF = `demo-seed:${DEMO_SEED_VERSION}:complete`;
 export const DEMO_EVENT_REF = "demo-payroll-v3";
 
