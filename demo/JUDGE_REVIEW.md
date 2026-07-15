@@ -1,6 +1,6 @@
 # Archon MemoryAgent — strict final judge review
 
-This is a claim audit for **Track 1: MemoryAgent** only. The Autopilot entry has its own repository and evidence; duplicating its status here previously created drift.
+This is a claim audit for **Track 1: MemoryAgent** only. The Autopilot entry has its own repository and evidence; duplicating its status here previously created drift. Eligibility and packaging are checked against the [official detailed rules](https://qwencloud-hackathon.devpost.com/rules), which control over summary-page wording.
 
 ## Rules readiness
 
@@ -9,11 +9,13 @@ This is a claim audit for **Track 1: MemoryAgent** only. The Autopilot entry has
 | Public source repository | <https://github.com/upgradedev/archon-qwen-memoryagent> | Ready after final changes are pushed |
 | Detectable open-source license | Root [`LICENSE`](../LICENSE) | Ready (MIT) |
 | Alibaba/Qwen code proof | [`src/qwen/client.ts`](../src/qwen/client.ts) and [`ALIBABA_PROOF.md`](./ALIBABA_PROOF.md) | Ready |
+| Working Alibaba deployment | [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md), public `/health` + `/ready` | Exact runtime source `e4b208a63e1768409e5b94fe305a3672c4c96dcd` verified live, including v4 idempotent reconciliation |
 | Architecture diagram | [`docs/judge-architecture.svg`](../docs/judge-architecture.svg) / [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg) | Ready |
 | Text description + track | [`SUBMISSION.md`](./SUBMISSION.md) and [`PROJECT_STORY.md`](./PROJECT_STORY.md) | Ready |
 | Public video under three minutes | Final recording must be hosted on an accepted public platform | **Pending user upload; a local MP4 is not a pass** |
-| Free/unrestricted judging access | Public no-login path plus private reviewer credential in Devpost testing instructions | Ready as instructions; credential must be pasted privately |
+| Free/unrestricted judging access | Public no-login path plus dedicated low-privilege reviewer credential in Devpost testing instructions | Ready as instructions; entrant must verify field visibility, preview logged out, and rotate after judging |
 | Optional public blog/social post | [`BLOG.md`](./BLOG.md) and [`POST_DRAFTS.md`](./POST_DRAFTS.md) | **Pending publication; a draft is not bonus-eligible** |
+| Entrant eligibility, ownership, third-party rights | Human sign-off in [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md#5-entrant-and-rights-sign-off) | **Pending human attestation; cannot be inferred from repository automation** |
 
 ## Why it is competitive
 
@@ -43,9 +45,9 @@ The README leads with the differentiator, the judge guide separates public and a
 1. Both semantic sets are synthetic and developer-labelled; the 48-pair online result is a frozen-set evaluation, not production prevalence or an independent expert annotation study.
 2. The Mem0 evidence supports only the pinned version/configuration and disclosed `dir()`/search probe. The honest conclusion is retrieval parity plus no separately named contradiction/resolution method matched there—not absence of internal/differently named behavior or universal superiority.
 3. Payroll source documents are the implemented vision/text pipeline. Purchase/sales invoices use a strict JSON endpoint. Orders, receipts, general bank statements, EBITDA, and sales targets are outside the shipped claim.
-4. Public seed and recall are quota-bounded; protected features require the private judge token. The final video must show both paths without exposing the token.
+4. Public seed and recall are quota-bounded; protected features require the dedicated judge credential. The final video must show both paths without exposing it.
 5. Deployment claims are valid only after the final image passes `/ready`, real-model `/health`, and OpenAPI-route smoke checks.
 
 ## Final verdict
 
-The engineering and evidence package is submission-ready once the final deployment smoke is green. The remaining user-owned work is the public video, screenshots, public posts, Devpost credential/URL entry, and final submission receipt. Deadline: **2026-07-20, 2:00 PM PDT**.
+The code, evidence, and exact-runtime release gate are green at `e4b208a63e1768409e5b94fe305a3672c4c96dcd`. Remaining user-owned work is final video production/publication, screenshots, public posts, Devpost field/credential entry and eligibility/rights sign-off, availability monitoring through judging, and the submission receipt. Deadline: **2026-07-20, 2:00 PM PDT**.

@@ -4,20 +4,45 @@ This is the human handoff. Once the final deployment release gate is green, no s
 
 **Deadline:** July 20, 2026 at 2:00 PM PDT (July 21, 00:00 EEST). Aim to submit at least six hours early.
 
+**Controlling references:** [official rules](https://qwencloud-hackathon.devpost.com/rules) ·
+[submission overview](https://qwencloud-hackathon.devpost.com/) ·
+[official schedule](https://qwencloud-hackathon.devpost.com/details/dates) ·
+[Devpost submission steps](https://help.devpost.com/article/126-know-your-submission-steps). If a
+summary page and the detailed rules differ, follow the detailed rules. The rules
+require the working project and any credentialed testing access to remain available,
+free of charge and without restriction, through the judging period ending
+August 11, 2026 at 2:00 PM PDT.
+
 ## 0. One non-negotiable pre-recording gate
 
 - [ ] `GET https://memory.43.106.13.19.sslip.io/ready` returns `200` and shows database/Qwen/auth ready.
 - [ ] `/health` reports `text-embedding-v4` and `qwen-plus`, not Fake providers.
 - [ ] `/openapi.json` contains `/ready`, `/ingest/invoice`, `/feedback`, `/consistency/semantic`, `/consolidate`, and `/forget`.
 - [ ] Public seed → recall → field audit works without a key.
+- [ ] Re-running `POST /demo/seed` is idempotent (`alreadySeeded=true`,
+      `reconciled=false`, `events=0`), and Northwind P&L shows one EUR bucket,
+      zero unknown-currency records, employer cost `14600`, revenue `42700`, and
+      net profit `28100`.
 - [ ] Protected semantic audit works with the reviewer token.
 - [ ] Browser console is clean and the final repository changes are pushed to `main`.
+- [ ] [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
+      `e4b208a63e1768409e5b94fe305a3672c4c96dcd` as the verified live
+      runtime-source commit.
+- [ ] `git diff --name-only e4b208a63e1768409e5b94fe305a3672c4c96dcd..origin/main`
+      contains only documentation, sanitized submission media, or non-runtime
+      recording tooling. A later submission-pack HEAD is valid; any runtime-affecting
+      path requires redeployment.
 
 Stop if any box is red. Do not record a stale deployment.
 
-## 1. Public demo video — target 165–170 seconds
+## 1. Public demo video — target 165–172 seconds
 
 Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use **Public visibility with no login or access request**, and keep the final duration below the automated 175-second safety limit.
+
+Follow the canonical [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md), run the operational
+[`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md), and use
+[`BUILD_RECORDING.md`](./BUILD_RECORDING.md) for the authenticated workflow and
+artifact-review procedure.
 
 - [ ] Use only owned or properly licensed music, images, logos, fonts, and footage; include no copyrighted third-party asset without permission, and use competition marks only as the rules permit.
 
@@ -25,22 +50,22 @@ Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use 
 
 | Time | Visual | Narration point |
 |---:|---|---|
-| 0:00–0:12 | Title, live URL, Track 1 | “A persistent Qwen memory that tells you when its own memories disagree.” |
-| 0:12–0:28 | `demo/final-media/judge-architecture.jpg` | Alibaba ECS, pgvector, Qwen models, public/auth trust boundary, four MCP tools. |
-| 0:28–0:42 | `/ready` then `/health` | Real deployment and real model ids. Never show environment variables. |
-| 0:42–1:12 | Explorer → **Run demo** → cited recall | Fixed idempotent seed, bounded recall, numbered evidence citations. |
-| 1:12–1:40 | **Run self-audit** | `INV-5521`, `8400` vs `8900`, recency recommendation, no mutation. |
-| 1:40–2:05 | Paste private token in the Explorer's password field → **Run semantic audit** → crop to result | “Pays on time” vs “chronically late”; never reveal the token or browser request header. |
-| 2:05–2:28 | Feedback/lifecycle/OpenAPI or prepared result | Explicit correction loop; dry-run/confirm forgetting; tenant-scoped protected routes. |
-| 2:28–2:48 | Benchmark/evidence card | 90% semantic recall/100% precision/0 FP on the original deterministic set; show the historical frozen developer-labelled synthetic result separately from the clean-source A/B promotion artifact; reranked retrieval metrics; final immutable CI summary. State every offline/online caveat. |
-| 2:48–2:56 | Repo + MIT + closing URL | Repo, live URL, Track 1. End before 3:00. |
+| 0:00–0:14 | Title, live URL, Track 1 | Conflict stakes and one-line product answer. |
+| 0:14–0:29 | Sanitized exact-runtime-SHA release card, `/health`, `/ready` | Commit provenance is separate from endpoint/model readiness. Never show environment variables. |
+| 0:29–0:53 | `demo/final-media/judge-architecture.jpg` | Trust boundary, Qwen, pgvector, hybrid cited recall, read-only audit/human resolution, and portable REST/MCP/pg-wire seams. |
+| 0:53–1:19 | Session A write/disconnect, fresh Session B cited recall | `€15,800` true cost versus `€10,000` bank outflow; dense score is exposed only for this human-readable proof while product default remains hybrid. |
+| 1:19–1:40 | Two writes plus field self-audit | `€18,000` versus `€19,000`, provenance, recency recommendation, and no silent mutation. |
+| 1:40–1:58 | Cropped authenticated semantic result plus four-tool MCP card | “Pays on time” versus “chronically late”; hide the credential/request header and distinguish authenticated HTTP from trusted-local stdio. |
+| 1:58–2:10 | Authenticated lifecycle preview followed by confirmed result | Dry-run first, explicit reason + confirmation, tenant scope, and auditable transition; no surprise deletion. |
+| 2:10–2:35 | One prepared evidence card | 5/5 field issues with 0 FP; 4/4 policy conformance; deterministic semantic 90% recall/100% precision/0 FP; MRR 0.883→0.911 and Recall@3 90.0%→96.7%. Keep fixture labels/caveats visible. |
+| 2:35–2:49 | Sanitized MemoryAgent-only Alibaba proof, then repo/MIT end card | Active ECS + self-hosted pgvector topology, public TLS URL, real Qwen model ids, and one-line portable-product close. |
 
 ### Video quality gate
 
 - [ ] Final file is strictly under 175 seconds and 1080p or better.
-- [ ] Set the workflow's voice-rights attestation only after confirming that the
-  generated voice/service is authorized for public competition use; otherwise use
-  an owned human recording.
+- [ ] Set the workflow's separate ElevenLabs and edge-tts publication rights
+      attestations only for the paths independently authorized for public competition
+      use; otherwise do not run the synthesizer and use an owned human recording.
 - [ ] Text is readable at normal YouTube playback size.
 - [ ] Captions are enabled and names/model ids are spelled correctly.
 - [ ] No API key, reviewer token, Authorization header, shell history secret, email, or cloud credential is visible in any frame, thumbnail, caption, or description. Clear the Judge token field before any beauty shot.
@@ -62,13 +87,14 @@ Capture clean 16:9 or high-resolution browser images; hide bookmarks, personal t
 - [ ] Architecture: use the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg), not a screenshot of raw Mermaid. Keep [`../docs/architecture.png`](../docs/architecture.png) only as the dense technical appendix.
 - [ ] Live proof: `/ready` and `/health` showing ready + real Qwen model ids.
 - [ ] Alibaba proof: ECS/container service and live endpoint in one safe frame; redact account IDs/IP metadata not needed for proof.
-- [ ] Repository proof: public repo landing page with MIT license detection and latest commit.
+- [ ] Repository proof: public repo landing page with latest commit and GitHub's MIT
+      license detection visible from the repository page, not only a raw `LICENSE` file.
 
 Store sensitive originals only in the ignored repo-local folder `demo/private-originals/` so every agent shares one project boundary without risking a commit. Redact there, then add only sanitized final images under `demo/gallery/`. Before staging, run `git status --ignored --short demo/` and verify no private original is tracked.
 
 ## 3. Public posts
 
-- [ ] Publish the technical article from [`BLOG.md`](./BLOG.md); replace relative image links with the hosted architecture image.
+- [ ] Publish the technical article from [`BLOG.md`](./BLOG.md); replace relative image links with the hosted architecture image and keep the Qwen Cloud build journey explicit, as required for bonus eligibility.
 - [ ] Publish at least one social post from [`POST_DRAFTS.md`](./POST_DRAFTS.md).
 - [ ] Confirm each post is public in an incognito window.
 - [ ] Add the public blog/social URL to the Devpost submission for the optional bonus.
@@ -78,19 +104,60 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
 
 ## 4. Devpost copy/paste fields
 
+- [ ] Team: add every actual teammate (or leave solo); if entering as a team or
+      organization, confirm the authorized representative in section 5 below.
 - [ ] Project name: **Archon MemoryAgent — a memory that audits itself**
+- [ ] Tagline (under 140 characters): **Persistent Qwen memory that recalls, cites, and surfaces its own cross-session contradictions.**
+- [ ] Thumbnail: upload [`thumbnail.png`](./thumbnail.png) (PNG, 1600×900, below
+      5 MB). Devpost recommends 3:2 but accepts this 16:9 asset; preview the actual
+      gallery crop and create a 3:2 crop only if important text is clipped.
+- [ ] Built with tags: **Qwen Cloud, Alibaba Cloud, Qwen, Model Context Protocol
+      (MCP), TypeScript, Fastify, PostgreSQL, pgvector, Docker, OpenAI SDK**.
 - [ ] Track: **Track 1 — MemoryAgent**
-- [ ] Description: paste [`SUBMISSION.md`](./SUBMISSION.md) / [`PROJECT_STORY.md`](./PROJECT_STORY.md) as appropriate.
+- [ ] Project Story: paste the canonical body between separators in [`SUBMISSION.md`](./SUBMISSION.md); do not substitute the long-form evidence story.
+- [ ] Try it out: <https://memory.43.106.13.19.sslip.io>
+- [ ] Image Gallery: upload the sanitized hero, cited recall, field audit, semantic
+      audit, lifecycle, architecture, health/readiness, Alibaba, and repository
+      images approved in section 2; add short English captions.
 - [ ] Public repository: <https://github.com/upgradedev/archon-qwen-memoryagent>
 - [ ] Live app: <https://memory.43.106.13.19.sslip.io>
-- [ ] Alibaba/Qwen code proof: <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts>
+- [ ] Alibaba/Qwen code proof: Qwen Cloud API
+      <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts>
+      plus live ECS redeploy path
+      <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh>.
 - [ ] Architecture: upload the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg).
 - [ ] Public video: paste the URL recorded above.
 - [ ] Blog/social: paste the public URL recorded above.
-- [ ] Testing instructions: paste the public click path from [`../docs/JUDGE-GUIDE.md`](../docs/JUDGE-GUIDE.md), then add the reviewer token **only in Devpost's private testing-instructions/credentials area**.
+- [ ] Testing instructions: paste the public click path from [`../docs/JUDGE-GUIDE.md`](../docs/JUDGE-GUIDE.md). Before adding any credential, confirm with the actual form/organizer whether that field is judge-only; Devpost gallery visibility must not be assumed.
+- [ ] Use only a dedicated low-privilege, tenant-scoped, quota-bounded judging credential. Preview the saved submission logged out; rotate immediately if exposed, otherwise keep it working through judging and revoke/rotate after judging ends.
+- [ ] Keep the live app, public video, repository, and reviewer credential
+      working without payment/login friction through the end of judging; schedule
+      an operator check before July 28 and during the July 28–August 11 judging window.
 - [ ] Explain uniqueness if both entries are submitted: MemoryAgent is persistent recall/self-audit; Autopilot is a bounded AP decision/action workflow. They are separate, substantially different entries.
 - [ ] Preview every link while logged out.
 - [ ] Submit before the deadline and save the confirmation email/page as the receipt.
 
 **Devpost submission URL:** `____________________________________________`
 **Submission confirmation saved:** `[ ]`
+
+## 5. Entrant and rights sign-off
+
+These are human attestations required by the detailed rules; repository automation
+cannot decide them.
+
+- [ ] Every entrant is at least the local age of majority, eligible in their
+      jurisdiction, not a restricted party, and has no sponsor/judge/promotion-entity
+      conflict described by the rules.
+- [ ] If entering as a team or organization, the submitting person is its authorized
+      representative and every listed member has approved the entry.
+- [ ] The entry is owned by the entrant; all third-party SDKs, APIs, data, fonts,
+      marks, music, voices, images, and open-source components are used under terms
+      that permit this public submission and the organizer's judging/promotion use.
+- [ ] The existing Archon context and the work added during the competition window
+      are disclosed in [`SUBMISSION.md`](./SUBMISSION.md); no reused work is presented
+      as newly created evidence.
+- [ ] The MemoryAgent and Autopilot entries remain unique and substantially different,
+      and neither received disqualifying financial/preferential sponsor support.
+- [ ] Every submitted artifact and testing instruction is English or includes an
+      English translation, and the final form is complete before the deadline because
+      substantive edits are not allowed after it closes.

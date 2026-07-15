@@ -1,7 +1,7 @@
 0|6|Archon MemoryAgent — persistent, queryable memory across sessions, on Alibaba Cloud
 6|16|PROOF · /health + /memory/count: real Qwen live (text-embedding-v4 · qwen-plus · 1024-dim)
 16|24|WHAT IT IS · every event, finding, insight embedded → pgvector on Alibaba (durable)
-24|34|ARCHITECTURE · hybrid recall: dense + BM25 · RRF · cross-encoder rerank → qwen-plus
+24|34|ARCHITECTURE · hybrid recall: dense + PostgreSQL full-text · RRF · qwen-plus rerank
 34|45|LIVE DEMO · Explorer UI, live in the browser  ·  SESSION A writes fused facts, then disconnects
 45|58|SESSION B · a fresh client's question → qwen-plus grounds it in Session A's memory
 58|66|Recalled by MEANING — real cosine similarity over pgvector

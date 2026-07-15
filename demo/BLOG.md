@@ -30,7 +30,7 @@ The trust boundary matters as much as the model graph. The public surface is a f
 idempotent demo plus public-tenant reads; public seed and recall are quota-bounded.
 Writes, feedback, lifecycle operations, meaning-level audit, and Streamable HTTP MCP
 are authenticated and mapped to a tenant by the server. The event linker groups by
-`company + period + event_ref`, and P&L totals stay separated by currency. The editable
+`company + period + event_ref`, and P&L totals stay separated by currency.
 The judge-facing image above is the canonical 16:9 submission hero. The editable
 hero source is [`docs/judge-architecture.svg`](../docs/judge-architecture.svg);
 the denser technical appendix and its PNG/SVG renders remain under
@@ -91,14 +91,14 @@ quota-bounded HTTP and HTTP MCP (the `audit_memory` tool takes `semantic: true`)
 and its fixed contradiction pair is planted by the public idempotent demo seed
 so you can see the agent catch a meaning-level contradiction in its own memory.
 (Honest scope: the semantic detector is a *proven mechanism with a working live
-demo, offline regression coverage, a scored deterministic fixture, and a separate
-frozen 48-pair online Qwen evaluation with every case/error retained — see
-`BENCHMARK.md`.)
+demo, offline regression coverage, and a scored deterministic fixture*. Historical
+online experiments remain in the technical appendix with their provenance caveats;
+they are not presented here as clean release evidence.)
 
 ## It's measured, offline, and reproducible
 
-Claims about memory quality are cheap. We made ours reproducible from committed
-fixtures — no API key, no spend, gated in CI:
+Claims about memory quality are cheap. The deterministic claims below are
+reproducible from committed fixtures with no API key or spend and are gated in CI:
 
 **Retrieval.** On real `text-embedding-v4` embeddings, over a frozen, diverse,
 hand-labelled corpus, our `reranked-hybrid` retriever (dense + lexical fused with
@@ -184,6 +184,37 @@ sales targets.
 Offline, with no DashScope key, deterministic Fakes exercise the model seams and the
 pgvector/fixture path with zero cloud credentials. Production is fail-closed: real
 Qwen plus configured judge authentication are required for `/ready`.
+
+## Build journey: four iterations that changed the product
+
+We did not begin with a polished contradiction engine. The first milestone was the
+plain Track 1 contract: write through one session, tear it down, and make a fresh
+client recover a bounded cited answer. Qwen Cloud's OpenAI-compatible endpoint let
+us keep model seams injectable: production uses the official DashScope endpoint,
+while deterministic fixtures exercise failure paths without credentials.
+
+The second iteration came from an uncomfortable demo result. Dense recall could
+retrieve either of two plausible values and remain silent about the disagreement.
+That moved conflict detection out of the narrator and into a pure, read-only policy
+engine with provenance and an explicit human decision. The third iteration handled
+the case that field rules cannot see: opposing prose with no shared number. We added
+a separately authenticated Qwen semantic judge, kept its result advisory, and
+measured the deterministic offline seam without calling it live-model accuracy.
+
+The final iterations were operational. We added tenant mapping, durable Qwen work
+quotas, least-privilege PostgreSQL, fail-closed readiness, dry-run/confirm lifecycle,
+and exact runtime-source deployment evidence. A last live check exposed legacy demo
+sales from before currency scoping; v4 reconciliation now produces one EUR Northwind
+P&L bucket, zero unknown-currency records, and an idempotent second seed. That defect
+was more valuable than a perfect rehearsal because it forced the demo data to obey
+the same invariants as the product.
+
+The lesson is simple: models are excellent at embedding, reranking, narration, and
+semantic comparison, but code must own tenancy, arithmetic, citations, mutation,
+and release truth. The domain-neutral audit plus REST, MCP, and pg-wire seams make
+the MIT core reusable for support, research, and other long-lived agents. The next
+evidence step is independent labelling and longitudinal usage—not an unsupported
+claim that this synthetic fixture already proves production-scale accuracy.
 
 ## Try it
 

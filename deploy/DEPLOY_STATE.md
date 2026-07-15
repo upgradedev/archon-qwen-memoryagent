@@ -2,12 +2,14 @@
 
 Updated: **2026-07-15**. This is the authoritative hardened live-release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
 
-> **Status: LAST VERIFIED LIVE BASELINE; the current final-hardening working tree requires redeploy and re-verification.**
+> **Status: FINAL LIVE RUNTIME VERIFIED — recording release gate green.**
 > <https://memory.43.106.13.19.sslip.io>
 >
-> Runtime code commit: [`1f3688a`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/1f3688a57e8ae3fa2869f1dbba8d18dee35da93b), including the production-image closure hotfix. The final hardening landed through [PR #56](https://github.com/upgradedev/archon-qwen-memoryagent/pull/56) and the Docker runtime gate through [PR #57](https://github.com/upgradedev/archon-qwen-memoryagent/pull/57).
+> Verified live runtime-source commit: [`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd). Exact deploy attempt 8 passed exact checkout/build, schema/grants, DML-only runtime identity, cross-application database denial, `/health`, `/ready`, a real-embedding ingest → grounded recall → cleanup smoke, and public UI/health/ready TLS checks with certificate verification enabled.
 >
-> That baseline was verified on the live host with real `text-embedding-v4` / `qwen-plus`; `/ready` 200 with database, Qwen and judge auth ready; authenticated ingest→recall and semantic-audit success; unauthenticated protected route 401; backend loopback-only; PostgreSQL has no host port; direct public 9000/5432 blocked; container limits and read-only/cap-drop controls active; zero smoke rows remained. Do not treat it as proof of the un-deployed current working tree.
+> The public v4 seed reconciliation then reported `reconciled=true`; Northwind P&L contained one EUR bucket, `unknown_currency_records=0`, employer cost `14600`, revenue `42700`, net profit `28100`, `events=3`, and `sales_count=2`. A second seed was idempotent: `alreadySeeded=true`, `reconciled=false`, `events=0`.
+>
+> Repository `main` may advance beyond that runtime-source SHA through documentation, sanitized submission media, or non-runtime recording-tooling commits. Those descendants do not require a runtime rebuild. The permitted submission-pack paths are `README.md`, `SECURITY.md`, `deploy/DEPLOY_STATE.md`, `demo/**`, `docs/**`, `.github/workflows/demo-video.yml`, `scripts/capture_live.sh`, and `scripts/captions.txt`. Before capture, inspect every changed path after `e4b208a…`; anything outside that allowlist, or any application, dependency, schema, container, runtime/deployment-workflow, or deployment-script delta, requires a new exact deploy and a refreshed record here.
 
 ## Historical note — do not operate from the old snapshot
 
@@ -57,7 +59,7 @@ The live Alibaba security group exposes `80` only for HTTP redirect/ACME and `44
 - `JUDGE_API_KEY` + `JUDGE_TENANT_ID`, or `JUDGE_API_KEYS_JSON`, map credentials to tenants on the server. Request bodies cannot select another tenant.
 - The fixed `/demo/seed` and public-tenant read path remain judge-accessible without login. Public seed and recall are quota-bounded.
 - `/ingest`, `/ingest/invoice`, `/ingest/documents`, `/feedback`, `/consistency/semantic`, `/consolidate`, and `/forget` are protected. Lifecycle routes preview by default and require `confirm=true` before mutation.
-- The Explorer's password-type **Judge token** field is only for the credential supplied privately through Devpost. Never commit, log, screenshot, or publish it.
+- The Explorer's password-type **Judge token** field is only for the dedicated low-privilege judging credential supplied through Devpost testing instructions. Verify field visibility rather than assuming privacy; never commit, log, screenshot, or intentionally publish it, and rotate/revoke it after judging.
 - Streamable HTTP MCP is separately fail-closed authenticated; stdio is the local trusted transport.
 
 ### Spend and runtime containment
@@ -230,7 +232,7 @@ A release is judge-ready only when all of the following are true:
 
 1. HTTPS is public, but backend `9000` and PostgreSQL `5432` are not.
 2. `/ready` returns `200`; `/health` reports real Qwen.
-3. Public and private-token judge paths pass.
+3. Public and protected reviewer-credential paths pass.
 4. The named database volume is present and backed up before risky operations.
 5. Database, judge, DashScope, SSH, and any formerly copied credentials have been rotated as required.
 6. No secrets appear in Git, Docker inspection output shared publicly, screenshots, videos, posts, or Devpost public fields.

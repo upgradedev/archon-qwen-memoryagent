@@ -79,7 +79,7 @@
   <rect class="box" x="68" y="390" width="368" height="205" rx="20"/>
   <text x="96" y="426" class="cap">HYBRID RECALL</text>
   <text x="96" y="467" class="title">Meaning + exact language</text>
-  <text x="96" y="501" class="mono">cosine + BM25 → RRF → MMR</text>
+  <text x="96" y="501" class="mono">cosine + PostgreSQL FTS → RRF</text>
   <text x="96" y="534" class="body">tenant / company / kind filters</text>
   <text x="96" y="563" class="small">qwen-plus cross-encoder rerank</text>
 
@@ -114,9 +114,9 @@
   <text x="692" y="766" class="body">bounded reads and auditable state transitions</text>
 
   <rect x="1102" y="657" width="430" height="132" rx="20" fill="#171d2b" stroke="#f59e0b" stroke-width="2"/>
-  <text x="1132" y="694" class="cap" style="fill:#fbbf24">MODEL PROMOTION EVIDENCE</text>
-  <text x="1132" y="735" class="title">Same-commit Qwen A/B</text>
-  <text x="1132" y="766" class="small">3×/arm · AB/BA/AB · clean-tree result pending</text>
+  <text x="1132" y="694" class="cap" style="fill:#fbbf24">PRODUCTIZATION PATH</text>
+  <text x="1132" y="735" class="title">REST + MCP + pg-wire</text>
+  <text x="1132" y="766" class="small">tenant-scoped · portable MIT core</text>
 
   <path d="M1180 595C1140 625 600 622 506 647" class="auditflow"/>
   <path class="flow" d="M612 723H651"/>

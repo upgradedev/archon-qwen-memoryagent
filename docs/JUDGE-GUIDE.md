@@ -2,7 +2,7 @@
 
 **Live:** <https://memory.43.106.13.19.sslip.io>
 
-The public click path below needs **no login or API key**. It is intentionally limited to the fixed demo payload and public-tenant reads. Protected writes, feedback, lifecycle operations, and the Qwen semantic audit use the reviewer credential supplied privately in the Devpost testing instructions; no credential is committed to this repository.
+The public click path below needs **no login or API key**. It is intentionally limited to the fixed demo payload and public-tenant reads. Protected writes, feedback, lifecycle operations, and the Qwen semantic audit use a dedicated, low-privilege, quota-bounded reviewer credential supplied through Devpost testing instructions; no credential is committed to this repository. Do not assume the Devpost field is private: the entrant must verify its actual visibility before pasting it and rotate/revoke it after judging.
 
 Before judging, [`GET /ready`](https://memory.43.106.13.19.sslip.io/ready) should return `200` with database, Qwen, and judge-auth checks ready. [`GET /health`](https://memory.43.106.13.19.sslip.io/health) should identify `text-embedding-v4` and `qwen-plus`, not Fake providers.
 
@@ -34,16 +34,19 @@ Expected field-level result: a contradiction for `INV-5521`, values `8400` and `
 
 ## 30 seconds more: authenticated meaning-level audit
 
-The semantic route is intentionally protected because it invokes the heavier Qwen judge. In the Explorer, paste the private Devpost reviewer token into the password-type **Judge token (protected audit/lifecycle)** field, keep the demo company selected, and click **Run semantic audit**. The field is for the private judge path only: do not publish or screenshot the token. Swagger's **Authorize** control is an alternative. From a terminal:
+The semantic route is intentionally protected because it invokes the heavier Qwen judge. In the Explorer, paste the dedicated Devpost reviewer credential into the password-type **Judge token (protected audit/lifecycle)** field, keep the demo company selected, and click **Run semantic audit**. Do not publish or screenshot the credential. Swagger's **Authorize** control is an alternative. If a terminal is necessary, use an interactive no-echo prompt so the value is absent from shell history and curl's command-line arguments:
 
 ```bash
 BASE=https://memory.43.106.13.19.sslip.io
-TOKEN='<token from private Devpost testing instructions>'
+set +x
+read -rsp 'Reviewer credential: ' TOKEN
+printf '\n'
 
 curl -fsS -X POST "$BASE/consistency/semantic" \
-  -H "authorization: Bearer $TOKEN" \
+  -H @<(printf 'authorization: Bearer %s\n' "$TOKEN") \
   -H 'content-type: application/json' \
   -d '{"company":"Northwind Trading","kind":"insight"}'
+unset TOKEN
 ```
 
 The fixed demo contains *"always pays on time"* and *"chronically late"*. The response should expose a read-only semantic contradiction with model/completion provenance. The committed offline labelled benchmark measures the deterministic offline judge at **90% recall, 100% precision, and 0 false positives**; those figures are not presented as live-Qwen accuracy.

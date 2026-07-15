@@ -33,7 +33,7 @@
 #
 # Env:
 #   DEMO_BASE_URL  live base URL (default https://memory.43.106.13.19.sslip.io)
-#   DEMO_JUDGE_API_KEY  private reviewer credential (required; never printed)
+#   DEMO_JUDGE_API_KEY  dedicated reviewer credential (required; never printed)
 #   GITHUB_RUN_ID  used to make the companies/events unique (falls back to a timestamp)
 #   TRANSCRIPT     repo-contained output path (default docs/screencast_transcript.txt)
 set -euo pipefail
@@ -229,7 +229,7 @@ t "18.0 \$ # Every fused event, validation finding and narrated insight is embed
 t "20.0 \$ # text-embedding-v4 and written to pgvector on Alibaba — durable, not in-process."
 # --- ARCHITECTURE ---
 t "24.5 \$ # ---- ARCHITECTURE · hybrid retrieval ----"
-t "26.0 \$ # embed → pgvector → dense + BM25 (RRF) → cross-encoder rerank → grounded qwen-plus"
+t "26.0 \$ # embed → pgvector → dense + PostgreSQL full-text (RRF) → cross-encoder rerank → grounded qwen-plus"
 t "29.0 \$ # Queryable by MEANING across sessions — not string match, not an in-process cache."
 # --- LIVE DEMO · Explorer UI · SESSION A ---
 t "31.5 \$ # ---- LIVE DEMO · Explorer UI at $BASE/  ----"

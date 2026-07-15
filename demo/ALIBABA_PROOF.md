@@ -6,6 +6,13 @@ This is the submission's **Proof of Alibaba Cloud Deployment**. It links the exa
 
 The **live deployed path** is **ECS + a self-hosted pgvector container** (docker-compose, one public URL), using the real Alibaba Cloud Qwen models. The Function Compute + managed ApsaraDB path is a provided serverless **alternative**, not the deployed topology.
 
+The organizer's [official Qwen Cloud resources](https://qwencloud-hackathon.devpost.com/resources)
+publish `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` as the
+OpenAI-compatible API base URL. [`src/qwen/client.ts`](../src/qwen/client.ts) defaults
+to and allowlists that exact endpoint alongside the supported official regional
+hosts; this is the qualifying Qwen Cloud path, not an
+unrelated provider-compatible proxy.
+
 | Alibaba Cloud service | Code | What it does |
 |---|---|---|
 | **Model Studio / DashScope** (Qwen Cloud inference API) — *live* | [`src/qwen/client.ts`](../src/qwen/client.ts) + [`src/pipeline/vision.ts`](../src/pipeline/vision.ts) | OpenAI-compatible client for **`text-embedding-v4`**, **`qwen-plus`** narration/rerank/skills, an independently configured semantic **`QWEN_JUDGE_MODEL`**, and **`qwen-vl-max`** vision extraction. `qwen-plus` is the judge rollback baseline; a candidate may replace only that setting after the frozen promotion gate. All active model ids are verifiable on live `GET /health`; `/ready` proves a non-Fake provider is configured. |
@@ -13,12 +20,22 @@ The **live deployed path** is **ECS + a self-hosted pgvector container** (docker
 | **pgvector on PostgreSQL** (memory store) — *live* | [`src/db/schema.sql`](../src/db/schema.sql) · [`src/db/client.ts`](../src/db/client.ts) | pgvector schema (`vector(1024)` + HNSW cosine index), running in the self-hosted pgvector container on the ECS box. |
 | **Function Compute + ApsaraDB RDS / AnalyticDB for PostgreSQL** (serverless topology) — *alternative, not deployed* | [`deploy/s.yaml`](../deploy/s.yaml) · [`deploy/deploy-fc.sh`](../deploy/deploy-fc.sh) | A provided serverless portability path: build/push the container to Alibaba Container Registry, deploy as an FC HTTP function backed by a managed ApsaraDB RDS memory store. Because the store is pg-wire, it is a drop-in `DATABASE_URL` swap for the ECS pgvector container. Provided for portability; **not the deployed path for this submission.** |
 
-## Runtime proof (refresh after the final deploy)
+## Final verified runtime proof
 
-Use the release gate in [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md): `/ready` must report database/Qwen/auth ready, `/health` must report the real Qwen model ids, and the public plus private-token judge paths must pass. Protected writes and semantic audit require the private reviewer credential; do not record or publish it. The optional `Generate Authenticated Demo Video` workflow consumes that value only from the private `MEMORYAGENT_JUDGE_API_KEY` Actions secret and never renders it; its artifact still requires the same final human review.
+The final live MemoryAgent runtime source is exact commit
+[`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd).
+Exact deploy attempt 8 passed checkout/build, schema/grants, DML-only runtime
+identity, cross-application denial, health/readiness, real-embedding grounded recall
+with cleanup, and public UI/health/ready TLS verification. The subsequent public v4
+seed reconciled one EUR P&L bucket with zero unknown-currency records and was
+idempotent on the second call. The secret-safe operational record is
+[`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). Later submission-pack-only
+commits may move repository HEAD; any runtime-affecting descendant requires redeployment.
+
+Use the release gate in [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md): `/ready` must report database/Qwen/auth ready, `/health` must report the real Qwen model ids, and the public plus protected reviewer-credential paths must pass. Protected writes and semantic audit require the dedicated judging credential; do not record or publish it. The optional `Generate Authenticated Demo Video` workflow consumes that value only from the private `MEMORYAGENT_JUDGE_API_KEY` Actions secret and never renders it; its artifact still requires the same final human review.
 
 - **Live backend URL:** provided in the submission form (see [`deploy/DEPLOY_STATE.md`](./../deploy/DEPLOY_STATE.md) for the current address); `GET /health` returns the active embedding, narration, and semantic-judge model ids plus the 1024-dim vector size.
-- **Proof recording (separate from the demo video):** create the MemoryAgent-specific `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` after the final deploy. It must show this app's ECS process/container, MemoryAgent `/ready`, its `/health` response with all three active model ids, and the MemoryAgent URL in one sanitized sequence. Do not reuse another entry's proof recording. Keep raw console capture in ignored `demo/private-originals/`; only the sanitized final belongs in `demo/gallery/`.
+- **Proof recording (separate from the demo video):** capture the MemoryAgent-specific `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` from this verified live deployment during final media production. It must show this app's ECS process/container, MemoryAgent `/ready`, its `/health` response with all three active model ids, and the MemoryAgent URL in one sanitized sequence. Do not reuse another entry's proof recording. Keep raw console capture in ignored `demo/private-originals/`; only the sanitized final belongs in `demo/gallery/`.
 
 ## Single-file link for the submission form
 

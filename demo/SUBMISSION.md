@@ -1,7 +1,18 @@
 # Archon MemoryAgent — Devpost submission description
 
-*Paste the body below into the Devpost "description" field. Track 1 (MemoryAgent).
-~330 words.*
+*Paste the body below as the canonical Devpost Project Story for Track 1
+(MemoryAgent), approximately 600 words. Do not substitute
+[`PROJECT_STORY.md`](./PROJECT_STORY.md); that file is the long-form evidence story.*
+
+Submission operators should use the [official rules](https://qwencloud-hackathon.devpost.com/rules)
+and [official schedule](https://qwencloud-hackathon.devpost.com/details/dates) as
+the controlling references. Public video/blog URLs and any dedicated reviewer
+credential belong in their dedicated Devpost fields, not in the description below;
+verify credential-field visibility rather than assuming it is private.
+Final paste is allowed only while [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md)
+records the verified runtime source, the pre-recording smoke is green, and any later
+repository commits are documentation, sanitized submission media, or non-runtime
+recording tooling only.
 
 ---
 
@@ -17,6 +28,8 @@ MemoryAgent** is a persistent, queryable, cross-session memory that recalls grou
 cited answers **and audits its own memory for contradictions**. The audit recommends
 which value to trust without mutation; an authenticated reviewer can separately
 accept or override that recommendation through one atomic, idempotent decision.
+Its domain-neutral audit and tenant-scoped REST/MCP/pg-wire seams make the MIT core
+reusable beyond this financial proof without claiming unmeasured production scale.
 
 ### What it does
 
@@ -39,9 +52,6 @@ accept or override that recommendation through one atomic, idempotent decision.
   (`audit_memory` with `semantic: true`) and seeded into the live demo. Honest
   scope: proven mechanism + working live demo + a labelled offline regression set;
   its offline 90% recall/100% precision figures describe the deterministic judge.
-  A historical frozen 48-pair developer-labelled synthetic Qwen run reports 97.92% accuracy, 100%
-  precision and 95.83% recall per stability repetition, with one conservatively
-  scored embedding timeout and all cases retained.
 - **Feedback and forgetting**: authenticated feedback protects a correct memory or
   atomically supersedes an incorrect one. Consolidation and retention endpoints are
   tenant-scoped, preview by default, and require `confirm=true` before mutation.
@@ -54,7 +64,7 @@ accept or override that recommendation through one atomic, idempotent decision.
 
 The public judge path provides a fixed, idempotent seed plus public-tenant recall
 and field audit with bounded quotas. Mutations, semantic audit, and lifecycle use
-the reviewer credential supplied privately in the Devpost testing instructions.
+the dedicated reviewer credential supplied in the Devpost testing instructions.
 
 Reuse boundary: the entry carries forward the Archon name/product context and
 ports upstream extraction/analysis pipeline patterns. The contest-entry work
@@ -79,7 +89,7 @@ https://github.com/upgradedev/archon-qwen-memoryagent
 
 ---
 
-**Alibaba Cloud proof:** the DashScope OpenAI-compatible client (base URL + Qwen
+**Operator-only Alibaba Cloud proof reference (use the dedicated form field):** the DashScope OpenAI-compatible client (base URL + Qwen
 instantiation) is
 [`src/qwen/client.ts`](https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts);
-app-specific runtime proof recording: `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` (to be captured after final deploy; raw console footage stays ignored under `demo/private-originals/`).
+app-specific runtime proof recording: `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` (to be captured from the verified live deployment during final media production; raw console footage stays ignored under `demo/private-originals/`).

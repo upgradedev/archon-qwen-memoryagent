@@ -1,10 +1,10 @@
 name: Generate Authenticated Demo Video
 
 # Authenticated <3-minute demo-video builder for the MemoryAgent track. It needs
-# the private MEMORYAGENT_JUDGE_API_KEY Actions secret and never renders/logs it.
+# the GitHub Actions MEMORYAGENT_JUDGE_API_KEY secret and never renders/logs it.
 # No local recording needed:
 #   1. scripts/capture_live.sh drives the LIVE Alibaba Cloud box with protected
-#      mutations scoped by the private reviewer credential
+#      mutations scoped by the dedicated reviewer credential
 #      (https://memory.43.106.13.19.sslip.io): GET /health -> real Qwen proof; SESSION A
 #      POST /ingest -> writes memories to pgvector on Alibaba; a FRESH SESSION B
 #      POST /recall (x2) -> recalls them by meaning with real qwen-plus answers +
@@ -41,7 +41,12 @@ on:
         required: false
         default: "github.com/upgradedev/archon-qwen-memoryagent"
       voice_rights_attested:
-        description: "I confirm the selected generated voice is authorized for public competition use."
+        description: "I confirm the selected ElevenLabs voice is authorized for public competition use."
+        required: true
+        type: boolean
+        default: false
+      edge_tts_rights_attested:
+        description: "I separately confirm edge-tts en-US-GuyNeural is authorized if fallback is needed."
         required: true
         type: boolean
         default: false
@@ -146,11 +151,9 @@ jobs:
           VOICE_ID: ${{ github.event.inputs.voice_id }}
           MODEL_ID: ${{ github.event.inputs.model_id }}
           VOICE_RIGHTS_ATTESTED: ${{ github.event.inputs.voice_rights_attested }}
+          EDGE_TTS_RIGHTS_ATTESTED: ${{ github.event.inputs.edge_tts_rights_attested }}
         run: |
           set -euo pipefail
-          [ "${VOICE_RIGHTS_ATTESTED}" = "true" ] || {
-            echo "::error::voice publication rights were not attested"; exit 1;
-          }
           # Split narration.txt on blank lines: last paragraph -> web beat, rest -> main.
           python3 - <<'PY'
           import re
@@ -167,6 +170,9 @@ jobs:
           synth() {
             local IN="$1" OUT="$2" have=false HTTP
             if [ -n "${XI_API_KEY:-}" ]; then
+              [ "${VOICE_RIGHTS_ATTESTED}" = "true" ] || {
+                echo "::error::selected ElevenLabs voice publication rights were not attested"; exit 1;
+              }
               jq -Rs --arg m "$MODEL_ID" \
                 '{text: ., model_id: $m, voice_settings: {stability: 0.45, similarity_boost: 0.8, use_speaker_boost: true}}' \
                 "$IN" > body.json
@@ -184,6 +190,9 @@ jobs:
               echo "::warning::ELEVEN_LABS_KEY not set — using the rights-attested edge-tts voice for ${IN}."
             fi
             if [ "$have" != "true" ]; then
+              [ "${EDGE_TTS_RIGHTS_ATTESTED}" = "true" ] || {
+                echo "::error::edge-tts fallback rights were not separately attested"; exit 1;
+              }
               python -m edge_tts --voice en-US-GuyNeural --file "$IN" --write-media "$OUT"
               [ -f "$OUT" ] && [ "$(wc -c < "$OUT")" -gt 8000 ] \
                 || { echo "::error::edge-tts produced no usable audio for ${IN} — cannot ship a silent video."; exit 1; }
