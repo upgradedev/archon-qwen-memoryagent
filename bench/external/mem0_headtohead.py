@@ -70,6 +70,11 @@ def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def canonical_text_bytes(value: bytes) -> bytes:
+    """Make source/data attestations independent of Git checkout line endings."""
+    return value.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
 def validate_attempt_id(value: str | None) -> str:
     if value is None or ATTEMPT_ID.fullmatch(value) is None:
         raise PreflightError("--attempt-id must be 8-80 safe letters, digits, dot, underscore or hyphen")
@@ -133,7 +138,7 @@ def source_evidence() -> dict[str, Any]:
         if relative.startswith("/") or ".." in parts:
             raise PreflightError("protocol source manifest contains an unsafe path")
         path = REPO.joinpath(*parts)
-        digest = sha256_bytes(path.read_bytes())
+        digest = sha256_bytes(canonical_text_bytes(path.read_bytes()))
         entries.append({"path": relative, "sha256": digest})
         bundle.update(relative.encode("utf-8") + b"\0" + digest.encode("ascii") + b"\n")
     return {"files": entries, "bundleSha256": bundle.hexdigest()}
@@ -142,7 +147,7 @@ def source_evidence() -> dict[str, Any]:
 def validate_protocol() -> tuple[str, str, dict[str, Any]]:
     if PROTOCOL.get("version") != "mem0-headtohead-v2":
         raise PreflightError("unexpected Mem0 comparison protocol version")
-    dataset_sha = sha256_bytes(DATA_BYTES)
+    dataset_sha = sha256_bytes(canonical_text_bytes(DATA_BYTES))
     if dataset_sha != PROTOCOL.get("datasetSha256"):
         raise PreflightError("comparison dataset changed; create a new protocol version")
     if len(DATA.get("conflictPairs", [])) != PROTOCOL.get("conflictPairs"):
@@ -152,7 +157,7 @@ def validate_protocol() -> tuple[str, str, dict[str, Any]]:
     provider = PROTOCOL.get("provider", {})
     if provider.get("baseUrl") != OFFICIAL_BASE_URL or provider.get("customEndpointsAllowed") is not False:
         raise PreflightError("comparison provider invariant changed")
-    return dataset_sha, sha256_bytes(PROTOCOL_BYTES), source_evidence()
+    return dataset_sha, sha256_bytes(canonical_text_bytes(PROTOCOL_BYTES)), source_evidence()
 
 
 def artifact_path(attempt_id: str) -> pathlib.Path:
@@ -438,6 +443,7 @@ def run_attempt(attempt_id: str) -> pathlib.Path:
 
 
 def self_test() -> None:
+    assert canonical_text_bytes(b"first\r\nsecond\rthird\n") == b"first\nsecond\nthird\n"
     assert normalized_provider_base_url(OFFICIAL_BASE_URL + "/") == OFFICIAL_BASE_URL
     for invalid in (
         "http://dashscope-intl.aliyuncs.com/compatible-mode/v1",

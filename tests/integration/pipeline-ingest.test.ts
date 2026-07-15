@@ -18,13 +18,13 @@ const HAS_DB = Boolean(process.env.DATABASE_URL);
 let app: FastifyInstance;
 
 const DOCS = [
-  { doc_id: "d-reg", filename: "register.pdf", source_kind: "text", company: "ByteCraft", period: "2026-05",
+  { doc_id: "d-reg", filename: "register.pdf", source_kind: "text", company: "ByteCraft", period: "2026-05", currency: "EUR",
     content: JSON.stringify({ doc_type: "payroll_register", gross_pay_total: 7000, employer_cost_total: 8600, employee_count: 2 }) },
-  { doc_id: "d-bank", filename: "bank.pdf", source_kind: "text", company: "ByteCraft", period: "2026-05",
+  { doc_id: "d-bank", filename: "bank.pdf", source_kind: "text", company: "ByteCraft", period: "2026-05", currency: "EUR",
     content: JSON.stringify({ doc_type: "bank_confirmation", net_pay_total: 6500, payment_date: "2026-05-28" }) },
-  { doc_id: "d-p1", filename: "p1.png", source_kind: "image", company: "ByteCraft", period: "2026-05",
+  { doc_id: "d-p1", filename: "p1.png", source_kind: "image", company: "ByteCraft", period: "2026-05", currency: "EUR",
     content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-01", name: "Ana Cole", gross: 4000, employee_social_security: 100, tax: 200, net: 3700, employer_social_security: 500, employer_cost: 4500 } }) },
-  { doc_id: "d-p2", filename: "p2.png", source_kind: "image", company: "ByteCraft", period: "2026-05",
+  { doc_id: "d-p2", filename: "p2.png", source_kind: "image", company: "ByteCraft", period: "2026-05", currency: "EUR",
     content: JSON.stringify({ doc_type: "payslip", employee: { employee_id: "E-02", name: "Tom Reed", gross: 3000, employee_social_security: 80, tax: 120, net: 2800, employer_social_security: 1100, employer_cost: 4100 } }) },
 ];
 
@@ -51,6 +51,9 @@ test("POST /ingest/documents fuses the triplet and feeds memory", { skip: !HAS_D
   // The fused event carries the accurate employer cost + off-bank cost gap.
   const result = body.results[0];
   assert.equal(result.event.employer_cost_total, 8600);
+  assert.equal(result.event.currency, "EUR");
+  assert.equal(result.pnl.currency_status, "single");
+  assert.equal(result.pnl.currency, "EUR");
   assert.equal(result.pnl.off_bank_cost, 2100);
   assert.equal(result.validation.length, 4);
 });
@@ -59,6 +62,9 @@ test("GET /pnl aggregates the pipeline-fed memories", { skip: !HAS_DB }, async (
   const res = await app.inject({ method: "GET", url: "/pnl?company=ByteCraft" });
   assert.equal(res.statusCode, 200);
   const pnl = res.json();
+  assert.equal(pnl.currency_status, "single");
+  assert.equal(pnl.currency, "EUR");
+  assert.equal(pnl.unknown_currency_records, 0);
   assert.equal(pnl.employer_cost_total, 8600);
   assert.equal(pnl.cash_out_total, 6500);
   assert.equal(pnl.off_bank_cost, 2100);

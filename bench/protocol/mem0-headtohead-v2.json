@@ -2,7 +2,8 @@
   "version": "mem0-headtohead-v2",
   "purpose": "Pinned, fixture-bounded retrieval and public-method-name probe against Mem0. This does not establish universal product capability or superiority.",
   "dataset": "bench/external/data.json",
-  "datasetSha256": "831e10101880ce34218135eac99f7d4319a5ffe3f8d4361cc4b2e3d3172f056f",
+  "datasetSha256": "e30304fed53375845681d95ca665eded94e425fa5d369519b9c883e1cb69335f",
+  "hashPolicy": "SHA-256 over repository text bytes after CRLF and CR are normalized to LF, so attestations are stable across Git checkout platforms.",
   "conflictPairs": 4,
   "retrievalProbes": 5,
   "provider": {

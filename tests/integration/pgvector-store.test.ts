@@ -222,17 +222,35 @@ test("PgDailyQuotaBackend atomically enforces one shared limit under concurrency
   assert.equal(results.filter((result) => !result.ok).length, 7);
 });
 
-test("PgDailyQuotaBackend rolls back subject charge when the global tier is full", { skip: !HAS_DB }, async () => {
+test("PgDailyQuotaBackend rejects a pooled request without charging its subject when global is full", { skip: !HAS_DB }, async () => {
   const quota = new PgDailyQuotaBackend(() => new Date("2026-07-14T12:00:00Z"));
   const nonce = randomUUID();
   const bucket = `atomic-${nonce.slice(0, 8)}`;
   const subject = `subject-${nonce}`;
-  assert.equal((await quota.consume(`${bucket}:global`, "global", 1)).ok, true);
+  assert.equal((await quota.consume(`${bucket}:public:global`, "public", 1)).ok, true);
   assert.equal((await consumeTwoTierQuota(quota, bucket, subject, 1, 1)).ok, false);
   assert.equal(
-    (await quota.consume(`${bucket}:subject`, subject, 1)).ok,
+    (await quota.consume(`${bucket}:public:subject`, subject, 1)).ok,
     true,
-    "global rejection must roll back the subject increment",
+    "global rejection must leave the pooled subject tier untouched",
+  );
+});
+
+test("PgDailyQuotaBackend rolls back an earlier successful charge when a later existing tier is full", { skip: !HAS_DB }, async () => {
+  const quota = new PgDailyQuotaBackend(() => new Date("2026-07-14T12:00:00Z"));
+  const nonce = randomUUID();
+  const earlierBucket = `a-subject-${nonce}`;
+  const laterBucket = `z-global-${nonce}`;
+  const subject = `subject-${nonce}`;
+  assert.equal((await quota.consume(laterBucket, "public", 1)).ok, true);
+  assert.equal((await quota.consumeMany([
+    { bucket: earlierBucket, subject, limit: 1 },
+    { bucket: laterBucket, subject: "public", limit: 1 },
+  ])).ok, false);
+  assert.equal(
+    (await quota.consume(earlierBucket, subject, 1)).ok,
+    true,
+    "transaction rollback must remove the earlier inserted charge",
   );
 });
 

@@ -25,7 +25,8 @@ Do not publish or cite `mem0-evidence.json` without this correction.
 - Live attempt: `python bench/external/mem0_headtohead.py --attempt-id=<unique-id>`
 
 The v2 runner pins the package version, official provider endpoint, source and
-dataset hashes, clean-tree precondition, unique non-overwriting attempt artifact,
+dataset hashes (canonical LF text bytes, independent of checkout platform),
+clean-tree precondition, unique non-overwriting attempt artifact,
 append-only ledger, returned memory strings/response keys, and the exact public
 method-name matches. A future live artifact remains a bounded comparison—not a
 broad benchmark or proof about undocumented behavior.

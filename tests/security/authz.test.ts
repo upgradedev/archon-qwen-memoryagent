@@ -16,7 +16,6 @@ import type { FastifyInstance } from "fastify";
 import {
   buildServer,
   DOCUMENT_INGEST_WORK_UNITS_PER_DOCUMENT,
-  INGEST_DAILY_LIMIT,
 } from "../../src/server.js";
 import { InMemoryStore, type MemoryStore } from "../../src/memory/store.js";
 import { FakeEmbedder } from "../../src/memory/embeddings.js";
@@ -27,10 +26,34 @@ import {
   DEFAULT_PUBLIC_TENANT,
   loadJudgeAuth,
 } from "../../src/server/auth.js";
+import type { QwenQuotaPolicy } from "../../src/server/quota.js";
 
-function offlineServer(store: MemoryStore): Promise<FastifyInstance> {
+const TEST_QUOTA_POLICY: QwenQuotaPolicy = {
+  readinessPerSubject: 10_000,
+  readinessJudgeReserve: 10_000,
+  recallPerSubject: 10_000,
+  recallPublicGlobal: 10_000,
+  recallJudgeReserve: 10_000,
+  ingestPerSubject: 10_000,
+  ingestPublicGlobal: 10_000,
+  ingestJudgeReserve: 10_000,
+  semanticPerSubject: 10_000,
+  semanticPublicGlobal: 10_000,
+  semanticJudgeReserve: 10_000,
+};
+
+function offlineServer(
+  store: MemoryStore,
+  quotaPolicy: QwenQuotaPolicy = TEST_QUOTA_POLICY,
+): Promise<FastifyInstance> {
   delete process.env.DASHSCOPE_API_KEY;
-  return buildServer({ store, embedder: new FakeEmbedder(), narrator: new FakeNarrator(), judge: new FakeJudge() });
+  return buildServer({
+    store,
+    embedder: new FakeEmbedder(),
+    narrator: new FakeNarrator(),
+    judge: new FakeJudge(),
+    quotaPolicy,
+  });
 }
 
 const minimalDocs = [
@@ -98,6 +121,7 @@ test("credentialed demo seed stays private; removing the token switches to a sep
     narrator: new FakeNarrator(),
     judge: new FakeJudge(),
     auth: { required: true, publicTenantId: DEFAULT_PUBLIC_TENANT, apiKeys: { [DEFAULT_JUDGE_TENANT]: JUDGE_KEY } },
+    quotaPolicy: TEST_QUOTA_POLICY,
   });
   await app.ready();
   try {
@@ -137,6 +161,7 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
         required: true,
         apiKeys: { "tenant-a": JUDGE_KEY, "tenant-b": OTHER_KEY },
       },
+      quotaPolicy: TEST_QUOTA_POLICY,
     });
     await app.ready();
     try {
@@ -178,6 +203,7 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
       store,
       embedder: new FakeEmbedder(), narrator: new FakeNarrator(), judge: new FakeJudge(),
       auth: { required: true, apiKeys: { "tenant-a": JUDGE_KEY } },
+      quotaPolicy: TEST_QUOTA_POLICY,
     });
     await app.ready();
     try {
@@ -234,6 +260,7 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
       store,
       embedder: new FakeEmbedder(), narrator: new FakeNarrator(), judge: new FakeJudge(),
       auth: { required: true, apiKeys: { "tenant-a": JUDGE_KEY } },
+      quotaPolicy: TEST_QUOTA_POLICY,
     });
     await app.ready();
     const base = {
@@ -278,6 +305,7 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
       store,
       embedder: new FakeEmbedder(), narrator: new FakeNarrator(), judge: new FakeJudge(),
       auth: { required: true, apiKeys: { "tenant-a": JUDGE_KEY, "tenant-b": OTHER_KEY } },
+      quotaPolicy: TEST_QUOTA_POLICY,
     });
     await app.ready();
     const payload = {
@@ -344,6 +372,7 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
     const app = await buildServer({
       store, embedder, narrator: new FakeNarrator(), judge: new FakeJudge(),
       auth: { required: true, apiKeys: { "tenant-a": JUDGE_KEY } },
+      quotaPolicy: TEST_QUOTA_POLICY,
       quotaBackend: {
         async consume() {
           throw new Error("correct feedback must not reserve Qwen quota");
@@ -448,11 +477,14 @@ describe("AuthZ: the metered ingest route authorizes consumption via a daily bud
   test("POST /ingest/documents meters every document and returns 429 once the per-IP work-unit budget is exhausted", async () => {
     // Drive the real weighted budget. Each document reserves extraction plus a
     // conservative share of the downstream event/finding memory writes.
-    assert.ok(INGEST_DAILY_LIMIT >= 1 && INGEST_DAILY_LIMIT <= 200, `unexpected budget ${INGEST_DAILY_LIMIT}`);
     const workUnits = minimalDocs.length * DOCUMENT_INGEST_WORK_UNITS_PER_DOCUMENT;
-    const allowedBatches = Math.floor(INGEST_DAILY_LIMIT / workUnits);
-    assert.ok(allowedBatches >= 1, "fixture must fit at least once in the configured budget");
-    const app = await offlineServer(new InMemoryStore());
+    const allowedBatches = 5;
+    const testLimit = allowedBatches * workUnits;
+    const app = await offlineServer(new InMemoryStore(), {
+      ...TEST_QUOTA_POLICY,
+      ingestPerSubject: testLimit,
+      ingestPublicGlobal: testLimit,
+    });
     await app.ready();
     try {
       for (let i = 0; i < allowedBatches; i++) {

@@ -76,6 +76,7 @@ import {
   type DailyQuotaBackend,
   type QuotaPool,
   type QuotaResult,
+  type QwenQuotaPolicy,
 } from "./server/quota.js";
 import {
   companySchema,
@@ -261,6 +262,8 @@ export interface ServerDeps {
   reranker?: Reranker;
   auth?: JudgeAuthOptions;
   quotaBackend?: DailyQuotaBackend;
+  /** Injectable quota policy for deterministic tests; production loads env-backed limits. */
+  quotaPolicy?: QwenQuotaPolicy;
   corsOrigins?: string[];
   trustProxy?: boolean | number | string | string[];
   bodyLimitBytes?: number;
@@ -451,7 +454,7 @@ export async function buildServer(deps: ServerDeps = {}) {
   const auth = loadJudgeAuth(deps.auth);
   const quota = deps.quotaBackend ??
     (process.env.DATABASE_URL && !deps.store ? new PgDailyQuotaBackend() : new InMemoryDailyQuotaBackend());
-  const quotaPolicy = loadQwenQuotaPolicy();
+  const quotaPolicy = deps.quotaPolicy ?? loadQwenQuotaPolicy();
   const qwenAdmission = deps.qwenAdmission ?? PROCESS_QWEN_ADMISSION;
   const principals = new WeakMap<object, JudgePrincipal>();
   const requestAdmissionPools = new WeakMap<object, QwenAdmissionPool>();
