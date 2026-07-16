@@ -141,6 +141,30 @@ test("CHECK 1c — Alibaba runtime proof uses the canonical gallery/10 path ever
   assert.doesNotMatch(videoBuilder, /"08-alibaba-runtime-proof"/);
 });
 
+test("CHECK 1d — release-evidence docs match the executable strict/fallback contract", () => {
+  const runbook = readText("demo/MEDIA_CAPTURE_RUNBOOK.md");
+  const buildGuide = readText("demo/CAPTION_VIDEO_BUILD.md");
+  const captureScript = readText("scripts/capture_submission_gallery.py");
+  const videoBuilder = readText("demo/tools/build_caption_video.py");
+
+  for (const doc of [runbook, buildGuide]) {
+    assert.match(doc, /provider-truncation fallback/);
+    assert.match(doc, /terminal/);
+    assert.doesNotMatch(doc, /all three exact(?:-deploy| deploy)? markers/i);
+  }
+  assert.match(buildGuide, /MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha=<FINAL_RUNTIME_SHA>/);
+  assert.match(captureScript, /"exactDeploymentEvidenceMode"/);
+  for (const field of ["invocationId", "commandId", "outputSha256", "outputBytes"]) {
+    assert.ok(runbook.includes(`\`${field}\``), `capture runbook must document producer field ${field}`);
+    assert.ok(captureScript.includes(`"${field}"`), `capture manifest must retain producer field ${field}`);
+  }
+  assert.match(runbook, /EXACT_APP_REUSE_OK app=memoryagent sha=<SHA> health=ok/);
+  assert.match(runbook, /EXACT_DEPLOY_SUCCESS memory=<SHA> autopilot=<SHA>/);
+  assert.match(captureScript, /service_workers="block"/);
+  assert.match(captureScript, /route_web_socket/);
+  assert.match(videoBuilder, /"exactDeployEvidenceMode"/);
+});
+
 // ─── CHECK 2 — Mermaid diagram ↔ src/ modules (architecture conformance) ──────
 
 function mermaidBlock(): string {
@@ -244,7 +268,7 @@ test("CHECK 3 — README headline metrics equal the pinned golden.json values (w
   near(figures.completeEuroTraceability, g.complete_euro_figure_traceability_pct, percent, "complete euro-figure traceability");
 });
 
-test("CHECK 1d — skill kind descriptions are generated from the complete enum", () => {
+test("CHECK 1e — skill kind descriptions are generated from the complete enum", () => {
   const expected = `Memory kind: ${MEMORY_KINDS.join(" | ")}.`;
   for (const skill of SKILLS) {
     const kind = skill.parameters.properties.kind as { description?: string } | undefined;

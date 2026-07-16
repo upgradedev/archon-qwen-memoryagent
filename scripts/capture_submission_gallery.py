@@ -42,7 +42,7 @@ from exact_deploy_evidence import (
     TERMINAL_SUCCESS_TRUNCATED_OUTPUT,
     validate_exact_deploy_evidence as _validate_exact_deploy_evidence,
 )
-from repo_paths import REPO_ROOT, inside_repo
+from repo_paths import ProjectFileSnapshot, REPO_ROOT, inside_repo, read_project_file_once
 
 
 REPO = Path(REPO_ROOT)
@@ -108,6 +108,70 @@ def project_path(value: str | Path, label: str, *, must_exist: bool = False) -> 
     return Path(inside_repo(value, label, must_exist=must_exist))
 
 
+def snapshot_project_file(value: str | Path, label: str) -> ProjectFileSnapshot:
+    try:
+        return read_project_file_once(value, label)
+    except ValueError as exc:
+        raise GateError(str(exc)) from exc
+
+
+class NoRedirectHandler(urlrequest.HTTPRedirectHandler):
+    """Turn every HTTP redirect into an error instead of a follow-up request."""
+
+    def redirect_request(
+        self,
+        req: urlrequest.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> None:
+        return None
+
+
+NO_REDIRECT_OPENER = urlrequest.build_opener(NoRedirectHandler())
+
+
+def validate_live_origin(value: str) -> str:
+    require(value == DEFAULT_BASE_URL, f"live credential destination must be exactly {DEFAULT_BASE_URL}")
+    parsed = urlparse.urlparse(value)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise GateError("live credential destination has an invalid port") from exc
+    require(
+        parsed.scheme == "https"
+        and parsed.hostname == "memory.43.106.13.19.sslip.io"
+        and port in {None, 443}
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.path == ""
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment,
+        "live credential destination must be the pinned credential-free HTTPS origin",
+    )
+    return DEFAULT_BASE_URL
+
+
+def is_pinned_live_request(url: str, *, redirected: bool = False) -> bool:
+    if redirected:
+        return False
+    parsed = urlparse.urlparse(url)
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "memory.43.106.13.19.sslip.io"
+        and port in {None, 443}
+        and parsed.username is None
+        and parsed.password is None
+    )
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -138,7 +202,7 @@ def allowed_post_deploy_path(path: str) -> bool:
     return any(pattern.fullmatch(normalized) or pattern.match(normalized) for pattern in SAFE_POST_DEPLOY_PATHS)
 
 
-def validate_exact_deploy_evidence(expected_sha: str, status: Any, output: str) -> str:
+def validate_exact_deploy_evidence(expected_sha: str, status: Any, output: str | bytes) -> str:
     """Translate the shared exact-deploy contract into this gate's error type."""
 
     try:
@@ -149,9 +213,9 @@ def validate_exact_deploy_evidence(expected_sha: str, status: Any, output: str) 
 
 def verify_exact_release(
     expected_sha: str,
-    deployment_output: Path,
-    deployment_status: Path,
-) -> str:
+    deployment_output: ProjectFileSnapshot,
+    deployment_status: ProjectFileSnapshot,
+) -> tuple[str, str, dict[str, str | int]]:
     require(re.fullmatch(r"[0-9a-f]{40}", expected_sha) is not None, "expected SHA must be 40 lowercase hex characters")
     commit_check = subprocess.run(
         ["git", "-C", str(REPO), "cat-file", "-e", f"{expected_sha}^{{commit}}"],
@@ -161,9 +225,17 @@ def verify_exact_release(
     )
     require(commit_check.returncode == 0, "expected SHA is not present in this repository")
 
-    status = load_json(deployment_status, "deployment status")
-    output = deployment_output.read_text(encoding="utf-8", errors="replace")
-    validate_exact_deploy_evidence(expected_sha, status, output)
+    try:
+        status = json.loads(deployment_status.text())
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise GateError("deployment status is not valid UTF-8 JSON") from exc
+    evidence_mode = validate_exact_deploy_evidence(expected_sha, status, deployment_output.data)
+    producer = {
+        "invocationId": str(status["invocationId"]),
+        "commandId": str(status["commandId"]),
+        "outputSha256": deployment_output.sha256,
+        "outputBytes": deployment_output.size,
+    }
 
     compose = git("show", f"{expected_sha}:docker-compose.yml")
     require("127.0.0.1:${BACKEND_PORT:-9000}:9000" in compose, "exact source no longer binds the backend to loopback")
@@ -185,7 +257,7 @@ def verify_exact_release(
     changed = [line for line in git("diff", "--name-only", f"{expected_sha}..{remote_main}").splitlines() if line]
     unsafe = [path for path in changed if not allowed_post_deploy_path(path)]
     require(not unsafe, "origin/main contains a post-deploy runtime-affecting path; redeploy before capture")
-    return remote_main
+    return remote_main, evidence_mode, producer
 
 
 def load_json(path: Path, label: str) -> Any:
@@ -254,6 +326,7 @@ def request_json(
     reviewer_token: str | None = None,
     timeout: float = 90.0,
 ) -> tuple[Any, dict[str, str]]:
+    base_url = validate_live_origin(base_url)
     url = base_url.rstrip("/") + path
     data = json.dumps(body, separators=(",", ":")).encode("utf-8") if body is not None else None
     headers = {"Accept": "application/json", "User-Agent": "Archon-MemoryAgent-Media-Gate/1.0"}
@@ -263,12 +336,14 @@ def request_json(
         headers["Authorization"] = f"Bearer {reviewer_token}"
     req = urlrequest.Request(url, data=data, headers=headers, method=method)
     try:
-        with urlrequest.urlopen(req, timeout=timeout) as response:
+        with NO_REDIRECT_OPENER.open(req, timeout=timeout) as response:
             raw = response.read()
             status = response.status
             response_headers = {key.lower(): value for key, value in response.headers.items()}
     except urlerror.HTTPError as exc:
         # The body can contain operational details.  Report only path + status.
+        if 300 <= exc.code < 400:
+            raise GateError(f"{method} {path} attempted a forbidden HTTP redirect") from exc
         raise GateError(f"{method} {path} returned HTTP {exc.code}") from exc
     except (urlerror.URLError, TimeoutError, OSError) as exc:
         raise GateError(f"{method} {path} was unreachable") from exc
@@ -977,6 +1052,7 @@ def browser_capture(
     observed_at: str,
     probes: dict[str, Any],
 ) -> dict[str, Any]:
+    base_url = validate_live_origin(base_url)
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
@@ -992,12 +1068,35 @@ def browser_capture(
             locale="en-US",
             color_scheme="dark",
             ignore_https_errors=False,
+            service_workers="block",
         )
         context.add_init_script("try{localStorage.setItem('archon_tour_done','1')}catch(e){}")
         page = context.new_page()
         page.set_default_timeout(90_000)
         page.on("console", lambda message: console_errors.append(message.type) if message.type == "error" else None)
-        page.goto(base_url, wait_until="networkidle")
+
+        def guard_live_request(route: Any) -> None:
+            request = route.request
+            if is_pinned_live_request(request.url, redirected=request.redirected_from is not None):
+                route.continue_()
+            else:
+                route.abort("blockedbyclient")
+
+        # A context route covers this page plus any popup/new page. Service workers
+        # are disabled because their network fetches can bypass normal routing, and
+        # the Explorer needs no WebSocket transport for this evidence capture.
+        context.route("**/*", guard_live_request)
+        context.route_web_socket(
+            "**/*",
+            lambda websocket: websocket.close(code=1008, reason="network destination not permitted"),
+        )
+        try:
+            navigation = page.goto(base_url, wait_until="networkidle")
+        except Exception as exc:
+            raise GateError("Explorer pinned-origin navigation failed or attempted a redirect") from exc
+        require(navigation is not None, "Explorer pinned-origin navigation returned no response")
+        require(navigation.request.redirected_from is None, "Explorer navigation attempted a redirect")
+        require(is_pinned_live_request(page.url), "Explorer navigation left the pinned live origin")
         page.locator("#model").filter(has_text=EXPECTED_EMBEDDER).wait_for()
         require(page.locator("#judgeToken").get_attribute("type") == "password", "reviewer field is not password-masked")
 
@@ -1586,6 +1685,10 @@ def write_review_manifest(
     *,
     expected_sha: str,
     remote_main: str,
+    exact_deploy_evidence_mode: str,
+    deployment_producer: dict[str, str | int],
+    deployment_output: ProjectFileSnapshot,
+    deployment_status: ProjectFileSnapshot,
     base_url: str,
     observed_at: str,
     probes: dict[str, Any],
@@ -1595,12 +1698,26 @@ def write_review_manifest(
     srt_source: str,
 ) -> None:
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "status": "passed",
         "capturedAt": observed_at,
         "liveBaseUrl": base_url,
         "exactRuntimeSource": expected_sha,
         "submissionPackHeadAtCapture": remote_main,
+        "deploymentEvidence": {
+            "mode": exact_deploy_evidence_mode,
+            "producer": deployment_producer,
+            "status": {
+                "path": deployment_status.relative_path,
+                "sha256": deployment_status.sha256,
+                "size": deployment_status.size,
+            },
+            "output": {
+                "path": deployment_output.relative_path,
+                "sha256": deployment_output.sha256,
+                "size": deployment_output.size,
+            },
+        },
         "models": {
             "embedder": probes["health"]["embedder"],
             "narrator": probes["health"]["narrator"],
@@ -1610,6 +1727,7 @@ def write_review_manifest(
         },
         "gates": {
             "exactDeploymentEvidence": True,
+            "exactDeploymentEvidenceMode": exact_deploy_evidence_mode,
             "publicHealthReady": True,
             "authenticatedDeepReadiness": True,
             "publicSeedIdempotent": True,
@@ -1659,44 +1777,54 @@ def self_test() -> int:
         shutil.rmtree(root)
     root.mkdir(parents=True)
     evidence_sha = "1" * 40
-    evidence_status = {
+    evidence_status_base = {
         "memorySha": evidence_sha,
         "status": "Success",
         "terminal": True,
         "exitCode": 0,
         "outputCaptured": True,
         "projectContained": True,
+        "invocationId": "invoke-media-pipeline-selftest",
+        "commandId": "command-media-pipeline-selftest",
     }
     marker_prefix = (
         f"EXACT_CHECKOUT_OK app=memoryagent sha={evidence_sha}\n"
         f"EXACT_APP_DEPLOY_OK app=memoryagent sha={evidence_sha}\n"
     )
+    def bound_status(output: str, **overrides: Any) -> dict[str, Any]:
+        raw = output.encode("utf-8")
+        return {
+            **evidence_status_base,
+            "outputSha256": hashlib.sha256(raw).hexdigest(),
+            "outputBytes": len(raw),
+            **overrides,
+        }
+
+    autopilot_sha = "a" * 40
+    strict_output = marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={evidence_sha} autopilot={autopilot_sha}\n"
     require(
         validate_exact_deploy_evidence(
             evidence_sha,
-            evidence_status,
-            marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={evidence_sha} synthetic_selftest=true\n",
+            bound_status(strict_output),
+            strict_output,
         ) == STRICT_FINAL_MARKER,
         "strict final-marker evidence self-test failed",
     )
     require(
-        validate_exact_deploy_evidence(evidence_sha, evidence_status, marker_prefix)
+        validate_exact_deploy_evidence(evidence_sha, bound_status(marker_prefix), marker_prefix)
         == TERMINAL_SUCCESS_TRUNCATED_OUTPUT,
         "terminal-success truncated-output evidence self-test failed",
     )
     rejected = False
     try:
-        validate_exact_deploy_evidence(
-            evidence_sha,
-            evidence_status,
-            marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={'2' * 40} synthetic_selftest=true\n",
-        )
+        conflicting_output = marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={'2' * 40} autopilot={autopilot_sha}\n"
+        validate_exact_deploy_evidence(evidence_sha, bound_status(conflicting_output), conflicting_output)
     except GateError:
         rejected = True
     require(rejected, "exact-deploy evidence self-test accepted a conflicting final marker")
     rejected = False
     try:
-        validate_exact_deploy_evidence(evidence_sha, {**evidence_status, "terminal": False}, marker_prefix)
+        validate_exact_deploy_evidence(evidence_sha, bound_status(marker_prefix, terminal=False), marker_prefix)
     except GateError:
         rejected = True
     require(rejected, "exact-deploy evidence self-test accepted a non-terminal truncation fallback")
@@ -1836,16 +1964,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         require(args.deployment_output is not None and args.deployment_status is not None, "both deployment evidence paths are required")
         require(args.alibaba_raw is not None, "--alibaba-raw is required")
         expected_sha = str(args.expected_sha).lower()
-        deployment_output = project_path(args.deployment_output, "deployment output", must_exist=True)
-        deployment_status = project_path(args.deployment_status, "deployment status", must_exist=True)
+        deployment_output = snapshot_project_file(args.deployment_output, "deployment output")
+        deployment_status = snapshot_project_file(args.deployment_status, "deployment status")
         raw_alibaba_source = project_path(args.alibaba_raw, "Alibaba raw capture", must_exist=True)
         redaction_profile = project_path(args.alibaba_redaction_profile, "Alibaba redaction profile", must_exist=True)
         caption_windows = project_path(args.caption_windows, "caption windows", must_exist=True) if args.caption_windows else None
         video_manifest = project_path(args.video_manifest, "video manifest", must_exist=True) if args.video_manifest else None
         web_narration = project_path(args.web_narration, "web narration", must_exist=True) if args.web_narration else None
 
-        parsed_base = urlparse.urlparse(args.base_url)
-        require(parsed_base.scheme == "https" and parsed_base.hostname is not None, "--base-url must be an HTTPS origin")
+        base_url = validate_live_origin(str(args.base_url))
         reviewer_token = reviewer_token_from_args(args)
 
         PRIVATE.mkdir(parents=True, exist_ok=True)
@@ -1864,51 +1991,55 @@ def main(argv: Sequence[str] | None = None) -> int:
         enforce_private_scratch_budget()
 
         print("[1/10] exact release + post-deploy source allowlist")
-        remote_main = verify_exact_release(expected_sha, deployment_output, deployment_status)
+        remote_main, exact_deploy_evidence_mode, deployment_producer = verify_exact_release(
+            expected_sha,
+            deployment_output,
+            deployment_status,
+        )
         observed_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
         print("[2/10] public health/readiness, authenticated deep readiness, seed and selected-company P&L")
-        probes = public_release_probes(args.base_url, reviewer_token)
+        probes = public_release_probes(base_url, reviewer_token)
 
         print("[3/10] original-synthetic qwen-vl-max dry-run canary + exact absence gate")
-        vision_canary = vision_document_canary(args.base_url, reviewer_token, expected_sha)
+        vision_canary = vision_document_canary(base_url, reviewer_token, expected_sha)
         probes["visionCanary"] = vision_canary
 
         print("[4/10] Session-A feedback, fresh Session-B application, one-row lifecycle + cleanup")
-        feedback_proof = feedback_persistence_and_lifecycle_proof(args.base_url, reviewer_token, probes)
+        feedback_proof = feedback_persistence_and_lifecycle_proof(base_url, reviewer_token, probes)
 
         print("[5/10] canonical Explorer recall, field audit, semantic audit and honest Defer-only capture")
         captured = contained_browser_capture(
-            args.base_url, args.repo_url, reviewer_token, expected_sha, observed_at, probes
+            base_url, args.repo_url, reviewer_token, expected_sha, observed_at, probes
         )
         enforce_private_scratch_budget()
 
         print("[6/10] feedback-persistence and one-deletion lifecycle proof cards")
         render_feedback_persistence_card(
             GALLERY / PRIMARY_OUTPUTS[1], feedback_proof,
-            base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
+            base_url=base_url, expected_sha=expected_sha, observed_at=observed_at,
         )
         preview = feedback_proof["lifecycle"]["preview"]
         confirmed = feedback_proof["lifecycle"]["confirmed"]
         render_lifecycle_card(
             GALLERY / PRIMARY_OUTPUTS[5], preview, confirmed, feedback_proof["lifecycle"],
-            base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
+            base_url=base_url, expected_sha=expected_sha, observed_at=observed_at,
         )
 
         print("[7/10] qwen-vl, architecture, health/readiness and SHA-bound Alibaba proof cards")
         render_architecture_assets(GALLERY / PRIMARY_OUTPUTS[6])
         render_vision_canary_card(
             GALLERY / SECONDARY_OUTPUTS[0], vision_canary,
-            base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
+            base_url=base_url, expected_sha=expected_sha, observed_at=observed_at,
         )
         render_health_card(
             GALLERY / SECONDARY_OUTPUTS[1], probes,
-            base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
+            base_url=base_url, expected_sha=expected_sha, observed_at=observed_at,
         )
         sanitized_alibaba = sanitize_alibaba_capture(private_alibaba, redaction_profile)
         render_alibaba_card(
             GALLERY / SECONDARY_OUTPUTS[2], sanitized_alibaba, probes,
-            base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
+            base_url=base_url, expected_sha=expected_sha, observed_at=observed_at,
         )
 
         print("[8/10] public GitHub + MIT API gate and repository capture")
@@ -1929,12 +2060,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
         print("[10/10] dimensions, metadata, private-original tracking and artifact hashes")
-        hashes = verify_outputs(expected_sha, args.base_url)
+        hashes = verify_outputs(expected_sha, base_url)
         enforce_private_scratch_budget()
         write_review_manifest(
             expected_sha=expected_sha,
             remote_main=remote_main,
-            base_url=args.base_url,
+            exact_deploy_evidence_mode=exact_deploy_evidence_mode,
+            deployment_producer=deployment_producer,
+            deployment_output=deployment_output,
+            deployment_status=deployment_status,
+            base_url=base_url,
             observed_at=observed_at,
             probes=probes,
             feedback_proof=feedback_proof,
