@@ -939,6 +939,11 @@ test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
     /const s = await api\('POST', '\/demo\/seed'\);\s*\$\('company'\)\.value = s\.company \|\| 'Northwind Trading';[\s\S]*?await refreshAll\(\);/,
     "one-click demo must scope the company before refreshing its P&L",
   );
+  assert.match(
+    res.body,
+    /const path = '\/pnl' \+ \(company \? '\?company=' \+ encodeURIComponent\(company\) : ''\);/,
+    "P&L requests must carry the selected company instead of aggregating the long-lived public tenant",
+  );
   // Clear empty-state instead of a blank panel.
   assert.match(res.body, /No memories yet/);
   // Supporting P&L + records views wired to their endpoints.

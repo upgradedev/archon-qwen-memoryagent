@@ -655,7 +655,9 @@
 
     async function loadPnl() {
       try {
-        const p = await api('GET', '/pnl');
+        const company = $('company').value.trim();
+        const path = '/pnl' + (company ? '?company=' + encodeURIComponent(company) : '');
+        const p = await api('GET', path);
         const box = $('pnl'); box.innerHTML = '';
         if (!p.events) { box.appendChild(el('div', { class: 'empty', text: 'Run the demo to compute a P&L.' })); return; }
 
