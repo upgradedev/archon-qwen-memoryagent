@@ -34,8 +34,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--manifest", default="demo/final-media/memoryagent-demo.manifest.json")
     parser.add_argument("--qa", default="demo/final-media/memoryagent-demo.qa.json")
     parser.add_argument("--scratch", default=".artifacts/final-video")
-    parser.add_argument("--overlay-start", type=float, default=13.0)
-    parser.add_argument("--overlay-end", type=float, default=32.0)
+    parser.add_argument("--overlay-start", type=float, default=51.0)
+    parser.add_argument("--overlay-end", type=float, default=73.0)
     parser.add_argument("--replace", action="store_true")
     return parser.parse_args(argv)
 

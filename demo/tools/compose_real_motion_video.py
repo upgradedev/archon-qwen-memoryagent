@@ -547,8 +547,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--scratch", default=".artifacts/final-video/compose")
     parser.add_argument("--expected-sha")
     parser.add_argument("--expected-url", default=DEFAULT_URL)
-    parser.add_argument("--overlay-start", type=float, default=13.0)
-    parser.add_argument("--overlay-end", type=float, default=32.0)
+    parser.add_argument("--overlay-start", type=float, default=51.0)
+    parser.add_argument("--overlay-end", type=float, default=73.0)
     parser.add_argument("--replace", action="store_true")
     return parser.parse_args(argv)
 

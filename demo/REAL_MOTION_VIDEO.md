@@ -1,9 +1,18 @@
 # Final real-motion submission video
 
-This is the publication candidate path. It keeps the existing ten claim-locked,
-caption-led beats, but replaces the 00:13–00:32 evidence panel with **genuine live
-browser interaction** against the final deployed MemoryAgent. Nothing is uploaded or
-published by these commands.
+This is the **only canonical publication-candidate pipeline**. It keeps the existing ten claim-locked,
+caption-led beats, but replaces the 00:51–01:13 cross-session-recall panel with
+**genuine live browser interaction** against the final deployed MemoryAgent. The
+00:13–00:32 exact-release, readiness, and Qwen vision proof remains visible and is
+never covered by unrelated interaction footage. Nothing is uploaded or published by
+these commands.
+
+[`tools/build_caption_video.py`](./tools/build_caption_video.py) is an intermediate
+base renderer only. The one-command real-motion builder invokes it inside a randomized,
+project-contained scratch directory before applying the SHA-bound live interaction.
+A directly exported static caption MP4 or its base manifest is never the publication
+candidate, even if its own encode checks pass. Supporting guides must return here for
+the production build and final acceptance.
 
 Production capture is intentionally blocked until the exact deployment and
 `demo/gallery/CAPTURE_REVIEW.json` both pass. The recorder never reads a reviewer
@@ -27,11 +36,10 @@ digital silence, SRT bounds, evidence hashes and independent post-build re-verif
 
 ## Final production run
 
-After the final exact deploy and canonical gallery capture, substitute the exact
-runtime SHA and matching deployment-attempt files:
+The exact deployed runtime and matching attempt-22 evidence are already locked:
 
 ```powershell
-$sha = '<FINAL_MEMORY_RUNTIME_SHA>'
+$sha = '104a002820607c754d857473877da28b69ebb44d'
 
 python demo/tools/record_live_motion.py `
   --expected-sha $sha `
@@ -39,8 +47,8 @@ python demo/tools/record_live_motion.py `
 
 python demo/tools/build_real_motion_submission.py `
   --expected-sha $sha `
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-<ATTEMPT>.txt `
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-<ATTEMPT>.json `
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-22.txt `
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-22.json `
   --replace
 
 python demo/tools/compose_real_motion_video.py --verify-only
@@ -64,3 +72,11 @@ Final judge-facing artifacts:
 The MP4 has one locally generated silent AAC compatibility stream—no voice, TTS,
 music or captured microphone/system audio. The final video, subtitles, manifest, QA
 and thumbnail hashes must pass `--verify-only` immediately before upload.
+
+Publication is blocked unless both
+`demo/final-media/memoryagent-demo.manifest.json` and
+`demo/final-media/memoryagent-demo.qa.json` report `status: passed`, the manifest
+identifies `caption-led-real-motion-compositor-v1` and binds the exact capture review
+plus live-interaction bytes, and the final `--verify-only` command exits successfully
+against those unchanged files. No static-base output, workflow candidate, or manually
+edited export can substitute for that manifest + QA + independent re-verification.

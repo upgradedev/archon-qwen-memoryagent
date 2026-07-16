@@ -47,7 +47,10 @@ After the release gate is green, the remaining actions are media and platform wo
 
 Use [`../demo/FINAL_MEDIA_CHECKLIST.md`](../demo/FINAL_MEDIA_CHECKLIST.md) as the single checklist; do not revive the earlier day-by-day sprint plan.
 The video-specific execution order is split into
+[`../demo/REAL_MOTION_VIDEO.md`](../demo/REAL_MOTION_VIDEO.md) as the only
+publication pipeline,
 [`../demo/VIDEO_SCRIPT.md`](../demo/VIDEO_SCRIPT.md),
-[`../demo/CAPTION_VIDEO_BUILD.md`](../demo/CAPTION_VIDEO_BUILD.md),
+[`../demo/CAPTION_VIDEO_BUILD.md`](../demo/CAPTION_VIDEO_BUILD.md) for its static
+intermediate base,
 [`../demo/VIDEO_RECORDING_CHECKLIST.md`](../demo/VIDEO_RECORDING_CHECKLIST.md), and
 [`../demo/BUILD_RECORDING.md`](../demo/BUILD_RECORDING.md).

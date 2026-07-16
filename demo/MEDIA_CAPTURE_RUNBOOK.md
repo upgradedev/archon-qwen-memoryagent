@@ -91,10 +91,10 @@ field, hidden marker, or `EXACT_DEPLOY_ERROR` token anywhere in a line is reject
 3. The dedicated, low-privilege reviewer token in the explicitly requested ignored
    `.artifacts/devpost/memory-reviewer-credential.json` `token` field, or in the
    process environment only. Never use both sources in one run.
-4. For the preferred caption-led final, emit the exact 172-second windows with the
-   command in [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md), writing
+4. For the canonical real-motion final, emit the exact 172-second windows with the
+   intermediate-base command in [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md), writing
    `.artifacts/final-caption-video/caption_windows.json`. For the optional narrated
-   source-footage workflow, instead retain its measured `caption_windows.json`,
+   noncanonical source-footage workflow, separately retain its measured `caption_windows.json`,
    `video_manifest.json`, and exact `narration_web.txt` together in an ignored
    repo-local working folder.
 
@@ -106,21 +106,21 @@ hash, dimensions, crop and masks in a separate review. Never bypass the hash che
 
 ## One final command
 
-Run from the repository root after the exact deployment finishes. Replace only the
-runtime SHA and attempt number with the values from that completed run:
+Run from the repository root with the exact runtime and attempt-22 evidence currently
+locked by `DEPLOY_STATE.md`:
 
 ```bash
 python scripts/capture_submission_gallery.py \
-  --expected-sha <FINAL_RUNTIME_SHA> \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-<ATTEMPT>.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-<ATTEMPT>.json \
+  --expected-sha 104a002820607c754d857473877da28b69ebb44d \
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-22.txt \
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-22.json \
   --reviewer-credential-json .artifacts/devpost/memory-reviewer-credential.json \
   --alibaba-raw demo/private-originals/alibaba-ecs-overview-raw.png \
   --caption-windows .artifacts/final-caption-video/caption_windows.json
 ```
 
-`<FINAL_RUNTIME_SHA>` and `<ATTEMPT>` are intentional measured-release placeholders;
-never run them unchanged. The script refuses a tracked or non-ignored credential JSON,
+Do not substitute another SHA or evidence pair unless a later exact deployment first
+refreshes `DEPLOY_STATE.md`. The script refuses a tracked or non-ignored credential JSON,
 reads only its `token` field in memory, and never copies or serializes it. If the
 ignored JSON is unavailable, use `DEMO_JUDGE_API_KEY` as the sole source; on
 PowerShell acquire it with `Read-Host -AsSecureString`, convert it only for the
@@ -144,10 +144,11 @@ That fallback is recorded as `canonical-unmeasured-draft` in the capture review.
 Regenerate with the measured files before publishing the video or uploading its
 captions.
 
-After this gate passes and a human approves every final, run the fail-closed
-caption-led assembler in [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md). It
-rechecks every hash in `CAPTURE_REVIEW.json`, release/source freshness, and exact SRT
-bytes before producing the canonical MP4; it never performs another live capture.
+After this gate passes and a human approves every final, follow the only canonical
+publication pipeline in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). Its
+one-command builder invokes the static caption renderer only as an ignored scratch
+base, adds SHA-bound genuine browser interaction, and produces the required final
+manifest + QA. Upload remains blocked until the independent `--verify-only` pass.
 
 ## Deterministic outputs
 
@@ -173,8 +174,8 @@ Additional outputs:
 
 - `demo/final-media/youtube-thumbnail.png` — 1280×720, original project visuals;
 - `demo/final-media/memoryagent-demo.en.srt` — English subtitles from measured
-  windows, with the separately measured browser beat when its manifest/narration
-  are supplied;
+  ten-beat windows, bound by capture review and reused unchanged by the real-motion
+  compositor;
 - `demo/gallery/CAPTURE_REVIEW.json` — exact runtime/source split, all four model
   ids, vision dry-run/absence, feedback persistence, one-row lifecycle/cleanup
   gates and SHA-256 for every reviewed deliverable;
