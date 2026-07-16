@@ -1,9 +1,11 @@
 # Final real-motion submission video
 
 This is the publication candidate path. It keeps the existing ten claim-locked,
-caption-led beats, but replaces the 00:13–00:32 evidence panel with **genuine live
-browser interaction** against the final deployed MemoryAgent. Nothing is uploaded or
-published by these commands.
+caption-led beats, but replaces the 00:51–01:13 cross-session-recall panel with
+**genuine live browser interaction** against the final deployed MemoryAgent. The
+00:13–00:32 exact-release, readiness, and Qwen vision proof remains visible and is
+never covered by unrelated interaction footage. Nothing is uploaded or published by
+these commands.
 
 Production capture is intentionally blocked until the exact deployment and
 `demo/gallery/CAPTURE_REVIEW.json` both pass. The recorder never reads a reviewer
@@ -27,11 +29,10 @@ digital silence, SRT bounds, evidence hashes and independent post-build re-verif
 
 ## Final production run
 
-After the final exact deploy and canonical gallery capture, substitute the exact
-runtime SHA and matching deployment-attempt files:
+The exact deployed runtime and matching attempt-22 evidence are already locked:
 
 ```powershell
-$sha = '<FINAL_MEMORY_RUNTIME_SHA>'
+$sha = '104a002820607c754d857473877da28b69ebb44d'
 
 python demo/tools/record_live_motion.py `
   --expected-sha $sha `
@@ -39,8 +40,8 @@ python demo/tools/record_live_motion.py `
 
 python demo/tools/build_real_motion_submission.py `
   --expected-sha $sha `
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-<ATTEMPT>.txt `
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-<ATTEMPT>.json `
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-22.txt `
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-22.json `
   --replace
 
 python demo/tools/compose_real_motion_video.py --verify-only

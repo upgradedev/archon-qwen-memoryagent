@@ -243,6 +243,17 @@ class CaptureTransportRetryTests(unittest.TestCase):
 
 
 class CaptionTimelineTests(unittest.TestCase):
+    def test_real_motion_defaults_cover_the_matching_recall_beat(self) -> None:
+        build_source = (ROOT / "demo" / "tools" / "build_real_motion_submission.py").read_text(encoding="utf-8")
+        compose_source = (ROOT / "demo" / "tools" / "compose_real_motion_video.py").read_text(encoding="utf-8")
+        runbook = (ROOT / "demo" / "REAL_MOTION_VIDEO.md").read_text(encoding="utf-8")
+        for source in (build_source, compose_source):
+            self.assertIn('\"--overlay-start\", type=float, default=51.0', source)
+            self.assertIn('\"--overlay-end\", type=float, default=73.0', source)
+            self.assertNotIn('\"--overlay-start\", type=float, default=13.0', source)
+        self.assertIn("00:51–01:13 cross-session-recall panel", runbook)
+        self.assertIn("00:13–00:32 exact-release, readiness, and Qwen vision proof remains visible", runbook)
+
     def test_canonical_ten_beats_are_frame_exact_and_under_limit(self) -> None:
         windows = builder.caption_windows()
         self.assertEqual(len(windows), 10)

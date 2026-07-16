@@ -11,11 +11,11 @@ video-specific; the screenshots, posts, and Devpost fields remain in
       hosted on YouTube, Vimeo, or Youku.
 - [ ] Confirm `origin/main` is the intended submission source and
       [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-      `<FINAL_RUNTIME_SHA>` (replaced with the real 40-character SHA) as exact-deployed and
-      live-verified. The current authoritative SHA is `104a002…`; a later
+      `104a002820607c754d857473877da28b69ebb44d` as exact-deployed and
+      live-verified. A later
       runtime-affecting commit is a hard stop until another exact deployment.
-- [ ] Confirm `<FINAL_RUNTIME_SHA>` is an ancestor of `origin/main`, then inspect
-      `git diff --name-only <FINAL_RUNTIME_SHA>..origin/main` after replacing the placeholder.
+- [ ] Confirm `104a002820607c754d857473877da28b69ebb44d` is an ancestor of `origin/main`, then inspect
+      `git diff --name-only 104a002820607c754d857473877da28b69ebb44d..origin/main`.
       Every later path must remain within the explicit submission-pack allowlist in
       `DEPLOY_STATE.md`; any new runtime-affecting delta requires another redeploy.
 - [ ] Exercise selected-company P&L in the live Explorer and confirm its request and
