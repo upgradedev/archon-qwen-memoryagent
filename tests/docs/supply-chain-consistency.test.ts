@@ -438,6 +438,10 @@ test("CHECK 4h — sealed-SBOM vulnerability gate has no suppression or substitu
     sealBlock.includes('/usr/local/lib/node_modules/'),
     "sealed SBOM validation omitted global package-manager module rejection",
   );
+  assert.ok(!sealBlock.includes("syft.artifacts.length >="), "sealed SBOM returned to an arbitrary count floor");
+  for (const runtimeArtifact of ["alpine-release", "busybox", "ca-certificates-bundle", "libssl3", "musl"]) {
+    assert.ok(sealBlock.includes(`"${runtimeArtifact}"`), `sealed SBOM omitted semantic runtime artifact ${runtimeArtifact}`);
+  }
   const preScanBlock = workflow.slice(retainBefore, report);
   assert.match(preScanBlock, /runtime-entrypoint\.txt/);
   assert.match(preScanBlock, /if-no-files-found: error/);

@@ -327,7 +327,6 @@ jobs:
           );
           const syft = read("memoryagent.syft.json");
           assert.ok(Array.isArray(syft.artifacts));
-          assert.ok(syft.artifacts.length >= 250, "Syft inventory is unexpectedly sparse");
           const forbiddenGlobalModules = syft.artifacts.flatMap((artifact) =>
             (artifact.locations ?? [])
               .map((location) => location?.path)
@@ -335,6 +334,16 @@ jobs:
               .map((path) => `${artifact.name}@${artifact.version}:${path}`),
           );
           assert.deepEqual(forbiddenGlobalModules, [], "production SBOM contains a global package-manager module");
+          const apkNames = new Set(
+            syft.artifacts.filter((artifact) => artifact?.type === "apk").map((artifact) => artifact.name),
+          );
+          for (const expected of ["alpine-release", "busybox", "ca-certificates-bundle", "libssl3", "musl"]) {
+            assert.ok(apkNames.has(expected), "Syft omitted runtime APK " + expected);
+          }
+          const nodeBinaries = syft.artifacts.filter(
+            (artifact) => artifact?.type === "binary" && artifact.name === "node" && artifact.version === "24.18.0",
+          );
+          assert.equal(nodeBinaries.length, 1, "Syft must inventory the exact Node 24.18.0 runtime binary once");
           const packageLock = JSON.parse(readFileSync("package-lock.json", "utf8"));
           assert.equal(packageLock.lockfileVersion, 3);
           const productionEntries = Object.entries(packageLock.packages).filter(
