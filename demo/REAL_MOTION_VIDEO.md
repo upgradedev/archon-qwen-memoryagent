@@ -40,7 +40,8 @@ python demo/tools/record_live_motion.py `
 python demo/tools/build_real_motion_submission.py `
   --expected-sha $sha `
   --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-<ATTEMPT>.txt `
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-<ATTEMPT>.json
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-<ATTEMPT>.json `
+  --replace
 
 python demo/tools/compose_real_motion_video.py --verify-only
 ```

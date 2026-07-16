@@ -20,19 +20,21 @@ unrelated provider-compatible proxy.
 | **pgvector on PostgreSQL** (memory store) — *live* | [`src/db/schema.sql`](../src/db/schema.sql) · [`src/db/client.ts`](../src/db/client.ts) | pgvector schema (`vector(1024)` + HNSW cosine index), running in the self-hosted pgvector container on the ECS box. |
 | **Function Compute + ApsaraDB RDS / AnalyticDB for PostgreSQL** (serverless topology) — *alternative, not deployed* | [`deploy/s.yaml`](../deploy/s.yaml) · [`deploy/deploy-fc.sh`](../deploy/deploy-fc.sh) | A provided serverless portability path: build/push the container to Alibaba Container Registry, deploy as an FC HTTP function backed by a managed ApsaraDB RDS memory store. Because the store is pg-wire, it is a drop-in `DATABASE_URL` swap for the ECS pgvector container. Provided for portability; **not the deployed path for this submission.** |
 
-## Runtime provenance — current-source redeploy pending
+## Runtime provenance — exact current source deployed
 
-The previous live MemoryAgent runtime source was exact commit
-[`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd).
-Exact deploy attempt 8 passed checkout/build, schema/grants, DML-only runtime
-identity, cross-application denial, health/readiness, real-embedding grounded recall
-with cleanup, and public UI/health/ready TLS verification. The subsequent public v4
-seed reconciled one EUR P&L bucket with zero unknown-currency records and was
-idempotent on the second call. Current `main` candidate
-[`aee7897d4d436501fc9b0dc1ed28e3757131f559`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/aee7897d4d436501fc9b0dc1ed28e3757131f559)
-contains a runtime UI fix and is **not yet claimed as deployed or verified**. The
-secret-safe operational record is [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md);
-recording and submission stay blocked until it records the new exact deployment.
+Exact MemoryAgent runtime source
+[`104a002820607c754d857473877da28b69ebb44d`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/104a002820607c754d857473877da28b69ebb44d)
+passed project-contained exact-deploy attempt 22 on 2026-07-16. The controller
+verified immutable checkout, pinned image build, schema/grants, DML-only runtime
+identity, cross-application denial, real-Qwen health/readiness, a grounded recall
+round trip, zero-residue cleanup and public HTTPS. Its retained provider output ends
+at the SHA-bound `EXACT_APP_DEPLOY_OK` marker while the Alibaba Cloud Assistant
+status is terminal `Success` with exit code `0`; the reviewed evidence mode is
+therefore `terminal-success-truncated-output`, not a reconstructed aggregate marker.
+The secret-safe authoritative record is
+[`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). Final gallery/video capture
+must bind to this SHA and retained status/output pair; a healthy endpoint alone is
+not source attestation.
 
 Use the release gate in [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md): `/ready` must report database/Qwen/auth ready, `/health` must report the real Qwen model ids, and the public plus protected reviewer-credential paths must pass. Protected writes and semantic audit require the dedicated judging credential; do not record or publish it. The optional `Generate Authenticated Demo Video` workflow consumes that value only from the private `MEMORYAGENT_JUDGE_API_KEY` Actions secret and never renders it; its artifact still requires the same final human review.
 

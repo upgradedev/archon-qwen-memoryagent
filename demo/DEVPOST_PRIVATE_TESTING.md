@@ -10,9 +10,12 @@ Paste this block into the testing-instructions field in every case:
 
 > **Archon MemoryAgent judge path (no login required)**<br>
 > Open https://memory.43.106.13.19.sslip.io and click **Run demo**. The fixed,
-> idempotent seed accepts no caller-controlled content. Then click **What did it
-> really cost to employ the team?** to see bounded cross-session recall with numbered
-> citations. Click **Run self-audit** to see `INV-5521.amount` stored as `8400` and
+> idempotent seed accepts no caller-controlled content. Then click **Using only the
+> retrieved memory, state the true employer cost for Northwind Trading in 2026-05
+> and include citation marker [1] in the sentence.** This sends a bounded
+> `company=Northwind Trading`, `limit=3` recall and requires a grounded Qwen answer
+> with resolved numbered citations. Click **Run self-audit** to see
+> `INV-5521.amount` stored as `8400` and
 > `8900`; the read-only audit keeps both memories visible and recommends `8900`
 > under its declared recency policy. It does not mutate either memory.
 >

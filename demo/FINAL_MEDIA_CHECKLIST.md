@@ -27,8 +27,8 @@ August 11, 2026 at 2:00 PM PDT.
 - [ ] Browser console is clean and the final repository changes are pushed to `main`.
 - [ ] [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
       `<FINAL_RUNTIME_SHA>` (replaced with the real 40-character SHA) as exact-deployed and
-      live-verified. **At authoring time this is pending; do not check the box from
-      `/health` or `/ready` alone.**
+      live-verified. The current authoritative SHA is `104a002…`; do not check the
+      box from `/health` or `/ready` alone, and redeploy after any later runtime delta.
 - [ ] `git merge-base --is-ancestor <FINAL_RUNTIME_SHA> origin/main` passes after
       placeholder replacement, then `git diff --name-only <FINAL_RUNTIME_SHA>..origin/main`
       contains only the post-candidate submission-pack allowlist recorded in
@@ -60,7 +60,7 @@ metadata but does not authorize publication.
 | 0:00–0:13 | Title, live URL, Track 1 | Conflict stakes and one-line product answer. |
 | 0:13–0:32 | Sanitized exact-runtime-SHA release card, `/health`, `/ready`, qwen-vl canary | Commit provenance stays separate from readiness; original synthetic two-PNG dry-run reports `qwen-vl-max`, one fused event, zero writes and zero residue. |
 | 0:32–0:51 | `demo/final-media/judge-architecture.jpg` | Trust boundary, Qwen, pgvector, bounded-listwise reranked hybrid recall, read-only audit/human resolution, and portable REST/MCP/pg-wire seams. |
-| 0:51–1:13 | Session A write/disconnect, fresh Session B cited recall | `€15,800` true cost versus `€10,000` bank outflow; dense score is exposed only for this human-readable proof while product default remains hybrid. |
+| 0:51–1:13 | Session A write/disconnect, fresh Session B cited recall | `€14,600` true employer cost versus `€10,800` bank outflow; dense score is exposed only for this human-readable proof while product default remains hybrid. |
 | 1:13–1:35 | Original synthetic `INV-5521`, field self-audit, human-control frame | `€8,400` versus `€8,900`, recency recommendation, no silent mutation; live Defer only with zero API/write and Accept/Override unexercised. |
 | 1:35–1:53 | Feedback-persistence proof | Session-A stored correction and separately authenticated fresh Session-B cited application; persisted state, not weight learning. |
 | 1:53–2:10 | Cropped authenticated semantic result plus four-tool MCP card | “Pays on time” versus “chronically late”; hide the credential/request header and distinguish authenticated HTTP from trusted-local stdio. |
@@ -161,6 +161,10 @@ operator sheet and stop on Devpost's final step without clicking **Submit projec
       plus live ECS redeploy path
       <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh>.
 - [ ] Architecture: upload the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg).
+- [ ] Organizer deck: if a separate Qwen submission flow requests PPT/PDF, attach
+      [`deck/archon-memoryagent-judge-deck.pptx`](./deck/archon-memoryagent-judge-deck.pptx)
+      and [`deck/archon-memoryagent-judge-deck.pdf`](./deck/archon-memoryagent-judge-deck.pdf)
+      only after final exact-release screenshots and layout/hash review.
 - [ ] Public video: paste the URL recorded above.
 - [ ] Blog/social: paste the public URL recorded above.
 - [ ] Testing instructions: paste the safe public block from
@@ -173,10 +177,13 @@ operator sheet and stop on Devpost's final step without clicking **Submit projec
       an operator check before July 28 and during the July 28–August 11 judging window.
 - [ ] Explain uniqueness if both entries are submitted: MemoryAgent is persistent recall/self-audit; Autopilot is a bounded AP decision/action workflow. They are separate, substantially different entries.
 - [ ] Preview every link while logged out.
-- [ ] Submit before the deadline and save the confirmation email/page as the receipt.
+- [ ] Complete and save the draft before the deadline, then stop on the final review
+      step. Click **Submit project** and save a receipt only after the entrant gives
+      separate explicit authorization.
 
 **Devpost submission URL:** `____________________________________________`
-**Submission confirmation saved:** `[ ]`
+**Draft review proof saved:** `[ ]`
+**Submission receipt after separate authorization:** `[ ]`
 
 ## 5. Entrant and rights sign-off
 

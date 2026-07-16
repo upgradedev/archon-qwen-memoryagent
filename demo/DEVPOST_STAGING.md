@@ -6,9 +6,10 @@ Devpost without clicking **Submit project**. The official
 controlling; field labels can change. Do not enter a secret, Qwen Cloud account id, legal name,
 country, or other personal data into this public repository.
 
-**Current hard stop:** do not populate a judge-facing “working current build” claim
-or capture final media until [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md)
-records `aee7897…` as exact-deployed/live-verified. It is currently pending.
+**Release status:** [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
+`104a002…` as exact-deployed/live-verified. Do not upload final media until its
+`CAPTURE_REVIEW.json` also passes for that exact SHA and retained controller
+status/output; endpoint health alone is not source attestation.
 
 ## Step 1 — team
 
@@ -44,6 +45,7 @@ values must remain readable on a small project card.
 | License | **MIT**; confirm GitHub shows it on the repository landing page. |
 | Track/category | **Track 1 — MemoryAgent** |
 | Architecture diagram | Upload [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg). |
+| Organizer deck (strict-union artifact) | If the organizer's separate Qwen flow requests a PPT/PDF, use [`deck/archon-memoryagent-judge-deck.pptx`](./deck/archon-memoryagent-judge-deck.pptx) and [`deck/archon-memoryagent-judge-deck.pdf`](./deck/archon-memoryagent-judge-deck.pdf) only after final exact-release screenshots, layout review and hash verification. Do not upload a placeholder build. |
 | Alibaba/Qwen code proof | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts> |
 | Additional live-deploy code | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh> |
 | Optional blog/social URL | `[PUBLIC_BLOG_OR_SOCIAL_URL]` — must be published and publicly reachable to qualify for the bonus. |
@@ -121,7 +123,7 @@ not guess or retain them.
 | Age-of-majority attestation | `[HUMAN LEGAL ATTESTATION REQUIRED]` |
 | Eligible-jurisdiction attestation | `[HUMAN LEGAL ATTESTATION REQUIRED]` |
 | Sponsor/affiliate/government-employment attestation | `[HUMAN LEGAL ATTESTATION REQUIRED]` |
-| Testing Instructions | Paste the public block from [`DEVPOST_PRIVATE_TESTING.md`](./DEVPOST_PRIVATE_TESTING.md), then add the active credential only in this judges-visible field after exact-deploy canaries pass. |
+| Testing Instructions | Paste Block A from [`DEVPOST_PRIVATE_TESTING.md`](./DEVPOST_PRIVATE_TESTING.md). Add the active credential only if the actual field is confirmed non-public and judges-only after exact-deploy canaries pass; otherwise keep Block A and request an organizer-approved secure channel. |
 
 - Confirm every entered answer is English.
 - Do not infer privacy from a field name. Save the draft, then inspect its public
@@ -136,6 +138,7 @@ the final page is open, but **Submit project has not been clicked**.
 - [ ] Overview complete; 3:2 thumbnail crop inspected.
 - [ ] Story, technology tags, live URL, repository, license and Track 1 complete.
 - [ ] Architecture uploaded.
+- [ ] Final PPTX/PDF deck reviewed and supplied if the organizer's separate Qwen flow requests it.
 - [ ] Public video URL added and tested logged out.
 - [ ] Sanitized gallery uploaded in manifest order.
 - [ ] Alibaba/Qwen code-proof link added.
