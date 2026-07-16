@@ -1,8 +1,10 @@
 # YouTube publication packet — Archon MemoryAgent
 
 Use this packet only after the exact-release, media, duration, rights and signed-out
-gates are green. It prepares the public upload; it does not authorize or perform
-publication.
+gates are green and the canonical
+[`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md) manifest + QA + final
+`--verify-only` pass are unchanged. It prepares the public upload; it does not
+authorize or perform publication.
 
 ## Upload fields
 
@@ -60,7 +62,7 @@ publication.
 ## Chapters
 
 These timestamps are the exact transitions of the canonical 5,160-frame caption-led
-final. Verify them against the final muxed MP4 and again after platform processing;
+real-motion final. Verify them against the final muxed MP4 and again after platform processing;
 do not reuse them for a different edit. YouTube chapter times must be strictly
 increasing and each chapter must last at least ten seconds.
 
@@ -77,8 +79,9 @@ increasing and each chapter must last at least ten seconds.
 02:42 Alibaba ECS, public MIT source and close
 ```
 
-The builder manifest must still report those transitions, 172.000 measured seconds
-and 5,160 frames. Recheck the chapters after YouTube finishes processing.
+The real-motion manifest and QA must still report those transitions, 172.000 measured
+seconds and 5,160 frames, and `--verify-only` must pass immediately before upload.
+Recheck the chapters after YouTube finishes processing.
 
 ## Thumbnail and captions
 
@@ -88,7 +91,7 @@ and 5,160 frames. Recheck the chapters after YouTube finishes processing.
 - Set the video language to **English**.
 - Upload [`final-media/memoryagent-demo.en.srt`](./final-media/memoryagent-demo.en.srt)
   as English subtitles. It must be byte-identical to the SHA-bound ten-entry file
-  mirrored by the burned captions and final build manifest.
+  mirrored by the burned captions and final real-motion manifest.
 - Do not publish an SRT whose capture review says
   `canonical-unmeasured-draft`.
 - Do not enable a synthetic voice or make a voice-rights claim here. Voice and all

@@ -10,7 +10,8 @@
 <!-- USER: replace with YouTube URL before submit — make the Demo Video badge a link to the uploaded video -->
 
 **Final recording pack:** [`VIDEO_SCRIPT.md`](demo/VIDEO_SCRIPT.md) ·
-[`CAPTION_VIDEO_BUILD.md`](demo/CAPTION_VIDEO_BUILD.md) ·
+[`REAL_MOTION_VIDEO.md`](demo/REAL_MOTION_VIDEO.md) ·
+[`CAPTION_VIDEO_BUILD.md`](demo/CAPTION_VIDEO_BUILD.md) (static base only) ·
 [`VIDEO_RECORDING_CHECKLIST.md`](demo/VIDEO_RECORDING_CHECKLIST.md) ·
 [`BUILD_RECORDING.md`](demo/BUILD_RECORDING.md) ·
 [`FINAL_MEDIA_CHECKLIST.md`](demo/FINAL_MEDIA_CHECKLIST.md). Security and private

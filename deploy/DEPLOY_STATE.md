@@ -2,6 +2,8 @@
 
 Updated: **2026-07-16**. This is the authoritative hardened live-release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
 
+<!-- MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha=104a002820607c754d857473877da28b69ebb44d -->
+
 > **Status: EXACT DEPLOYED — runtime release gate is GREEN; final media capture is pending.**
 > <https://memory.43.106.13.19.sslip.io>
 >
@@ -44,7 +46,11 @@ Updated: **2026-07-16**. This is the authoritative hardened live-release contrac
 > above. After `104a002…`,
 > permitted submission-pack paths are `README.md`, `SECURITY.md`, `deploy/DEPLOY_STATE.md`,
 > `demo/**`, `docs/**`, `.github/workflows/demo-video.yml`,
-> `scripts/capture_live.sh`, and `scripts/captions.txt`. Before capture, verify that
+> `scripts/capture_live.sh`, `scripts/captions.txt`, and
+> `scripts/capture_submission_gallery.py`. The gallery script is explicitly
+> **review-only, non-runtime capture tooling**: it runs from the operator checkout,
+> is not copied into the final runtime image or executed by the deployed service, and
+> does not change the exact runtime-source claim. Before capture, verify that
 > `104a002…` is an ancestor of `origin/main` and inspect every later changed path.
 > Any new path outside that allowlist—or any application, dependency, schema,
 > container, runtime/deployment-workflow or deploy-script delta—requires review and,
