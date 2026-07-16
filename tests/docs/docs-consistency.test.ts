@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../src/server.js";
+import { DEMO_PRIMARY_RECALL_QUESTION, DEMO_TEMPLATES } from "../../src/demo-data.js";
 import { MEMORY_KINDS, SKILLS } from "../../src/skills/schemas.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -23,6 +24,14 @@ const ROOT = join(HERE, "..", "..");
 const readText = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 
 const README = readText("README.md");
+
+function pythonConcatenatedString(source: string, name: string): string {
+  const assignment = source.match(new RegExp(`^${name}\\s*=\\s*\\(([\\s\\S]*?)^\\)`, "m"));
+  assert.ok(assignment?.[1], `${name} must be a parenthesized Python string assignment`);
+  const literals = assignment[1].match(/"(?:\\.|[^"\\])*"/g) ?? [];
+  assert.ok(literals.length > 0, `${name} must contain at least one Python string literal`);
+  return literals.map((literal) => JSON.parse(literal) as string).join("");
+}
 
 // Tokens that MATCH the model-id regex but are NOT models (package/repo slugs or
 // protocol/header names). Excluded from both the code set and the README set.
@@ -163,6 +172,59 @@ test("CHECK 1d — release-evidence docs match the executable strict/fallback co
   assert.match(captureScript, /service_workers="block"/);
   assert.match(captureScript, /route_web_socket/);
   assert.match(videoBuilder, /"exactDeployEvidenceMode"/);
+});
+
+test("CHECK 1e — canonical live-recall evidence stays bounded and wording-identical", () => {
+  const captureScript = readText("scripts/capture_submission_gallery.py");
+  const browserCapture = readText("scripts/capture_web.py");
+  const judgeGuide = readText("docs/JUDGE-GUIDE.md");
+
+  assert.equal(
+    DEMO_TEMPLATES[0]?.q,
+    DEMO_PRIMARY_RECALL_QUESTION,
+    "the first Explorer chip must be the canonical recall question",
+  );
+  assert.equal(
+    pythonConcatenatedString(captureScript, "CANONICAL_RECALL_QUESTION"),
+    DEMO_PRIMARY_RECALL_QUESTION,
+    "submission capture question drifted from the first Explorer chip",
+  );
+  assert.equal(
+    pythonConcatenatedString(browserCapture, "CANONICAL_RECALL_QUESTION"),
+    DEMO_PRIMARY_RECALL_QUESTION,
+    "browser capture question drifted from the first Explorer chip",
+  );
+  assert.ok(
+    judgeGuide.replace(/\s+/g, " ").includes(DEMO_PRIMARY_RECALL_QUESTION),
+    "judge guide must show the canonical question verbatim",
+  );
+  const curlQuestion = [...judgeGuide.matchAll(/^QUESTION\+?='([^']*)'$/gm)].map((match) => match[1]).join("");
+  assert.equal(curlQuestion, DEMO_PRIMARY_RECALL_QUESTION, "judge guide curl question drifted from the Explorer chip");
+  assert.match(judgeGuide, /printf '[^']+"question"[^']+' "\$QUESTION"/);
+  assert.match(judgeGuide, /"limit"\s*:\s*3/, "judge guide curl must reproduce the Explorer's bounded limit");
+  assert.match(captureScript, /page\.locator\("#question"\)\.fill\(CANONICAL_RECALL_QUESTION\)/);
+  assert.match(captureScript, /recall_request_body\.get\("limit"\) == 3/);
+  assert.match(captureScript, /VALID_GROUNDING_RESULTS = frozenset\(\{\("passed", 1\), \("repaired", 2\)\}\)/);
+  assert.match(captureScript, /type\(grounding\.get\("attempts"\)\) is int/);
+  assert.match(captureScript, /grounding_result in VALID_GROUNDING_RESULTS/);
+
+  const stalePhrase = "What did it really cost to employ the team?";
+  const staleFiles: string[] = [];
+  const walk = (directory: string, relativeDirectory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = join(directory, entry.name);
+      const relative = `${relativeDirectory}/${entry.name}`;
+      if (entry.isDirectory()) walk(absolute, relative);
+      else if (
+        /\.(?:md|py|sh|ts|txt|json|ya?ml)$/i.test(entry.name)
+        && readFileSync(absolute, "utf8").includes(stalePhrase)
+      ) {
+        staleFiles.push(relative);
+      }
+    }
+  };
+  for (const directory of ["docs", "scripts"]) walk(join(ROOT, directory), directory);
+  assert.deepEqual(staleFiles, [], `old canonical recall wording remains in: ${staleFiles.join(", ")}`);
 });
 
 // ─── CHECK 2 — Mermaid diagram ↔ src/ modules (architecture conformance) ──────

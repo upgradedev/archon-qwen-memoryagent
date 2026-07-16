@@ -58,7 +58,7 @@ for (const t of DEMO_TEMPLATES) {
     const res = await app.inject({
       method: "POST",
       url: "/recall",
-      payload: { question: t.q, company: t.c },
+      payload: { question: t.q, company: t.c, limit: 3 },
     });
     assert.equal(res.statusCode, 200, `recall failed for "${t.q}"`);
     const body = res.json();

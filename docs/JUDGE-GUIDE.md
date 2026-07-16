@@ -2,7 +2,7 @@
 
 **Live:** <https://memory.43.106.13.19.sslip.io>
 
-**Operator gate:** current source candidate `aee7897…` is not judge-ready until
+**Operator gate:** the source candidate is not judge-ready until
 [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records a successful exact
 deployment and live verification. A healthy older endpoint is not source attestation.
 
@@ -20,7 +20,12 @@ certification.
 
 1. Open the [Memory Explorer](https://memory.43.106.13.19.sslip.io).
 2. Click **Run demo**. The server idempotently seeds only its fixed payroll evidence plus planted field-level and meaning-level contradictions. It accepts no caller-controlled content. The seed is public but quota-bounded.
-3. Click **What did it really cost to employ the team?** The agent retrieves a bounded slice of the public tenant's memories and returns a grounded answer with numbered citations. Recall is also protected by per-IP plus global daily quotas.
+3. Click **Using only the retrieved memory, state the true employer cost for
+   Northwind Trading in 2026-05 and include citation marker [1] in the
+   sentence.** The Explorer requests a bounded top-three slice (up to three
+   memories) from the public tenant and returns a grounding-validated answer
+   with a resolvable `[1]` citation. Recall is also protected by per-IP plus
+   global daily quotas.
 4. Click **Run self-audit**. The deterministic, read-only audit should show `INV-5521 · amount` recorded as `8400` and `8900`, then recommend `8900` under the recency rule. It reports the disagreement; it does not overwrite either memory.
 
 That screen demonstrates the Track 1 core: persistent, queryable memory across writes, bounded recall for limited context windows, and an explicit consistency mechanism.
@@ -29,12 +34,14 @@ That screen demonstrates the Track 1 core: persistent, queryable memory across w
 
 ```bash
 BASE=https://memory.43.106.13.19.sslip.io
+QUESTION='Using only the retrieved memory, state the true employer cost for Northwind Trading '
+QUESTION+='in 2026-05 and include citation marker [1] in the sentence.'
 
 curl -fsS "$BASE/ready"
 curl -fsS -X POST "$BASE/demo/seed"
 curl -fsS -X POST "$BASE/recall" \
   -H 'content-type: application/json' \
-  -d '{"question":"What did it really cost to employ the team?","company":"Northwind Trading"}'
+  --data "$(printf '{"question":"%s","company":"Northwind Trading","limit":3}' "$QUESTION")"
 curl -fsS -X POST "$BASE/consistency" \
   -H 'content-type: application/json' \
   -d '{"company":"Northwind Trading"}'

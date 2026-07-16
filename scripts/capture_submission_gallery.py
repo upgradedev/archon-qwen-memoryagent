@@ -70,6 +70,13 @@ PRIMARY_OUTPUTS = (
     "06-safe-memory-lifecycle.png",
     "07-qwen-memoryagent-architecture.png",
 )
+
+CANONICAL_RECALL_QUESTION = (
+    "Using only the retrieved memory, state the true employer cost for Northwind Trading in 2026-05 "
+    "and include citation marker [1] in the sentence."
+)
+VALID_GROUNDING_RESULTS = frozenset({("passed", 1), ("repaired", 2)})
+
 SECONDARY_OUTPUTS = (
     "08-qwen-vl-document-canary.png",
     "09-live-health-readiness.png",
@@ -1102,15 +1109,49 @@ def browser_capture(
 
         # 01 · fresh-session grounded recall.
         page.locator("#company").fill("Northwind Trading")
-        page.locator("#question").fill("What did it really cost to employ the team?")
+        page.locator("#question").fill(CANONICAL_RECALL_QUESTION)
         with page.expect_response(lambda response: response.url.endswith("/recall") and response.request.method == "POST") as pending:
             page.locator("#askBtn").click()
         recall_response = pending.value
         require(recall_response.status == 200, "Explorer recall returned a non-200 response")
+        recall_request_body = recall_response.request.post_data_json
+        require(isinstance(recall_request_body, dict), "Explorer recall request body is not JSON")
+        require(
+            recall_request_body.get("question") == CANONICAL_RECALL_QUESTION,
+            "Explorer recall question drifted from the canonical evidence wording",
+        )
+        require(
+            recall_request_body.get("company") == "Northwind Trading",
+            "Explorer recall lost its canonical company scope",
+        )
+        require(
+            recall_request_body.get("limit") == 3,
+            "Explorer recall did not send the bounded limit=3 contract",
+        )
         recall = recall_response.json()
         require(recall.get("modelId") == EXPECTED_NARRATOR, "Explorer recall did not use qwen-plus")
         require(isinstance(recall.get("answer"), str) and recall["answer"].strip(), "Explorer recall returned no answer")
         require(isinstance(recall.get("citations"), list) and len(recall["citations"]) >= 1, "Explorer recall returned no citations")
+        require("[1]" in recall["answer"], "Explorer recall answer omitted the requested [1] citation marker")
+        require(
+            any(
+                isinstance(citation, dict)
+                and citation.get("marker") == "[1]"
+                and str(citation.get("content", "")).strip()
+                for citation in recall["citations"]
+            ),
+            "Explorer recall answer did not resolve [1] to a non-empty cited memory",
+        )
+        grounding = recall.get("grounding")
+        grounding_result = (
+            grounding.get("status"), grounding.get("attempts")
+        ) if isinstance(grounding, dict) else (None, None)
+        require(
+            isinstance(grounding, dict)
+            and type(grounding.get("attempts")) is int
+            and grounding_result in VALID_GROUNDING_RESULTS,
+            "Explorer recall did not pass strict grounding within the bounded two-attempt contract",
+        )
         page.locator("#result .cite").first.wait_for()
         raw_recall = PRIVATE / "01-grounded-cross-session-recall-raw.png"
         page.locator("#result").screenshot(path=str(raw_recall), animations="disabled")
@@ -1120,7 +1161,7 @@ def browser_capture(
             eyebrow="Fresh session · bounded recall",
             title="Qwen answers from durable memory — with citations",
             subtitle="On original synthetic demo data, a new browser session asks by meaning; pgvector supplies bounded evidence and qwen-plus grounds the answer in numbered sources.",
-            badges=("qwen-plus", f"{len(recall['citations'])} citations", "pgvector"),
+            badges=("qwen-plus", f"{len(recall['citations'])} citations", f"grounding {grounding['status']}"),
             base_url=base_url,
             expected_sha=expected_sha,
             observed_at=observed_at,
