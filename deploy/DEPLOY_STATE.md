@@ -2,6 +2,8 @@
 
 Updated: **2026-07-16**. This is the authoritative hardened live-release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
 
+<!-- MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha=104a002820607c754d857473877da28b69ebb44d -->
+
 > **Status: EXACT DEPLOYED — runtime release gate is GREEN; final media capture is pending.**
 > <https://memory.43.106.13.19.sslip.io>
 >
