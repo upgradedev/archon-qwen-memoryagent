@@ -1,5 +1,8 @@
 # Final judge-facing media
 
+The canonical real-motion production and QA commands are in
+[`../REAL_MOTION_VIDEO.md`](../REAL_MOTION_VIDEO.md). They never publish or upload.
+
 - `judge-architecture.jpg` — 1600×900 browser-rendered raster for Devpost and the slide deck.
 - Source: [`../../docs/judge-architecture.svg`](../../docs/judge-architecture.svg), retained as an editable, accessible 16:9 vector.
 - Publication sanitization is lossless and reproducible: run

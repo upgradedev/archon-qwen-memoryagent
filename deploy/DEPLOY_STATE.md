@@ -2,15 +2,26 @@
 
 Updated: **2026-07-16**. This is the authoritative hardened live-release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
 
-> **Status: REDEPLOY REQUIRED — recording and submission release gates are RED.**
+> **Status: EXACT DEPLOYED — runtime release gate is GREEN; final media capture is pending.**
 > <https://memory.43.106.13.19.sslip.io>
 >
-> Required runtime candidate:
-> [`aee7897d4d436501fc9b0dc1ed28e3757131f559`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/aee7897d4d436501fc9b0dc1ed28e3757131f559)
-> (`main`, merging application fix `64d2cd2`). **It is not yet claimed as deployed
-> or live-verified.** The fix makes the Explorer's P&L request include the selected
-> company; the previously verified image can therefore no longer represent current
-> source for recording or submission.
+> Exact deployed runtime source:
+> [`104a002820607c754d857473877da28b69ebb44d`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/104a002820607c754d857473877da28b69ebb44d)
+> (`main`, merging PR #69). Project-contained exact-deploy attempt 22 finished with
+> Alibaba Cloud Assistant terminal status `Success`, exit code `0`, and the
+> SHA-bound application marker
+> `EXACT_APP_DEPLOY_OK app=memoryagent sha=104a002820607c754d857473877da28b69ebb44d`.
+> The bounded provider output ended after that terminal application marker, so the
+> retained status/output pair is validated under the reviewed
+> `terminal-success-truncated-output` evidence mode; it is not reconstructed or
+> hand-edited evidence.
+>
+> The controller verified immutable GitHub checkout, pinned image build,
+> schema/grants, the non-superuser runtime role, cross-application database denial,
+> real-Qwen health/readiness, an ingest → grounded recall round trip, zero-residue
+> cleanup, and public HTTPS. The shipped Explorer now sends the canonical
+> evidence-scoped question with `company=Northwind Trading` and `limit=3`; final
+> gallery/video capture must bind to this exact SHA and deployment evidence.
 >
 > Previous live runtime-source commit
 > [`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd)
@@ -18,24 +29,23 @@ Updated: **2026-07-16**. This is the authoritative hardened live-release contrac
 > runtime identity, cross-application database denial, `/health`, `/ready`, a
 > real-embedding ingest → grounded recall → cleanup smoke, public TLS checks, and v4
 > seed reconciliation. That evidence is retained as **historical topology and release
-> evidence only**; it does not attest `aee7897…` or current `main`.
+> evidence only**; it does not attest `104a002…` or current `main`.
 >
 > Repository `main` may advance beyond that runtime-source SHA through reviewed
 > non-runtime evidence, CI/test-harness, documentation, sanitized submission-media,
 > or recording-tooling commits. Public commit
 > [`a2c6bccaf4bc1bdd30f6e2ea8f224467a5168083`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/a2c6bccaf4bc1bdd30f6e2ea8f224467a5168083)
-> is the reviewed non-runtime descendant anchor: its delta from `e4b208a…` changes
+> was a reviewed non-runtime descendant anchor: its delta from `e4b208a…` changed
 > CI/test enumeration, tests, published load evidence, documentation/media and
 > recording tooling; `package.json` changes only the test-script dispatcher. It has
 > no `src/**`, dependency-lock, Docker/compose, database-schema, deploy-script or
-> deployment-workflow delta. This does **not** make `a2c6bcc…` the deployed source;
-> the previous verified live runtime remains `e4b208a…`. Commit `aee7897…` is a
-> runtime-affecting descendant and deliberately terminates that exception: it must
-> pass a new exact deployment before the gate can turn green. After `aee7897…`,
+> deployment-workflow delta. It never made `a2c6bcc…` the deployed source. Later
+> runtime-affecting descendants have now passed the exact deployment recorded
+> above. After `104a002…`,
 > permitted submission-pack paths are `README.md`, `SECURITY.md`, `deploy/DEPLOY_STATE.md`,
 > `demo/**`, `docs/**`, `.github/workflows/demo-video.yml`,
 > `scripts/capture_live.sh`, and `scripts/captions.txt`. Before capture, verify that
-> `aee7897…` is an ancestor of `origin/main` and inspect every later changed path.
+> `104a002…` is an ancestor of `origin/main` and inspect every later changed path.
 > Any new path outside that allowlist—or any application, dependency, schema,
 > container, runtime/deployment-workflow or deploy-script delta—requires review and,
 > when runtime-affecting, a new exact deploy plus a refreshed record here.
@@ -226,8 +236,8 @@ curl -fsS "$BASE/openapi.json" \
 curl -fsS -X POST "$BASE/demo/seed" | jq '{seeded,alreadySeeded,company}'
 curl -fsS -X POST "$BASE/recall" \
   -H 'content-type: application/json' \
-  -d '{"question":"What did it really cost to employ the team?","company":"Northwind Trading"}' \
-  | jq '{answer,modelId,citations}'
+  -d '{"question":"Using only the retrieved memory, state the true employer cost for Northwind Trading in 2026-05 and include citation marker [1] in the sentence.","company":"Northwind Trading","limit":3}' \
+  | jq '{answer,modelId,citations,grounding}'
 curl -fsS -X POST "$BASE/consistency" \
   -H 'content-type: application/json' \
   -d '{"company":"Northwind Trading"}' \
@@ -259,9 +269,9 @@ Run the protected command only in Bash with tracing disabled (`set +x`). Crop/cl
 
 A release is judge-ready only when all of the following are true:
 
-1. This file records `aee7897d4d436501fc9b0dc1ed28e3757131f559`
+1. This file records `104a002820607c754d857473877da28b69ebb44d`
    (or a later explicitly reviewed runtime candidate) as exact deployed and
-   live-verified. **This condition is currently false.**
+   live-verified. **This condition is currently true.**
 2. HTTPS is public, but backend `9000` and PostgreSQL `5432` are not.
 3. `/ready` returns `200`; `/health` reports real Qwen.
 4. Public and protected reviewer-credential paths pass, including selected-company
