@@ -1,16 +1,19 @@
-# Build the final caption-led video
+# Build and verify the static caption-led base
 
-This is the preferred rights-safe final assembly path. It produces the canonical
-**172-second**, ten-beat MemoryAgent video without speech synthesis, recorded voice,
-or third-party music. Every English caption is burned into the 1920×1080 picture and
-mirrored in an exact measured SRT. The compatibility audio stream is generated
+This guide covers the deterministic **intermediate base** used by the only canonical
+publication pipeline, [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). The base is a
+**172-second**, ten-beat composition without speech synthesis, recorded voice, or
+third-party music. Every English caption is burned into the 1920×1080 picture and
+mirrored in an exact measured SRT. Its compatibility audio stream is generated
 digital silence (48 kHz stereo AAC), not music or TTS.
 
-The builder does not call the live service, capture a browser, download an asset, or
-create substitute evidence. It can assemble a final only after the exact-release
-gallery gate has produced all approved media. Until
+`build_caption_video.py` does not call the live service, capture a browser, download
+an asset, or create substitute evidence. It is not a publication builder: the
+real-motion one-command runner invokes it inside randomized ignored scratch and then
+adds SHA-bound genuine browser interaction. A direct static MP4 or static manifest
+must never be uploaded. Until
 [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) is green and the canonical
-gallery exists, production mode is expected to fail.
+gallery exists, even the base production gate is expected to fail.
 
 ## 1. Verify the offline compositor
 
@@ -62,31 +65,33 @@ Pass that JSON to the one-command final capture gate documented in
 
 ```bash
 python scripts/capture_submission_gallery.py \
-  --expected-sha <FINAL_RUNTIME_SHA> \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-<ATTEMPT>.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-<ATTEMPT>.json \
+  --expected-sha 104a002820607c754d857473877da28b69ebb44d \
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-22.txt \
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-22.json \
   --reviewer-credential-json .artifacts/devpost/memory-reviewer-credential.json \
   --alibaba-raw demo/private-originals/alibaba-ecs-overview-raw.png \
   --caption-windows .artifacts/final-caption-video/caption_windows.json
 ```
 
-Both placeholders remain unresolved until a real successful final deployment exists.
-Do not use the command while the deployment contract says **REDEPLOY REQUIRED**.
+The runtime SHA and attempt-22 evidence paths above are the exact values locked by
+the current green deployment record. Do not substitute a later SHA or evidence pair
+unless `DEPLOY_STATE.md` is refreshed by another successful exact deployment.
 
-## 3. Validate every final input without encoding
+## 3. Validate every base input without encoding
 
 After a human has reviewed all gallery/proof frames and the capture gate has written
 `demo/gallery/CAPTURE_REVIEW.json`:
 
 ```bash
 python demo/tools/build_caption_video.py \
-  --expected-sha <FINAL_RUNTIME_SHA> \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-<ATTEMPT>.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-<ATTEMPT>.json \
+  --expected-sha 104a002820607c754d857473877da28b69ebb44d \
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-22.txt \
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-22.json \
   --check-only
 ```
 
-This is a cryptographic freshness gate, not a filename check. It requires:
+This is an optional cryptographic freshness preflight for the intermediate base, not
+a filename check and not publication approval. It requires:
 
 - a green canonical `DEPLOY_STATE.md` naming the expected SHA;
 - the builder, deployment state, and claim/evidence matrix committed and byte-equal
@@ -134,32 +139,34 @@ filtering. Encoding occurs only in a newly randomized project-contained scratch
 child; frame, concat, log and final `.writing` files are created exclusively without
 following pre-seeded links.
 
-## 4. Build and verify the canonical final
+## 4. Build and verify the canonical real-motion final
 
-Run the same command without `--check-only`:
+Do **not** run the static builder directly into `demo/final-media/`. Follow the exact
+production sequence in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md): record the
+public, credential-free interaction, run `build_real_motion_submission.py`, and then
+run `compose_real_motion_video.py --verify-only` against the resulting unchanged
+files. The one-command builder creates a randomized project-contained
+`.artifacts/final-video/base-*` session, invokes `build_caption_video.py` there, and
+uses that static output only as the base for the live-motion compositor.
 
-```bash
-python demo/tools/build_caption_video.py \
-  --expected-sha <FINAL_RUNTIME_SHA> \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-<ATTEMPT>.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-<ATTEMPT>.json
-```
+The only final judge-facing video records are:
 
-Outputs:
+- `demo/final-media/memoryagent-demo.mp4` — canonical 1920×1080 H.264 real-motion final;
+- `demo/final-media/memoryagent-demo.en.srt` — exact ten-entry measured English SRT;
+- `demo/final-media/memoryagent-demo.manifest.json` — `status: passed`, builder
+  `caption-led-real-motion-compositor-v1`, exact release/capture/live-input/output
+  hashes, frame windows, measured codecs/duration, silence peak and claim locks;
+- `demo/final-media/memoryagent-demo.qa.json` — `status: passed` independent measured
+  QA for the shipped MP4/SRT; and
+- `demo/final-media/youtube-thumbnail.png` — thumbnail whose hash is bound by the
+  final manifest.
 
-- `demo/final-media/memoryagent-demo.mp4` — canonical 1920×1080 H.264 final;
-- `demo/final-media/memoryagent-demo.en.srt` — exact ten-entry English SRT (the
-  builder re-emits only the byte-identical file already SHA-bound by capture review);
-- `demo/final-media/memoryagent-demo.manifest.json` — release/input/output hashes,
-  exact frame windows, measured duration/codecs, decoded silence peak, and claim
-  locks; and
-- `.artifacts/final-caption-video/` — ignored, repository-contained rendered beats
-  and ffmpeg diagnostics.
-
-The permanent post-encode gate requires exactly one H.264/yuv420p 1920×1080 video
-stream at 30 fps, exactly 5,160 frames, one 48 kHz stereo AAC stream, decoded audio
-peak no greater than four signed-16-bit units, measured duration matching 172 seconds,
-and no extra stream or sensitive-shaped metadata.
+The static post-encode checks—one H.264/yuv420p 1920×1080 stream at 30 fps, exactly
+5,160 frames, one 48 kHz stereo AAC stream, decoded audio peak no greater than four
+signed-16-bit units, 172 measured seconds, and no extra stream or sensitive metadata—
+remain necessary base constraints. They become publication evidence only after the
+real-motion manifest + QA are green and the independent final `--verify-only` pass
+recomputes every bound hash and measurement.
 
 ## 5. Human acceptance remains mandatory
 
@@ -181,4 +188,6 @@ identifier is visible; and the metric/claim boundaries remain intact:
   alternative only.
 
 Then complete [`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md). A
-green local manifest does not authorize upload or publication.
+static-base manifest never authorizes upload. Even a green real-motion manifest and QA
+do not authorize publication until the final `--verify-only` pass and human review are
+complete.

@@ -1,11 +1,18 @@
 # Build the final video and optional authenticated source footage
 
-The preferred final is the rights-safe caption-led assembly documented in
-[`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md). It uses only the canonical
-hash-reviewed gallery/proof inputs, burns the exact English captions, and generates
-a digital-silence compatibility track: no TTS, recorded voice, or third-party music.
-Its 5,160-frame timeline is deterministically 172 seconds and the final gate verifies
-the actual MP4/SRT before promotion.
+The only canonical publication candidate is the rights-safe, caption-led
+**real-motion** assembly documented in
+[`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). It uses the hash-reviewed
+gallery/proof inputs, burns the exact English captions, inserts SHA-bound genuine live
+browser interaction, and generates a digital-silence compatibility track: no TTS,
+recorded voice, or third-party music. Its 5,160-frame timeline is deterministically
+172 seconds, and its final manifest + QA + `--verify-only` gate measure the actual
+shipped MP4/SRT before promotion.
+
+[`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) documents the deterministic
+timeline and static base renderer. `build_caption_video.py` is intermediate tooling
+only; the real-motion one-command builder invokes it in ignored scratch. A direct
+static export is not the final and must never be uploaded.
 
 The manual GitHub Actions workflow
 [`Generate Authenticated Demo Video`](../.github/workflows/demo-video.yml) remains
@@ -17,16 +24,18 @@ source-footage candidate**, never the canonical final or an automatically publis
 video.
 
 The workflow's assembled MP4 does not contain every editorial proof card in the
-canonical ten-beat [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md). Use its real terminal/UI
-captures, transcript, and intermediate segments as source footage, then add the
-sanitized exact-SHA, architecture, evidence, and Alibaba frames in the final edit.
-Do not promote the unedited workflow output merely because the job is green.
+canonical ten-beat [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md). Its terminal/UI captures,
+transcript, and intermediate segments may be inspected as internal source-candidate
+evidence, but the current canonical real-motion pipeline deliberately does not ingest
+them. Do not manually splice or promote the workflow output merely because its job is
+green; only the independently gated pipeline in `REAL_MOTION_VIDEO.md` may produce the
+submission video.
 Never use [`archive/pre-hardening-capture-transcript.txt`](./archive/pre-hardening-capture-transcript.txt)
 as a recording source: it is retained only as explicitly labelled historical evidence
 and describes an older BM25-labelled capture rather than the deployed PostgreSQL
 full-text path.
 
-## Preferred caption-led final
+## Canonical caption-led real-motion final
 
 Run the offline self-test and emit the deterministic caption-window input before the
 final gallery capture:
@@ -40,11 +49,13 @@ python demo/tools/build_caption_video.py \
   --emit-caption-windows .artifacts/final-caption-video/caption_windows.json
 ```
 
-After exact deployment and the final media-capture gate, first run the builder with
-`--check-only`, then without it. Exact commands, artifacts, and failure conditions are
-in [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md). Production mode intentionally
-fails while `DEPLOY_STATE.md` is red, `CAPTURE_REVIEW.json` is absent, any expected
-hash is stale, or the measured SRT differs from the burned-caption timeline.
+After exact deployment and the final media-capture gate, use the static builder's
+`--check-only` mode only as an optional base-input preflight. Then run the production
+recorder, one-command real-motion builder, and independent `--verify-only` command
+exactly as documented in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). Production
+intentionally fails while `DEPLOY_STATE.md` is red, `CAPTURE_REVIEW.json` is absent,
+any expected hash is stale, the measured SRT differs from the burned-caption timeline,
+or the final real-motion manifest/QA cannot be independently re-verified.
 
 ## Optional authenticated TTS source-footage candidate
 
@@ -157,14 +168,20 @@ Then complete [`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md).
 The script gate does not replace human review for secrets, rights, stale claims,
 readability, pronunciation, or narrative quality.
 
-If the final edit adds the required proof cards or changes the workflow's four-part
-segment order, treat the workflow sync result as source-candidate evidence only.
-Measure the exported final independently and complete every final-export check in the
+Any manual edit that adds proof cards or changes the workflow's four-part segment order
+remains a noncanonical source candidate; its workflow sync result cannot attest the
+submission. Produce the actual final afresh through `REAL_MOTION_VIDEO.md`, measure it
+through the real-motion manifest + QA, and complete every final-export check in the
 recording checklist.
 
-## 6. Promote only the approved deliverables
+## 6. Promote only the independently re-verified deliverables
 
-- Approved canonical video: `demo/final-media/memoryagent-demo.mp4`.
+- Approved canonical video: `demo/final-media/memoryagent-demo.mp4`, produced only by
+  the pipeline in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md).
+- Required final records: `demo/final-media/memoryagent-demo.manifest.json` and
+  `demo/final-media/memoryagent-demo.qa.json`, both `status: passed` and unchanged
+  since the final successful
+  `python demo/tools/compose_real_motion_video.py --verify-only` run.
 - Sanitized gallery/runtime proof: `demo/gallery/`.
 - Canonical architecture: `demo/final-media/judge-architecture.jpg`.
 - Raw captures/intermediates: remain ignored under `demo/private-originals/`.
@@ -176,6 +193,8 @@ git status --ignored --short demo/
 git ls-files demo/private-originals/
 ```
 
-The second command must print nothing. Upload the reviewed video to YouTube, Vimeo,
-or Youku with Public visibility, then complete the public-link and Devpost steps in
+The second command must print nothing. A workflow candidate or direct static-caption
+export cannot be promoted. Only after the real-motion manifest + QA gate and final
+`--verify-only` pass may the reviewed video be uploaded to YouTube, Vimeo, or Youku
+with Public visibility; then complete the public-link and Devpost steps in
 [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md).

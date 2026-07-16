@@ -254,6 +254,46 @@ class CaptionTimelineTests(unittest.TestCase):
         self.assertIn("00:51–01:13 cross-session-recall panel", runbook)
         self.assertIn("00:13–00:32 exact-release, readiness, and Qwen vision proof remains visible", runbook)
 
+    def test_final_video_docs_converge_on_real_motion_publication_gate(self) -> None:
+        deploy_state = (ROOT / "deploy" / "DEPLOY_STATE.md").read_text(encoding="utf-8")
+        canonical = (ROOT / "demo" / "REAL_MOTION_VIDEO.md").read_text(encoding="utf-8")
+        supporting = (
+            "demo/BUILD_RECORDING.md",
+            "demo/CAPTION_VIDEO_BUILD.md",
+            "demo/FINAL_MEDIA_CHECKLIST.md",
+            "demo/VIDEO_RECORDING_CHECKLIST.md",
+            "demo/final-media/README.md",
+        )
+        routed = supporting + (
+            "README.md",
+            "docs/BUILD_PLAN.md",
+            "demo/MEDIA_CAPTURE_RUNBOOK.md",
+            "demo/gallery/README.md",
+            "demo/RIGHTS_RELEASE_CHECKLIST.md",
+            "demo/VIDEO_SCRIPT.md",
+            "demo/VIDEO_PUBLICATION_PACKET.md",
+        )
+
+        self.assertIn("`scripts/capture_submission_gallery.py`", deploy_state)
+        self.assertIn("review-only, non-runtime capture tooling", deploy_state)
+        self.assertIn("only canonical publication-candidate pipeline", canonical)
+        self.assertRegex(canonical, r"build_caption_video\.py[\s\S]*intermediate[\s\S]*base renderer only")
+        video_checklist = (ROOT / "demo" / "VIDEO_RECORDING_CHECKLIST.md").read_text(encoding="utf-8")
+        self.assertIn("silence peak `<=8`", video_checklist)
+        self.assertIn("static base retains its stricter `<=4`", video_checklist)
+        for relative in routed:
+            with self.subTest(route=relative):
+                self.assertIn("REAL_MOTION_VIDEO.md", (ROOT / relative).read_text(encoding="utf-8"))
+        for relative in supporting:
+            with self.subTest(path=relative):
+                doc = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("REAL_MOTION_VIDEO.md", doc)
+                self.assertRegex(doc, r"(?i)static")
+                self.assertRegex(doc, r"(?i)base")
+                self.assertIn("memoryagent-demo.manifest.json", doc)
+                self.assertIn("memoryagent-demo.qa.json", doc)
+                self.assertIn("--verify-only", doc)
+
     def test_canonical_ten_beats_are_frame_exact_and_under_limit(self) -> None:
         windows = builder.caption_windows()
         self.assertEqual(len(windows), 10)

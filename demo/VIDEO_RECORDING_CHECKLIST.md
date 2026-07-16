@@ -27,11 +27,15 @@ video-specific; the screenshots, posts, and Devpost fields remain in
       echoing it. Clear the credential from the UI immediately afterward.
 - [ ] Use a clean browser profile at 1440×900 or larger, 100% zoom, no personal tabs,
       bookmarks, password-manager popups, extensions, notifications, or account avatar.
-- [ ] Choose and record the final path. Preferred: the caption-led builder in
-      [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md), with no voice/TTS/music
-      and generated digital silence. If any narrated/source-footage path is used,
-      confirm its voice, fonts, music, images, logos, and all other assets are owned
-      or authorized for public competition use. Keep the evidence of rights.
+- [ ] Use the only canonical publication pipeline in
+      [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md): caption-led, generated digital
+      silence, no voice/TTS/music, plus SHA-bound genuine browser interaction.
+      [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) is only the deterministic
+      static-base guide; a direct static export is not a final. The optional narrated
+      workflow in [`BUILD_RECORDING.md`](./BUILD_RECORDING.md) is internal source-candidate
+      evidence only and cannot be substituted or manually spliced into the canonical
+      final. If it is run separately, retain rights evidence for every voice, font,
+      image, logo and other asset.
 - [ ] Read [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md) and
       [`../docs/CLAIM_EVIDENCE_MATRIX.md`](../docs/CLAIM_EVIDENCE_MATRIX.md) end to end.
 
@@ -74,24 +78,31 @@ video-specific; the screenshots, posts, and Devpost fields remain in
 
 ## Technical acceptance
 
-- [ ] For the preferred caption-led path, `memoryagent-demo.manifest.json` records
-      exactly 5,160 frames, 172 measured seconds, ten SRT entries, one 1080p H.264
-      stream, one generated-silence AAC stream, and decoded silence peak `<=4`.
-- [ ] If narration is used instead, a scratch recording of the exact final narration
-      measures `<=168` seconds by `ffprobe`; if longer, tighten wording and re-record
-      before editing.
+- [ ] `memoryagent-demo.manifest.json` reports `status: passed`, identifies
+      `caption-led-real-motion-compositor-v1`, binds the exact runtime,
+      `CAPTURE_REVIEW`, live-interaction manifest/video, SRT, thumbnail and final
+      output hashes, and records exactly 5,160 frames, 172 measured seconds, ten SRT
+      entries, one 1080p H.264 stream, one generated-silence AAC stream, and decoded
+      silence peak `<=8`. The intermediate static base retains its stricter `<=4`
+      threshold; do not misreport that base-only limit as the final compositor gate.
+- [ ] `memoryagent-demo.qa.json` reports `status: passed` for the same final MP4/SRT,
+      and `python demo/tools/compose_real_motion_video.py --verify-only` passes
+      immediately before upload against every unchanged bound artifact. Static-base
+      or workflow-candidate manifests do not satisfy this gate.
+- [ ] No narrated workflow or manually edited export is used instead of the canonical
+      real-motion final; the shipped audio stream is generated digital silence only.
 - [ ] If the workflow source candidate is used, its permanent A/V/caption/order gate
       passed. Do not represent that source-candidate gate as validation of a changed
       exported final.
 - [ ] `ffprobe` reports a duration strictly below 175 seconds and exactly one expected
       video plus one expected audio stream; no blank lead-in or unexplained tail.
 - [ ] Burned captions, source labels, beat transitions, and highlighted evidence stay
-      synchronized. If narration is present, it stays synchronized too.
+      synchronized; the canonical final contains no narration to mask timing drift.
 - [ ] Captions are accurate English, correctly spell every model id, and remain inside
       safe margins at 1080p playback.
-- [ ] The full video was watched at normal speed and at 0.25×. For narration, also
-      watch once with headphones and once muted. For caption-led silence, confirm the
-      host/player does not add audio and every beat remains fully understandable.
+- [ ] The full video was watched at normal speed and at 0.25×, once with audio enabled
+      and once muted. Confirm the host/player does not add audio and every caption-led
+      beat remains fully understandable.
 - [ ] The thumbnail contains no unverified metric or sensitive browser/terminal detail.
 
 ## Publication and Devpost

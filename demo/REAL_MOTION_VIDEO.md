@@ -1,11 +1,18 @@
 # Final real-motion submission video
 
-This is the publication candidate path. It keeps the existing ten claim-locked,
+This is the **only canonical publication-candidate pipeline**. It keeps the existing ten claim-locked,
 caption-led beats, but replaces the 00:51–01:13 cross-session-recall panel with
 **genuine live browser interaction** against the final deployed MemoryAgent. The
 00:13–00:32 exact-release, readiness, and Qwen vision proof remains visible and is
 never covered by unrelated interaction footage. Nothing is uploaded or published by
 these commands.
+
+[`tools/build_caption_video.py`](./tools/build_caption_video.py) is an intermediate
+base renderer only. The one-command real-motion builder invokes it inside a randomized,
+project-contained scratch directory before applying the SHA-bound live interaction.
+A directly exported static caption MP4 or its base manifest is never the publication
+candidate, even if its own encode checks pass. Supporting guides must return here for
+the production build and final acceptance.
 
 Production capture is intentionally blocked until the exact deployment and
 `demo/gallery/CAPTURE_REVIEW.json` both pass. The recorder never reads a reviewer
@@ -65,3 +72,11 @@ Final judge-facing artifacts:
 The MP4 has one locally generated silent AAC compatibility stream—no voice, TTS,
 music or captured microphone/system audio. The final video, subtitles, manifest, QA
 and thumbnail hashes must pass `--verify-only` immediately before upload.
+
+Publication is blocked unless both
+`demo/final-media/memoryagent-demo.manifest.json` and
+`demo/final-media/memoryagent-demo.qa.json` report `status: passed`, the manifest
+identifies `caption-led-real-motion-compositor-v1` and binds the exact capture review
+plus live-interaction bytes, and the final `--verify-only` command exits successfully
+against those unchanged files. No static-base output, workflow candidate, or manually
+edited export can substitute for that manifest + QA + independent re-verification.

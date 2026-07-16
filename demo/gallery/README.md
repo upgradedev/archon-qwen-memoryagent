@@ -7,9 +7,11 @@ builder is documented in [`../MEDIA_CAPTURE_RUNBOOK.md`](../MEDIA_CAPTURE_RUNBOO
 Raw captures must remain under ignored `demo/private-originals/` and must never be
 staged.
 
-After capture and human review, the separate
-[`../CAPTION_VIDEO_BUILD.md`](../CAPTION_VIDEO_BUILD.md) assembler revalidates this
-manifest and every hash before it can produce the 172-second caption-led final.
+After capture and human review, the only publication pipeline in
+[`../REAL_MOTION_VIDEO.md`](../REAL_MOTION_VIDEO.md) revalidates this manifest and
+every hash, renders the static caption layer only as an intermediate base, adds
+SHA-bound genuine browser interaction, and requires final manifest + QA +
+`--verify-only` before the 172-second video can be uploaded.
 
 Every Devpost file produced here is exactly 1500×1000 (3:2). Its no-crop 1920×1080
 video equivalent is written under `demo/final-media/proof-frames/` with the same

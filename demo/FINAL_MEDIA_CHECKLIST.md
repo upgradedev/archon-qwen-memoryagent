@@ -44,12 +44,15 @@ Stop if any box is red. Do not record a stale deployment.
 Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use **Public visibility with no login or access request**, and keep the final duration below the automated 175-second safety limit.
 
 Follow the canonical [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md), run the operational
-[`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md), and use
-[`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) for the preferred no-TTS,
-caption-led final; [`BUILD_RECORDING.md`](./BUILD_RECORDING.md) retains the optional
-authenticated source-footage procedure. After final mux/inspection, use the paste-ready
-[`VIDEO_PUBLICATION_PACKET.md`](./VIDEO_PUBLICATION_PACKET.md); it prepares upload
-metadata but does not authorize publication.
+[`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md), and build the only
+publication candidate through
+[`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). Its no-TTS, caption-led final adds
+SHA-bound genuine browser motion and must finish with a passed real-motion manifest,
+passed QA record, and independent `--verify-only`. [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md)
+documents only the deterministic static base; [`BUILD_RECORDING.md`](./BUILD_RECORDING.md)
+retains optional source-footage procedures. After final mux/inspection, use the
+paste-ready [`VIDEO_PUBLICATION_PACKET.md`](./VIDEO_PUBLICATION_PACKET.md); it prepares
+upload metadata but does not authorize publication.
 
 - [ ] Use only owned or properly licensed music, images, logos, fonts, and footage; include no copyrighted third-party asset without permission, and use competition marks only as the rules permit.
 
@@ -71,18 +74,24 @@ metadata but does not authorize publication.
 ### Video quality gate
 
 - [ ] Final file is strictly under 175 seconds and 1080p or better.
-- [ ] Prefer the caption-led path: no voice, no TTS, no third-party music, generated
-      digital silence, burned English captions, and a green final build manifest. If
-      narrated source footage is used, set the workflow's separate ElevenLabs and
-      edge-tts publication-rights attestations only for independently authorized
-      paths; otherwise do not run the synthesizer.
+- [ ] Use the canonical caption-led real-motion path: no voice, no TTS, no third-party
+      music, generated digital silence, burned English captions, SHA-bound genuine
+      browser interaction, and green final real-motion manifest + QA records. The
+      optional narrated workflow candidate is not an input or substitute for this
+      final. Run it separately only when both ElevenLabs and edge-tts publication-rights
+      attestations are independently true; otherwise do not run the synthesizer.
+- [ ] Immediately before upload, run
+      `python demo/tools/compose_real_motion_video.py --verify-only` and require PASS
+      against the unchanged MP4, SRT, thumbnail,
+      `memoryagent-demo.manifest.json`, and `memoryagent-demo.qa.json`. A static
+      caption-base manifest or workflow-source gate is not publication evidence.
 - [ ] Text is readable at normal YouTube playback size.
 - [ ] Burned captions and the uploaded exact SRT are enabled; names/model ids are
       spelled correctly and the ten windows match the measured final.
 - [ ] No API key, reviewer token, Authorization header, shell history secret, email, or cloud credential is visible in any frame, thumbnail, caption, or description. Clear the Judge token field before any beauty shot.
 - [ ] Claims match [`../docs/CLAIM_EVIDENCE_MATRIX.md`](../docs/CLAIM_EVIDENCE_MATRIX.md).
 - [ ] The description includes live URL, public repo, Track 1, and architecture/code-proof links.
-- [ ] Test the public URL in an incognito window with audio enabled. For the preferred
+- [ ] Test the public URL in an incognito window with audio enabled. For the canonical
       build, confirm the generated-silence track remains silent and captions are on.
 
 **Public video URL:** `____________________________________________`

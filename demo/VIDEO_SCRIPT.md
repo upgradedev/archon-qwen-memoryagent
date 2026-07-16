@@ -2,9 +2,10 @@
 
 Target **2:45–2:52**. Hard publication limit: **strictly below 175 seconds**, leaving
 margin below the official `<3:00` rule. This file is the canonical final editorial
-and claim-boundary script. The preferred rights-safe final is the 172-second,
-no-voice caption-led build in [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md);
-its concise burned captions preserve all material boundaries below. The optional
+and claim-boundary script. The only canonical rights-safe final is the 172-second,
+no-voice real-motion build in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md);
+[`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) supplies only its intermediate
+static base and exact burned captions. The optional
 authenticated renderer speaks
 [`../docs/narration.txt`](../docs/narration.txt) and produces useful live source
 footage, but its assembled MP4 is only a candidate: it does not replace the exact-SHA,
@@ -30,9 +31,11 @@ submission-pack allowlist; any runtime-affecting delta requires another exact de
 | 9 · Evidence, not hype | 2:22–2:42 | One clean evidence card | Field **5/5, 0 FP**; policy **4/4**; deterministic semantic **90% recall, 100% precision, 0 FP**; MRR **0.883→0.911**, Recall@3 **90.0%→96.7%**. Keep fixture labels visible; do not show historical dirty-tree v1.1 as release evidence. |
 | 10 · Alibaba + close | 2:42–2:52 | Sanitized ECS/container proof, then repo/MIT/live end card | Active topology is Alibaba ECS + self-hosted pgvector. Close on the portable, working product; keep Function Compute/RDS alternative-only. |
 
-## Optional exact final narration
+## Optional narration script for a noncanonical source candidate
 
-Use this only if a rights-cleared narrated final is deliberately chosen. Read it at a
+This is not an alternative publication route under the current real-motion contract.
+Use it only if a rights-cleared narrated source candidate is deliberately generated
+for internal review. Read it at a
 measured **137–140 words per minute**. Make a scratch recording
 before editing and require `ffprobe` duration **≤168 seconds**; this is the real timing
 gate, not a word-count estimate. Pause briefly on architecture, contradiction, and
@@ -89,9 +92,10 @@ never remove a claim caveat.
 ## Voiceover and visual lock
 
 - Use [`../docs/narration.txt`](../docs/narration.txt) verbatim only for the automated
-  source-footage candidate. A narrated final uses the exact narration above; the
-  preferred caption-led final uses the exact captions encoded in the builder. Any
-  human voice must preserve every claim boundary and caveat.
+  source-footage candidate. It cannot replace or be manually spliced into the
+  canonical real-motion final, which uses the exact captions encoded by the static
+  base renderer and generated digital silence. Any separately retained human voice
+  must preserve every claim boundary and caveat.
 - The automated live transcript is generated from real responses by
   [`../scripts/capture_live.sh`](../scripts/capture_live.sh); never replace its
   answers, scores, model ids, or contradiction result with hand-authored values.
