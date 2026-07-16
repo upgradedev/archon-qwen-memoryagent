@@ -10,6 +10,12 @@ The public click path below needs **no login or API key**. It is intentionally l
 
 Before judging, [`GET /ready`](https://memory.43.106.13.19.sslip.io/ready) should return `200` with database, Qwen, and judge-auth checks ready. [`GET /health`](https://memory.43.106.13.19.sslip.io/health) should identify `text-embedding-v4` and `qwen-plus`, not Fake providers.
 
+For engineering evidence, the exact commit's hosted **Production Image Supply
+Chain** run retains SPDX 2.3/CycloneDX SBOMs and a no-ignore high/critical image
+scan. [`SUPPLY_CHAIN.md`](./SUPPLY_CHAIN.md) defines its pins and limitations;
+do not treat a different commit's run—or any green scanner—as a security
+certification.
+
 ## 60 seconds: seed, recall, self-audit
 
 1. Open the [Memory Explorer](https://memory.43.106.13.19.sslip.io).

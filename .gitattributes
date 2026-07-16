@@ -2,3 +2,13 @@
 # on CRLF: `\r` becomes part of args/paths). Force LF in the working tree too, so a
 # Windows checkout that gets rsync'd to the box never carries CRLF.
 *.sh text eol=lf
+
+# Byte-pinned production/supply-chain inputs must have the same identity on
+# developer worktrees and hosted Linux runners.
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+.gitattributes text eol=lf
+package-lock.json text eol=lf
+.syft.yaml text eol=lf
+.grype.yaml text eol=lf
+.github/workflows/*.yml text eol=lf

@@ -612,6 +612,7 @@ The authoritative test and coverage values are the current CI artifacts, not a h
 | **Integration** | `tests/integration/*` | Real pgvector SQL and pipeline writes: `::vector` insert, `<=>` cosine recall, filters, count, hybrid dense+FTS fusion, idempotency, and consolidate → supersede → forget. These tests skip explicitly when no real DB is supplied. |
 | **E2E** | `tests/e2e/*` | **Cross-session persistence** (session A writes + tears down, session B recalls) plus a broad **offline journey suite** (`full-journey.test.ts` + http / mcp / templates / robustness): seed → recall → cited answer → rule-audit → semantic-audit → MCP round-trip → P&L → provenance, and the error/edge journeys (empty store, no-contradiction, judge-guide chips). Exact executed/skipped counts come only from the final immutable CI artifact. |
 | **Security (pen-test)** | `tests/security/*` | Automated app-security suite over the real HTTP + MCP surface: **authorization + daily-spend budget** (429 when exhausted), **prompt-injection resistance** (a genuine contradiction is still flagged despite an injected "report consistent" instruction — the read-only audit is unswayable), **MCP tool-boundary / excessive-agency** (reads never mutate; unknown tools fail safe; no prototype pollution), **sensitive-data exposure** (no stack/path/secret leaks), and **store-injection** (a `DROP TABLE` payload and NaN/Inf embeddings stay inert). Runs as the `pen-test` CI job; the SQL-parameterization case runs against real pgvector. |
+| **Production image supply chain** | [`.github/workflows/supply-chain.yml`](./.github/workflows/supply-chain.yml); [`docs/SUPPLY_CHAIN.md`](./docs/SUPPLY_CHAIN.md) | Builds and constrains the exact production image, emits retained Syft/SPDX 2.3/CycloneDX SBOMs, then scans the sealed inventory with byte-pinned Grype tooling and a byte-pinned advisory snapshot. Every high/critical finding fails, including no-fix findings; there is no current allowlist. Results are dated evidence, not a security certification. |
 | **Benchmark gates** | `bench/*` | Retrieval regression/discrimination on the 32-memory/15-query fixture; 11/11 developer-labelled gold EUR-token hits and 10/11 complete EUR-labelled amount traceability; developer-authored field/semantic regression sets; the 48-pair synthetic semantic stability gate; and structural + declared-policy conformance checks. Re-rank and pinned Mem0 deltas are reported, not generalized. |
 | **Load / performance** | `load/recall-load.js` (k6); [published live result](./load/RESULTS_2026-07-15.md) | Drives concurrent `/health` + `/recall` + `/consistency` and asserts **p95 latency + error-rate SLOs** as k6 thresholds (the run fails on a regression). Two profiles: an **offline smoke** that runs on **every push** via the `load` CI job (boots the backend on deterministic Fakes against a real pgvector, seeds, then holds tight local SLOs — free, no spend), and a manual, arrival-rate-bounded `load-test` workflow that exercises the **live box** (real Qwen) without overrunning its production HTTP or Qwen quotas. |
 
@@ -626,8 +627,12 @@ CI stages:
 7. **load** — boots the backend offline, seeds, runs the bounded k6 smoke; the p95 + error-rate **SLO thresholds gate the job**.
 8. **readiness** — `npm run readiness -- --gate`: the weighted rubric completeness (≥ 95%) **and** the new **assurance dimension** (security / load / e2e layers all wired) must both be green.
 9. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.
+10. **Production Image Supply Chain** (`.github/workflows/supply-chain.yml`) — exact production-image runtime check, retained SPDX/CycloneDX SBOMs, and a no-ignore high/critical Grype gate bound to a dated immutable database snapshot.
 
-Every stage runs **fully offline**. There are no DashScope / Alibaba credentials in CI, because the Qwen embedder/narrator auto-fall back to deterministic Fakes and the benchmark replays cached vectors.
+Application tests and benchmarks need no DashScope / Alibaba credentials: the
+Qwen seams use deterministic Fakes or committed fixtures. Supply-chain jobs use
+network access only to fetch exact release archives, npm lock artifacts, and the
+reviewed vulnerability snapshot; their byte identities are verified before use.
 
 ### Load SLOs
 

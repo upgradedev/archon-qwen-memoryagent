@@ -1,0 +1,11 @@
+# Production image and supply-chain enforcement require owner review.
+/Dockerfile @upgradedev
+/.dockerignore @upgradedev
+/.gitattributes @upgradedev
+/package.json @upgradedev
+/package-lock.json @upgradedev
+/.github/workflows/supply-chain.yml @upgradedev
+/.syft.yaml @upgradedev
+/.grype.yaml @upgradedev
+/tests/docs/supply-chain-consistency.test.ts @upgradedev
+/docs/SUPPLY_CHAIN.md @upgradedev
