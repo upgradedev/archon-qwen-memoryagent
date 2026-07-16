@@ -2,15 +2,18 @@
 
 Target **2:45–2:52**. Hard publication limit: **strictly below 175 seconds**, leaving
 margin below the official `<3:00` rule. This file is the canonical final editorial
-script. The authenticated renderer currently speaks
+and claim-boundary script. The preferred rights-safe final is the 172-second,
+no-voice caption-led build in [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md);
+its concise burned captions preserve all material boundaries below. The optional
+authenticated renderer speaks
 [`../docs/narration.txt`](../docs/narration.txt) and produces useful live source
 footage, but its assembled MP4 is only a candidate: it does not replace the exact-SHA,
 architecture, evidence, and Alibaba proof beats required below.
 
 Do not record until [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) changes
-from **REDEPLOY REQUIRED** to final verified and identifies current runtime candidate
-[`aee7897d4d436501fc9b0dc1ed28e3757131f559`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/aee7897d4d436501fc9b0dc1ed28e3757131f559)
-as exact-deployed. A later repository HEAD is acceptable only when every change
+from **REDEPLOY REQUIRED** to final verified and replaces `<FINAL_RUNTIME_SHA>` with
+the real 40-character post-merge SHA recorded as exact-deployed. A later repository
+HEAD is acceptable only when every change
 after that candidate stays inside the stated submission-pack allowlist. At authoring
 time the candidate is not claimed as deployed and the recording gate is red.
 
@@ -27,9 +30,10 @@ time the candidate is not claimed as deployed and the recording gate is red.
 | 9 · Evidence, not hype | 2:22–2:42 | One clean evidence card | Field **5/5, 0 FP**; policy **4/4**; deterministic semantic **90% recall, 100% precision, 0 FP**; MRR **0.883→0.911**, Recall@3 **90.0%→96.7%**. Keep fixture labels visible; do not show historical dirty-tree v1.1 as release evidence. |
 | 10 · Alibaba + close | 2:42–2:52 | Sanitized ECS/container proof, then repo/MIT/live end card | Active topology is Alibaba ECS + self-hosted pgvector. Close on the portable, working product; keep Function Compute/RDS alternative-only. |
 
-## Exact final narration
+## Optional exact final narration
 
-Read the following at a measured **137–140 words per minute**. Make a scratch recording
+Use this only if a rights-cleared narrated final is deliberately chosen. Read it at a
+measured **137–140 words per minute**. Make a scratch recording
 before editing and require `ffprobe` duration **≤168 seconds**; this is the real timing
 gate, not a word-count estimate. Pause briefly on architecture, contradiction, and
 evidence. If the scratch voice is longer, tighten wording—not merely visual holds—and
@@ -85,8 +89,9 @@ never remove a claim caveat.
 ## Voiceover and visual lock
 
 - Use [`../docs/narration.txt`](../docs/narration.txt) verbatim only for the automated
-  source-footage candidate. The final edit uses the exact narration above. A human
-  voice may improve pacing, but must preserve every claim boundary and caveat.
+  source-footage candidate. A narrated final uses the exact narration above; the
+  preferred caption-led final uses the exact captions encoded in the builder. Any
+  human voice must preserve every claim boundary and caveat.
 - The automated live transcript is generated from real responses by
   [`../scripts/capture_live.sh`](../scripts/capture_live.sh); never replace its
   answers, scores, model ids, or contradiction result with hand-authored values.

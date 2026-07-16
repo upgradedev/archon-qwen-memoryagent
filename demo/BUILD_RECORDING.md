@@ -1,11 +1,20 @@
-# Build the authenticated recording candidate
+# Build the final video and optional authenticated source footage
 
-The supported automated path is the manual GitHub Actions workflow
-[`Generate Authenticated Demo Video`](../.github/workflows/demo-video.yml). It drives
+The preferred final is the rights-safe caption-led assembly documented in
+[`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md). It uses only the canonical
+hash-reviewed gallery/proof inputs, burns the exact English captions, and generates
+a digital-silence compatibility track: no TTS, recorded voice, or third-party music.
+Its 5,160-frame timeline is deterministically 172 seconds and the final gate verifies
+the actual MP4/SRT before promotion.
+
+The manual GitHub Actions workflow
+[`Generate Authenticated Demo Video`](../.github/workflows/demo-video.yml) remains
+available for optional source footage. It drives
 requests against the already deployed Alibaba host, hard-checks real Qwen responses,
 creates terminal/Explorer segments, synthesizes a rights-attested voice, composes the
-candidate, and runs the permanent A/V/caption/order gate. A successful job produces
-a **candidate**, never an automatically publishable video.
+candidate, and runs its A/V/caption/order gate. That workflow is an **optional
+source-footage candidate**, never the canonical final or an automatically publishable
+video.
 
 The workflow's assembled MP4 does not contain every editorial proof card in the
 canonical ten-beat [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md). Use its real terminal/UI
@@ -17,12 +26,34 @@ as a recording source: it is retained only as explicitly labelled historical evi
 and describes an older BM25-labelled capture rather than the deployed PostgreSQL
 full-text path.
 
+## Preferred caption-led final
+
+Run the offline self-test and emit the deterministic caption-window input before the
+final gallery capture:
+
+```bash
+python -m py_compile demo/tools/build_caption_video.py
+python -m unittest discover -s demo/tests -p 'test_caption_video_builder.py' -v
+python demo/tools/build_caption_video.py --self-test
+python demo/tools/build_caption_video.py --full-self-test
+python demo/tools/build_caption_video.py \
+  --emit-caption-windows .artifacts/final-caption-video/caption_windows.json
+```
+
+After exact deployment and the final media-capture gate, first run the builder with
+`--check-only`, then without it. Exact commands, artifacts, and failure conditions are
+in [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md). Production mode intentionally
+fails while `DEPLOY_STATE.md` is red, `CAPTURE_REVIEW.json` is absent, any expected
+hash is stale, or the measured SRT differs from the burned-caption timeline.
+
+## Optional authenticated TTS source-footage candidate
+
 ## 1. Preconditions
 
 1. Confirm the default branch and live runtime evidence are aligned with
    [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). The required recording
-   runtime candidate is `aee7897d4d436501fc9b0dc1ed28e3757131f559` and it must
-   be explicitly recorded there as exact-deployed/live-verified. Its current
+   runtime candidate is `<FINAL_RUNTIME_SHA>` and it must be replaced with the real
+   40-character post-merge SHA and explicitly recorded there as exact-deployed/live-verified. Its current
    **REDEPLOY REQUIRED** state is a hard stop. Submission-pack-only descendants may
    move repository HEAD after that candidate; runtime descendants require a new deploy.
 2. Run the secret-safe pre-recording checks in

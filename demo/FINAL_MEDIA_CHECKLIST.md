@@ -26,11 +26,11 @@ August 11, 2026 at 2:00 PM PDT.
 - [ ] Protected semantic audit works with the reviewer token.
 - [ ] Browser console is clean and the final repository changes are pushed to `main`.
 - [ ] [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-      `aee7897d4d436501fc9b0dc1ed28e3757131f559` as exact-deployed and
+      `<FINAL_RUNTIME_SHA>` (replaced with the real 40-character SHA) as exact-deployed and
       live-verified. **At authoring time this is pending; do not check the box from
       `/health` or `/ready` alone.**
-- [ ] `git merge-base --is-ancestor aee7897d4d436501fc9b0dc1ed28e3757131f559 origin/main`
-      passes, then `git diff --name-only aee7897d4d436501fc9b0dc1ed28e3757131f559..origin/main`
+- [ ] `git merge-base --is-ancestor <FINAL_RUNTIME_SHA> origin/main` passes after
+      placeholder replacement, then `git diff --name-only <FINAL_RUNTIME_SHA>..origin/main`
       contains only the post-candidate submission-pack allowlist recorded in
       [`DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). Any new runtime-affecting path
       requires review and redeployment.
@@ -45,8 +45,9 @@ Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use 
 
 Follow the canonical [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md), run the operational
 [`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md), and use
-[`BUILD_RECORDING.md`](./BUILD_RECORDING.md) for the authenticated workflow and
-artifact-review procedure. After final mux/inspection, use the paste-ready
+[`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) for the preferred no-TTS,
+caption-led final; [`BUILD_RECORDING.md`](./BUILD_RECORDING.md) retains the optional
+authenticated source-footage procedure. After final mux/inspection, use the paste-ready
 [`VIDEO_PUBLICATION_PACKET.md`](./VIDEO_PUBLICATION_PACKET.md); it prepares upload
 metadata but does not authorize publication.
 
@@ -70,15 +71,19 @@ metadata but does not authorize publication.
 ### Video quality gate
 
 - [ ] Final file is strictly under 175 seconds and 1080p or better.
-- [ ] Set the workflow's separate ElevenLabs and edge-tts publication rights
-      attestations only for the paths independently authorized for public competition
-      use; otherwise do not run the synthesizer and use an owned human recording.
+- [ ] Prefer the caption-led path: no voice, no TTS, no third-party music, generated
+      digital silence, burned English captions, and a green final build manifest. If
+      narrated source footage is used, set the workflow's separate ElevenLabs and
+      edge-tts publication-rights attestations only for independently authorized
+      paths; otherwise do not run the synthesizer.
 - [ ] Text is readable at normal YouTube playback size.
-- [ ] Captions are enabled and names/model ids are spelled correctly.
+- [ ] Burned captions and the uploaded exact SRT are enabled; names/model ids are
+      spelled correctly and the ten windows match the measured final.
 - [ ] No API key, reviewer token, Authorization header, shell history secret, email, or cloud credential is visible in any frame, thumbnail, caption, or description. Clear the Judge token field before any beauty shot.
 - [ ] Claims match [`../docs/CLAIM_EVIDENCE_MATRIX.md`](../docs/CLAIM_EVIDENCE_MATRIX.md).
 - [ ] The description includes live URL, public repo, Track 1, and architecture/code-proof links.
-- [ ] Test the public URL in an incognito window with audio enabled.
+- [ ] Test the public URL in an incognito window with audio enabled. For the preferred
+      build, confirm the generated-silence track remains silent and captions are on.
 
 **Public video URL:** `____________________________________________`
 

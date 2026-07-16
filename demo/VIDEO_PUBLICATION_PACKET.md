@@ -57,26 +57,26 @@ publication.
 
 ## Chapters
 
-Do not paste target/script times. Replace every bracketed timestamp below with the
-measured transition in the final uploaded MP4; `00:00` is intentionally fixed.
-YouTube chapter times must be strictly increasing and each chapter must last at
-least ten seconds.
+These timestamps are the exact transitions of the canonical 5,160-frame caption-led
+final. Verify them against the final muxed MP4 and again after platform processing;
+do not reuse them for a different edit. YouTube chapter times must be strictly
+increasing and each chapter must last at least ten seconds.
 
 ```text
 00:00 Why persistent memory must challenge itself
-[MEASURED_TIME_02] Exact runtime, Qwen readiness and vision canary
-[MEASURED_TIME_03] Architecture and trust boundaries
-[MEASURED_TIME_04] Fresh-session cited recall
-[MEASURED_TIME_05] Read-only field contradiction and Defer boundary
-[MEASURED_TIME_06] Feedback persists into a fresh session
-[MEASURED_TIME_07] Qwen meaning-level self-audit and MCP
-[MEASURED_TIME_08] One-row safe forgetting
-[MEASURED_TIME_09] Reproducible evaluation evidence
-[MEASURED_TIME_10] Alibaba ECS, public MIT source and close
+00:13 Exact runtime, Qwen readiness and vision canary
+00:32 Architecture and trust boundaries
+00:51 Fresh-session cited recall
+01:13 Read-only field contradiction and Defer boundary
+01:35 Feedback persists into a fresh session
+01:53 Qwen meaning-level self-audit and MCP
+02:10 One-row safe forgetting
+02:22 Reproducible evaluation evidence
+02:42 Alibaba ECS, public MIT source and close
 ```
 
-Measure against the final muxed file, not the edit timeline or narration estimate.
-Recheck the chapters after YouTube finishes processing.
+The builder manifest must still report those transitions, 172.000 measured seconds
+and 5,160 frames. Recheck the chapters after YouTube finishes processing.
 
 ## Thumbnail and captions
 
@@ -85,9 +85,8 @@ Recheck the chapters after YouTube finishes processing.
   at small card size.
 - Set the video language to **English**.
 - Upload [`final-media/memoryagent-demo.en.srt`](./final-media/memoryagent-demo.en.srt)
-  as English subtitles. The final file must have been generated from the measured
-  `caption_windows.json`; when the browser narration beat exists, it must also use
-  the measured `video_manifest.json` and exact `narration_web.txt`.
+  as English subtitles. It must be byte-identical to the SHA-bound ten-entry file
+  mirrored by the burned captions and final build manifest.
 - Do not publish an SRT whose capture review says
   `canonical-unmeasured-draft`.
 - Do not enable a synthetic voice or make a voice-rights claim here. Voice and all
@@ -111,12 +110,13 @@ Recheck the chapters after YouTube finishes processing.
       Google login or access request.
 - [ ] The player reports a duration strictly below 3:00 and the local release gate
       remains below the stricter 175-second publication ceiling.
-- [ ] 1080p is available, text is readable at normal playback size, audio is clear,
-      and no frame is blank, stale or from another release.
+- [ ] 1080p is available, text is readable at normal playback size, the compatibility
+      AAC track remains digitally silent, and no frame is blank, stale or from
+      another release.
 - [ ] The thumbnail is the reviewed 1280×720 file and survives YouTube's small-card
       crop.
-- [ ] English subtitles load, match the spoken content, and stay synchronized
-      through the separate browser beat.
+- [ ] English subtitles load, match the burned captions byte-for-byte, and stay
+      synchronized through all ten beats.
 - [ ] Every measured chapter seeks to the correct final-frame transition and meets
       YouTube's minimum chapter duration.
 - [ ] Live app, repository, architecture, Qwen-integration and deployment links all

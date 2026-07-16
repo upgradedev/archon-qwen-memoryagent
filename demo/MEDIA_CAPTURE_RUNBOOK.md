@@ -75,8 +75,11 @@ Keep all inputs inside this project:
 3. The dedicated, low-privilege reviewer token in the explicitly requested ignored
    `.artifacts/devpost/memory-reviewer-credential.json` `token` field, or in the
    process environment only. Never use both sources in one run.
-4. Preferably the final renderer's measured `caption_windows.json`,
-   `video_manifest.json`, and exact `narration_web.txt`, copied into an ignored
+4. For the preferred caption-led final, emit the exact 172-second windows with the
+   command in [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md), writing
+   `.artifacts/final-caption-video/caption_windows.json`. For the optional narrated
+   source-footage workflow, instead retain its measured `caption_windows.json`,
+   `video_manifest.json`, and exact `narration_web.txt` together in an ignored
    repo-local working folder.
 
 The checked-in [`alibaba-redaction-profile.json`](./alibaba-redaction-profile.json)
@@ -92,18 +95,16 @@ runtime SHA and attempt number with the values from that completed run:
 
 ```bash
 python scripts/capture_submission_gallery.py \
-  --expected-sha 0000000000000000000000000000000000000000 \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-N.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-N.json \
+  --expected-sha <FINAL_RUNTIME_SHA> \
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-<ATTEMPT>.txt \
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-<ATTEMPT>.json \
   --reviewer-credential-json .artifacts/devpost/memory-reviewer-credential.json \
   --alibaba-raw demo/private-originals/alibaba-ecs-overview-raw.png \
-  --caption-windows .artifacts/final-video/caption_windows.json \
-  --video-manifest .artifacts/final-video/video_manifest.json \
-  --web-narration .artifacts/final-video/narration_web.txt
+  --caption-windows .artifacts/final-caption-video/caption_windows.json
 ```
 
-The zero SHA and `N` above are intentional measured-release placeholders; never
-run them unchanged. The script refuses a tracked or non-ignored credential JSON,
+`<FINAL_RUNTIME_SHA>` and `<ATTEMPT>` are intentional measured-release placeholders;
+never run them unchanged. The script refuses a tracked or non-ignored credential JSON,
 reads only its `token` field in memory, and never copies or serializes it. If the
 ignored JSON is unavailable, use `DEMO_JUDGE_API_KEY` as the sole source; on
 PowerShell acquire it with `Read-Host -AsSecureString`, convert it only for the
@@ -121,6 +122,11 @@ python scripts/capture_submission_gallery.py ... \
 That fallback is recorded as `canonical-unmeasured-draft` in the capture review.
 Regenerate with the measured files before publishing the video or uploading its
 captions.
+
+After this gate passes and a human approves every final, run the fail-closed
+caption-led assembler in [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md). It
+rechecks every hash in `CAPTURE_REVIEW.json`, release/source freshness, and exact SRT
+bytes before producing the canonical MP4; it never performs another live capture.
 
 ## Deterministic outputs
 
