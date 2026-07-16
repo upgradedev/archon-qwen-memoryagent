@@ -38,7 +38,7 @@ values must remain readable on a small project card.
 | Project Story | Paste only the canonical body between the horizontal separators in [`SUBMISSION.md`](./SUBMISSION.md). |
 | Try it out | <https://memory.43.106.13.19.sslip.io> |
 | Video demo | `[PUBLIC_YOUTUBE_VIMEO_OR_YOUKU_URL]` — public, no login, strictly under 3:00 |
-| Image gallery | Upload the approved files in the order and with the captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md). |
+| Image gallery | Upload the approved 1500×1000 files in the order and with the captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md). Do not substitute the 16:9 video proof frames. |
 | Public source | <https://github.com/upgradedev/archon-qwen-memoryagent> |
 | License | **MIT**; confirm GitHub shows it on the repository landing page. |
 | Track/category | **Track 1 — MemoryAgent** |

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "reviewStatus": "human-reviewed-source-specific",
+  "sourceSha256": "e0242120c705683301f79964de9c222c6c507c419f4c23e912728703fff6de0e",
+  "sourceDimensions": [1600, 842],
+  "safeCrop": [210, 140, 1120, 500],
+  "redactions": [
+    {
+      "label": "instance-id",
+      "box": [232, 318, 470, 360],
+      "replacement": "INSTANCE ID REDACTED"
+    },
+    {
+      "label": "instance-name",
+      "box": [382, 352, 555, 391],
+      "replacement": "INSTANCE NAME REDACTED"
+    },
+    {
+      "label": "public-ip",
+      "box": [382, 424, 520, 466],
+      "replacement": "PUBLIC IP REDACTED"
+    }
+  ],
+  "reviewNotes": [
+    "The crop excludes the global account header, avatar, email, notifications and browser-profile controls.",
+    "Opaque masks cover the ECS instance id, instance name and raw public IP before cropping.",
+    "A different source hash or source size must fail; recapture requires a new human-reviewed profile."
+  ]
+}

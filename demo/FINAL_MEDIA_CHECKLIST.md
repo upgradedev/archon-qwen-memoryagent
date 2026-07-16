@@ -46,7 +46,9 @@ Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use 
 Follow the canonical [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md), run the operational
 [`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md), and use
 [`BUILD_RECORDING.md`](./BUILD_RECORDING.md) for the authenticated workflow and
-artifact-review procedure.
+artifact-review procedure. After final mux/inspection, use the paste-ready
+[`VIDEO_PUBLICATION_PACKET.md`](./VIDEO_PUBLICATION_PACKET.md); it prepares upload
+metadata but does not authorize publication.
 
 - [ ] Use only owned or properly licensed music, images, logos, fonts, and footage; include no copyrighted third-party asset without permission, and use competition marks only as the rules permit.
 
@@ -81,22 +83,35 @@ artifact-review procedure.
 
 ## 2. Screenshot set
 
-Capture clean 16:9 or high-resolution browser images; hide bookmarks, personal tabs, tokens, and terminal history.
-Use the canonical filenames, upload order and ready-to-paste English captions in
-[`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
+Run the fail-closed [`MEDIA_CAPTURE_RUNBOOK.md`](./MEDIA_CAPTURE_RUNBOOK.md).
+Canonical Devpost images are clean 1500×1000 (3:2); each maps deterministically to
+a no-crop 1920×1080 proof frame for video. Hide bookmarks, personal tabs, tokens,
+and terminal history. Use the canonical filenames, upload order and ready-to-paste
+English captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
 
 - [ ] Hero: Explorer loaded at the live HTTPS URL with Track 1/product name visible.
 - [ ] Grounded recall: answer plus numbered citations in the same frame.
 - [ ] Field self-audit: `INV-5521`, both values, and the recency recommendation visible.
 - [ ] Semantic self-audit: meaning-level pair and read-only resolution visible; clear/crop out the Judge token field and all auth details.
 - [ ] Feedback/lifecycle: correction result or dry-run preview with `confirm` semantics visible.
-- [ ] Architecture: use the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg), not a screenshot of raw Mermaid. Keep [`../docs/architecture.png`](../docs/architecture.png) only as the dense technical appendix.
+- [ ] Architecture: upload the generated 3:2
+      [`gallery/06-qwen-memoryagent-architecture.png`](./gallery/06-qwen-memoryagent-architecture.png)
+      to the Devpost gallery. Keep the canonical 16:9
+      [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg)
+      for video/custom architecture upload, not a screenshot of raw Mermaid. Keep
+      [`../docs/architecture.png`](../docs/architecture.png) only as the dense technical appendix.
 - [ ] Live proof: `/ready` and `/health` showing ready + real Qwen model ids.
 - [ ] Alibaba proof: ECS/container service and live endpoint in one safe frame; redact account IDs/IP metadata not needed for proof.
 - [ ] Repository proof: public repo landing page with latest commit and GitHub's MIT
       license detection visible from the repository page, not only a raw `LICENSE` file.
 
 Store sensitive originals only in the ignored repo-local folder `demo/private-originals/` so every agent shares one project boundary without risking a commit. Redact there, then add only sanitized final images under `demo/gallery/`. Before staging, run `git status --ignored --short demo/` and verify no private original is tracked.
+
+- [ ] `demo/gallery/CAPTURE_REVIEW.json` is `passed`, records the exact runtime SHA,
+      measured SRT timing source, current model ids and SHA-256 for every final.
+- [ ] [`final-media/youtube-thumbnail.png`](./final-media/youtube-thumbnail.png) is
+      exactly 1280×720 and [`final-media/memoryagent-demo.en.srt`](./final-media/memoryagent-demo.en.srt)
+      is regenerated from final measured windows, not the canonical fallback.
 
 ## 3. Public posts
 
