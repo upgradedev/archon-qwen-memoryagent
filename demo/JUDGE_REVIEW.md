@@ -9,7 +9,7 @@ This is a claim audit for **Track 1: MemoryAgent** only. The Autopilot entry has
 | Public source repository | <https://github.com/upgradedev/archon-qwen-memoryagent> | Ready after final changes are pushed |
 | Detectable open-source license | Root [`LICENSE`](../LICENSE) | Ready (MIT) |
 | Alibaba/Qwen code proof | [`src/qwen/client.ts`](../src/qwen/client.ts) and [`ALIBABA_PROOF.md`](./ALIBABA_PROOF.md) | Ready |
-| Working Alibaba deployment | [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md), public `/health` + `/ready` | Exact runtime source `e4b208a63e1768409e5b94fe305a3672c4c96dcd` verified live, including v4 idempotent reconciliation |
+| Working Alibaba deployment | [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md), public `/health` + `/ready` | **Blocked for current source:** previous `e4b208a…` proof is historical; `aee7897…` runtime fix is not yet exact-deployed/live-verified |
 | Architecture diagram | [`docs/judge-architecture.svg`](../docs/judge-architecture.svg) / [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg) | Ready |
 | Text description + track | [`SUBMISSION.md`](./SUBMISSION.md) and [`PROJECT_STORY.md`](./PROJECT_STORY.md) | Ready |
 | Public video under three minutes | Final recording must be hosted on an accepted public platform | **Pending user upload; a local MP4 is not a pass** |
@@ -46,8 +46,15 @@ The README leads with the differentiator, the judge guide separates public and a
 2. The Mem0 evidence supports only the pinned version/configuration and disclosed `dir()`/search probe. The honest conclusion is retrieval parity plus no separately named contradiction/resolution method matched there—not absence of internal/differently named behavior or universal superiority.
 3. Payroll source documents are the implemented vision/text pipeline. Purchase/sales invoices use a strict JSON endpoint. Orders, receipts, general bank statements, EBITDA, and sales targets are outside the shipped claim.
 4. Public seed and recall are quota-bounded; protected features require the dedicated judge credential. The final video must show both paths without exposing it.
-5. Deployment claims are valid only after the final image passes `/ready`, real-model `/health`, and OpenAPI-route smoke checks.
+5. Current-source deployment claims are invalid until `aee7897…` passes exact
+   checkout/build/deploy, `/ready`, real-model `/health`, OpenAPI, public/protected
+   journeys and the selected-company P&L smoke. Endpoint health alone does not attest a commit.
 
 ## Final verdict
 
-The code, evidence, and exact-runtime release gate are green at `e4b208a63e1768409e5b94fe305a3672c4c96dcd`. Remaining user-owned work is final video production/publication, screenshots, public posts, Devpost field/credential entry and eligibility/rights sign-off, availability monitoring through judging, and the submission receipt. Deadline: **2026-07-20, 2:00 PM PDT**.
+The source and evidence package are ready, but the exact-runtime release gate is
+**red**: current candidate `aee7897d4d436501fc9b0dc1ed28e3757131f559`
+must be deployed and live-verified before any final recording, screenshot or Devpost
+draft claims current-source parity. After that, remaining user-owned work is media
+publication, platform fields, eligibility/rights sign-off, judging-window monitoring
+and the eventual submission receipt. Deadline: **2026-07-20, 2:00 PM PDT**.

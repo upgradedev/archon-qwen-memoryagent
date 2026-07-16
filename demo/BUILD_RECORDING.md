@@ -20,9 +20,10 @@ PostgreSQL full-text path.
 
 1. Confirm the default branch and live runtime evidence are aligned with
    [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). The required recording
-   runtime source is `e4b208a63e1768409e5b94fe305a3672c4c96dcd`.
-   Submission-pack-only descendants (docs, sanitized media, non-runtime recording
-   tooling) may move repository HEAD; runtime descendants require a new deploy.
+   runtime candidate is `aee7897d4d436501fc9b0dc1ed28e3757131f559` and it must
+   be explicitly recorded there as exact-deployed/live-verified. Its current
+   **REDEPLOY REQUIRED** state is a hard stop. Submission-pack-only descendants may
+   move repository HEAD after that candidate; runtime descendants require a new deploy.
 2. Run the secret-safe pre-recording checks in
    [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md).
 3. Configure `MEMORYAGENT_JUDGE_API_KEY` only as a private Actions secret. Never put

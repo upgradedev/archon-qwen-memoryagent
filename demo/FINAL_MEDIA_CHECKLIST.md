@@ -26,12 +26,16 @@ August 11, 2026 at 2:00 PM PDT.
 - [ ] Protected semantic audit works with the reviewer token.
 - [ ] Browser console is clean and the final repository changes are pushed to `main`.
 - [ ] [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-      `e4b208a63e1768409e5b94fe305a3672c4c96dcd` as the verified live
-      runtime-source commit.
-- [ ] `git diff --name-only e4b208a63e1768409e5b94fe305a3672c4c96dcd..origin/main`
-      contains only documentation, sanitized submission media, or non-runtime
-      recording tooling. A later submission-pack HEAD is valid; any runtime-affecting
-      path requires redeployment.
+      `aee7897d4d436501fc9b0dc1ed28e3757131f559` as exact-deployed and
+      live-verified. **At authoring time this is pending; do not check the box from
+      `/health` or `/ready` alone.**
+- [ ] `git merge-base --is-ancestor aee7897d4d436501fc9b0dc1ed28e3757131f559 origin/main`
+      passes, then `git diff --name-only aee7897d4d436501fc9b0dc1ed28e3757131f559..origin/main`
+      contains only the post-candidate submission-pack allowlist recorded in
+      [`DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). Any new runtime-affecting path
+      requires review and redeployment.
+- [ ] Selected-company P&L smoke passes in the Explorer after exact deployment;
+      choosing a company changes the `/pnl?company=...` request and result scope.
 
 Stop if any box is red. Do not record a stale deployment.
 
@@ -78,6 +82,8 @@ artifact-review procedure.
 ## 2. Screenshot set
 
 Capture clean 16:9 or high-resolution browser images; hide bookmarks, personal tabs, tokens, and terminal history.
+Use the canonical filenames, upload order and ready-to-paste English captions in
+[`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
 
 - [ ] Hero: Explorer loaded at the live HTTPS URL with Track 1/product name visible.
 - [ ] Grounded recall: answer plus numbered citations in the same frame.
@@ -104,13 +110,16 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
 
 ## 4. Devpost copy/paste fields
 
+Use [`DEVPOST_STAGING.md`](./DEVPOST_STAGING.md) as the single field-by-field
+operator sheet and stop on Devpost's final step without clicking **Submit project**.
+
 - [ ] Team: add every actual teammate (or leave solo); if entering as a team or
       organization, confirm the authorized representative in section 5 below.
 - [ ] Project name: **Archon MemoryAgent — a memory that audits itself**
 - [ ] Tagline (under 140 characters): **Persistent Qwen memory that recalls, cites, and surfaces its own cross-session contradictions.**
-- [ ] Thumbnail: upload [`thumbnail.png`](./thumbnail.png) (PNG, 1600×900, below
-      5 MB). Devpost recommends 3:2 but accepts this 16:9 asset; preview the actual
-      gallery crop and create a 3:2 crop only if important text is clipped.
+- [ ] Thumbnail: upload [`thumbnail.png`](./thumbnail.png) (PNG, 1500×1000, 3:2,
+      below 5 MB), rendered from the original [`thumbnail.svg`](./thumbnail.svg).
+      Preview the actual gallery crop; the hook and both conflicting values must remain readable.
 - [ ] Built with tags: **Qwen Cloud, Alibaba Cloud, Qwen, Model Context Protocol
       (MCP), TypeScript, Fastify, PostgreSQL, pgvector, Docker, OpenAI SDK**.
 - [ ] Track: **Track 1 — MemoryAgent**
@@ -128,7 +137,10 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
 - [ ] Architecture: upload the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg).
 - [ ] Public video: paste the URL recorded above.
 - [ ] Blog/social: paste the public URL recorded above.
-- [ ] Testing instructions: paste the public click path from [`../docs/JUDGE-GUIDE.md`](../docs/JUDGE-GUIDE.md). Before adding any credential, confirm with the actual form/organizer whether that field is judge-only; Devpost gallery visibility must not be assumed.
+- [ ] Testing instructions: paste the safe public block from
+      [`DEVPOST_PRIVATE_TESTING.md`](./DEVPOST_PRIVATE_TESTING.md). Before adding any
+      credential, confirm with the actual form/organizer whether that field is
+      judge-only; Devpost gallery visibility must not be assumed.
 - [ ] Use only a dedicated low-privilege, tenant-scoped, quota-bounded judging credential. Preview the saved submission logged out; rotate immediately if exposed, otherwise keep it working through judging and revoke/rotate after judging ends.
 - [ ] Keep the live app, public video, repository, and reviewer credential
       working without payment/login friction through the end of judging; schedule
@@ -144,6 +156,10 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
 
 These are human attestations required by the detailed rules; repository automation
 cannot decide them.
+
+Complete the expanded release gate in
+[`RIGHTS_RELEASE_CHECKLIST.md`](./RIGHTS_RELEASE_CHECKLIST.md); the short list below
+is only the final summary.
 
 - [ ] Every entrant is at least the local age of majority, eligible in their
       jurisdiction, not a restricted party, and has no sponsor/judge/promotion-entity

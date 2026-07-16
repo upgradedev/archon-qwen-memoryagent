@@ -10,13 +10,16 @@ video-specific; the screenshots, posts, and Devpost fields remain in
       confirm the video will be `<3:00`, public, English or English-translated, and
       hosted on YouTube, Vimeo, or Youku.
 - [ ] Confirm `origin/main` is the intended submission source and
-      [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records deployed
-      runtime-source SHA `e4b208a63e1768409e5b94fe305a3672c4c96dcd`.
-- [ ] Run `git diff --name-only e4b208a63e1768409e5b94fe305a3672c4c96dcd..origin/main`.
-      Every descendant must remain within the explicit submission-pack allowlist in
-      `DEPLOY_STATE.md`; any application, dependency, schema, container,
-      runtime/deployment-workflow, deploy-script, or unlisted-path change invalidates
-      the release gate and requires review plus redeployment.
+      [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
+      `aee7897d4d436501fc9b0dc1ed28e3757131f559` as exact-deployed and
+      live-verified. Its current **REDEPLOY REQUIRED** state is a hard stop.
+- [ ] Confirm `aee7897d4d436501fc9b0dc1ed28e3757131f559` is an ancestor of
+      `origin/main`, then inspect `git diff --name-only aee7897d4d436501fc9b0dc1ed28e3757131f559..origin/main`.
+      Every later path must remain within the explicit submission-pack allowlist in
+      `DEPLOY_STATE.md`; any new runtime-affecting delta requires another redeploy.
+- [ ] Exercise selected-company P&L in the live Explorer and confirm its request and
+      result are scoped to the selected company. This is the runtime behavior fixed
+      by the candidate and must not be inferred from endpoint readiness.
 - [ ] Re-run public `/health`, `/ready`, and OpenAPI checks. Verify real Qwen model
       ids and every required route; do not record a degraded or stale box.
 - [ ] Run the protected semantic path once with the reviewer credential without

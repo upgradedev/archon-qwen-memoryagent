@@ -2,6 +2,10 @@
 
 **Live:** <https://memory.43.106.13.19.sslip.io>
 
+**Operator gate:** current source candidate `aee7897…` is not judge-ready until
+[`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records a successful exact
+deployment and live verification. A healthy older endpoint is not source attestation.
+
 The public click path below needs **no login or API key**. It is intentionally limited to the fixed demo payload and public-tenant reads. Protected writes, feedback, lifecycle operations, and the Qwen semantic audit use a dedicated, low-privilege, quota-bounded reviewer credential supplied through Devpost testing instructions; no credential is committed to this repository. Do not assume the Devpost field is private: the entrant must verify its actual visibility before pasting it and rotate/revoke it after judging.
 
 Before judging, [`GET /ready`](https://memory.43.106.13.19.sslip.io/ready) should return `200` with database, Qwen, and judge-auth checks ready. [`GET /health`](https://memory.43.106.13.19.sslip.io/health) should identify `text-embedding-v4` and `qwen-plus`, not Fake providers.
