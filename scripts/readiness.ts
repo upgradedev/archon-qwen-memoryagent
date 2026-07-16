@@ -372,7 +372,7 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
         const canonicalDir = existsSync(join(ROOT, "demo/final-media"));
         const durationGate = /strictly under 175 seconds/i.test(checklist);
         const visibilityGate = /Public visibility with no login or access request/i.test(checklist);
-        const rightsGate = /voice-rights attestation|publication rights/i.test(checklist);
+        const rightsGate = /voice[- ]rights attestations?|publication[- ]rights/i.test(checklist);
         const historicalBlocked = /HISTORICAL PRE-HARDENING.*DO NOT RECORD OR PUBLISH/i.test(historicalTranscript);
         const localNotPass = /local MP4 is not a pass/i.test(review);
         return {
