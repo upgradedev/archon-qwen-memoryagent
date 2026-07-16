@@ -45,14 +45,14 @@
 
     <g filter="url(#shadow)">
       <rect x="80" y="444" width="570" height="282" rx="28" fill="#131a2f" stroke="#36c9ee" stroke-width="3"/>
-      <text x="122" y="497" fill="#64dfff" font-size="22" font-weight="800" letter-spacing="2">SESSION A · SAME FIELD</text>
-      <text x="122" y="606" fill="#ffffff" font-size="82" font-weight="900">€18,000</text>
+      <text x="122" y="497" fill="#64dfff" font-size="22" font-weight="800" letter-spacing="2">SESSION A · INV-5521</text>
+      <text x="122" y="606" fill="#ffffff" font-size="82" font-weight="900">€8,400</text>
       <line x1="122" y1="643" x2="604" y2="643" stroke="#344260" stroke-width="2"/>
       <text x="122" y="687" fill="#aebde1" font-size="24">Stored with source + timestamp</text>
 
       <rect x="850" y="444" width="570" height="282" rx="28" fill="#18172f" stroke="#a477ff" stroke-width="3"/>
-      <text x="892" y="497" fill="#b797ff" font-size="22" font-weight="800" letter-spacing="2">SESSION B · SAME FIELD</text>
-      <text x="892" y="606" fill="#ffffff" font-size="82" font-weight="900">€19,000</text>
+      <text x="892" y="497" fill="#b797ff" font-size="22" font-weight="800" letter-spacing="2">SESSION B · INV-5521</text>
+      <text x="892" y="606" fill="#ffffff" font-size="82" font-weight="900">€8,900</text>
       <line x1="892" y1="643" x2="1374" y2="643" stroke="#46405f" stroke-width="2"/>
       <text x="892" y="687" fill="#beb7dc" font-size="24">Both values remain visible</text>
     </g>

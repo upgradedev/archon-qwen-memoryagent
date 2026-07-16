@@ -60,7 +60,7 @@ metadata but does not authorize publication.
 | 0:14–0:29 | Sanitized exact-runtime-SHA release card, `/health`, `/ready` | Commit provenance is separate from endpoint/model readiness. Never show environment variables. |
 | 0:29–0:53 | `demo/final-media/judge-architecture.jpg` | Trust boundary, Qwen, pgvector, hybrid cited recall, read-only audit/human resolution, and portable REST/MCP/pg-wire seams. |
 | 0:53–1:19 | Session A write/disconnect, fresh Session B cited recall | `€15,800` true cost versus `€10,000` bank outflow; dense score is exposed only for this human-readable proof while product default remains hybrid. |
-| 1:19–1:40 | Two writes plus field self-audit | `€18,000` versus `€19,000`, provenance, recency recommendation, and no silent mutation. |
+| 1:19–1:40 | Original synthetic `INV-5521` plus field self-audit | `€8,400` versus `€8,900`, provenance, recency recommendation, and no silent mutation. |
 | 1:40–1:58 | Cropped authenticated semantic result plus four-tool MCP card | “Pays on time” versus “chronically late”; hide the credential/request header and distinguish authenticated HTTP from trusted-local stdio. |
 | 1:58–2:10 | Authenticated lifecycle preview followed by confirmed result | Dry-run first, explicit reason + confirmation, tenant scope, and auditable transition; no surprise deletion. |
 | 2:10–2:35 | One prepared evidence card | 5/5 field issues with 0 FP; 4/4 policy conformance; deterministic semantic 90% recall/100% precision/0 FP; MRR 0.883→0.911 and Recall@3 90.0%→96.7%. Keep fixture labels/caveats visible. |

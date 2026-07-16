@@ -96,11 +96,31 @@ Use or edit this only if the form asks for tool feedback:
 
 ## Step 4 — additional information / custom questions
 
-- Paste the Track, repository, Alibaba proof, architecture and build-window answers
-  above into the matching custom fields, even if already present in the story.
-- For testing instructions, use the public no-login block in
-  [`DEVPOST_PRIVATE_TESTING.md`](./DEVPOST_PRIVATE_TESTING.md). Add the protected
-  credential block only through a visibility-confirmed judge/organizer channel.
+The live 2026-07-16 form exposes the following fields. Values marked **human** must
+be confirmed by the entrant and entered directly; the repository intentionally does
+not guess or retain them.
+
+| Actual Devpost field | Exact value / action |
+|---|---|
+| Submitter type | `[HUMAN CONFIRM: Individual / Team / Organization]` |
+| Organization name | Leave blank only if the confirmed submitter type is Individual/Team and no organization applies. |
+| Country of residence | `[HUMAN CONFIRM AND ENTER DIRECTLY]` — appears publicly in the gallery. |
+| Newly built or previously existing | **New** — the distinct entry repository starts 2026-07-01; retain the reuse disclosure below. |
+| Start date | **07-01-26** |
+| Required pre-May-26/update explanation | **Not applicable — this is a new competition-period project started July 1, 2026. It carries forward the Archon name and financial-analysis context only. During the submission period we built the standalone Qwen/Alibaba persistent memory store, hybrid recall and reranking, field- and meaning-level self-audits, explicit human conflict resolution, lifecycle controls, REST/MCP boundaries, evaluations, CI, and live deployment. Reused context is disclosed and is not claimed as newly authored evidence.** |
+| Track | **Track 1: MemoryAgent** |
+| Code repository | <https://github.com/upgradedev/archon-qwen-memoryagent> |
+| Alibaba/Qwen code file | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts> |
+| Architecture Diagram upload | [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg) |
+| Alibaba Deployment Screenshot upload | [`gallery/08-alibaba-runtime-proof.png`](./gallery/08-alibaba-runtime-proof.png), only after `CAPTURE_REVIEW.json` passes for the exact deployment. |
+| Published Blog or Social Post | `[PUBLIC_BLOG_OR_SOCIAL_URL]`, only after signed-out verification. |
+| AI tools leveraged | **Qwen Cloud models (qwen-plus, qwen-vl-max, text-embedding-v4), OpenAI Codex, and Anthropic Claude.** |
+| Learning level | **Significant** |
+| Age-of-majority attestation | `[HUMAN LEGAL ATTESTATION REQUIRED]` |
+| Eligible-jurisdiction attestation | `[HUMAN LEGAL ATTESTATION REQUIRED]` |
+| Sponsor/affiliate/government-employment attestation | `[HUMAN LEGAL ATTESTATION REQUIRED]` |
+| Testing Instructions | Paste the public block from [`DEVPOST_PRIVATE_TESTING.md`](./DEVPOST_PRIVATE_TESTING.md), then add the active credential only in this judges-visible field after exact-deploy canaries pass. |
+
 - Confirm every entered answer is English.
 - Do not infer privacy from a field name. Save the draft, then inspect its public
   preview logged out before any live credential is added.

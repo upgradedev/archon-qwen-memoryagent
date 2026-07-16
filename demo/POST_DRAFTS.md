@@ -4,11 +4,11 @@ Replace only bracketed placeholders after the video/blog is public. All numerica
 
 ## Short launch post (X / Bluesky)
 
-AI memory should not stay silent when it contradicts itself. We built Archon MemoryAgent for the Qwen Cloud hackathon: persistent pgvector recall, cited Qwen answers, and read-only conflict recommendations. Live: https://memory.43.106.13.19.sslip.io Repo: https://github.com/upgradedev/archon-qwen-memoryagent #Qwen #AlibabaCloud #AI
+AI memory shouldn't hide its own conflicts. Archon MemoryAgent gives Qwen persistent pgvector recall, cited answers, and read-only contradiction recommendations. Live: https://memory.43.106.13.19.sslip.io #QwenCloudHackathon
 
 ## Video launch post (X / Bluesky)
 
-What happens when an agent remembers €8,400 in one session and €8,900 in another? Archon MemoryAgent surfaces both and recommends—without rewriting history. Track 1 demo: [PUBLIC_VIDEO_URL] Live: https://memory.43.106.13.19.sslip.io #QwenCloudHackathon
+In our original synthetic demo, one session remembers €8,400 and another €8,900. Archon MemoryAgent surfaces both and recommends—without rewriting history. Video: [PUBLIC_VIDEO_URL] Live: https://memory.43.106.13.19.sslip.io #QwenCloudHackathon
 
 ## LinkedIn launch post
 

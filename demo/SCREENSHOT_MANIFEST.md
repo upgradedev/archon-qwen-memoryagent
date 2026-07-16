@@ -6,13 +6,17 @@ Capture only from the verified release described in
 `demo/gallery/`. Do not fabricate a result, hand-edit a response value, or combine
 screens from different releases into one claimed live journey.
 
+Every invoice, payroll, vendor, and contradiction record visible in this gallery is
+original synthetic demo data. Retain that label wherever a business record is the
+focal proof.
+
 ## Primary Devpost gallery — upload in this order
 
 | Order | Canonical file | Required visible proof | English gallery caption |
 |---:|---|---|---|
-| 1 | `demo/gallery/01-grounded-cross-session-recall.png` | Live hostname, grounded answer, numbered memory citations | **A fresh session recalls a bounded slice of durable pgvector memory and grounds the Qwen answer in numbered evidence.** |
-| 2 | `demo/gallery/02-read-only-field-self-audit.png` | `INV-5521`, `8400`, `8900`, recency recommendation, no secret field value | **The read-only audit keeps both cross-session values visible and recommends a policy winner without rewriting history.** |
-| 3 | `demo/gallery/03-qwen-semantic-self-audit.png` | “always pays on time” vs “chronically late”, configured model/completion provenance; token fully absent/cropped | **Qwen catches a meaning-level contradiction with no shared numeric field; the result remains a recommendation, not an automatic edit.** |
+| 1 | `demo/gallery/01-grounded-cross-session-recall.png` | Live hostname, grounded answer, numbered memory citations | **On original synthetic demo data, a fresh session recalls a bounded slice of durable pgvector memory and grounds the Qwen answer in numbered evidence.** |
+| 2 | `demo/gallery/02-read-only-field-self-audit.png` | `INV-5521`, `8400`, `8900`, recency recommendation, no secret field value | **On original synthetic demo data, the read-only audit keeps both cross-session values visible and recommends a policy winner without rewriting history.** |
+| 3 | `demo/gallery/03-qwen-semantic-self-audit.png` | “always pays on time” vs “chronically late”, configured model/completion provenance; token fully absent/cropped | **On original synthetic vendor claims, Qwen catches a meaning-level contradiction with no shared numeric field; the result remains a recommendation, not an automatic edit.** |
 | 4 | `demo/gallery/04-human-resolution-control.png` | Accept/Override/Defer or equivalent response, provenance preserved | **A separate authenticated human decision can accept, override or defer the recommendation through one atomic, idempotent action.** |
 | 5 | `demo/gallery/05-safe-memory-lifecycle.png` | Preview plus confirmed consolidation/forgetting result, reason and tenant-safe status; no token | **Memory hygiene is explicit: preview first, then authenticated confirmation and reason, with an auditable state transition.** |
 | 6 | `demo/gallery/06-qwen-memoryagent-architecture.png` | No-crop 3:2 wrapper of the canonical architecture | **Qwen embeddings and narration, hybrid pgvector recall, read-only self-audit and human control are separated by explicit trust boundaries.** |

@@ -24,8 +24,9 @@ recording tooling only.
 ## Archon MemoryAgent — a memory that audits itself
 
 **AI agents and assistants forget the moment a session ends** — and when they *do*
-carry facts forward, they silently contradict themselves. One session records a
-figure as €18,000; a later session records €19,000 for the same record; plain vector
+carry facts forward, they silently contradict themselves. In the original synthetic
+demo, one session records `INV-5521.amount` as €8,400 and a later session records
+€8,900 for the same field; plain vector
 recall just returns whichever ranked higher and stays quiet. Anyone building agents
 that must stay consistent over time — support copilots, research assistants,
 financial-document pipelines — inherits a memory they can't trust. **Archon
@@ -97,4 +98,4 @@ https://github.com/upgradedev/archon-qwen-memoryagent
 **Operator-only Alibaba Cloud proof reference (use the dedicated form field):** the DashScope OpenAI-compatible client (base URL + Qwen
 instantiation) is
 [`src/qwen/client.ts`](https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts);
-app-specific runtime proof recording: `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` (to be captured from the verified live deployment during final media production; raw console footage stays ignored under `demo/private-originals/`).
+app-specific runtime proof image: `demo/gallery/08-alibaba-runtime-proof.png` (generated only from exact-deploy controller evidence plus sanitized Alibaba console and live readiness inputs; raw captures stay ignored under `demo/private-originals/`).

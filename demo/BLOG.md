@@ -9,8 +9,8 @@ memory starts to **disagree with itself**.
 
 A cross-session agent accumulates facts from many separate write events, over
 days, across processes. Nothing stops two of those writes from recording the same
-record two different ways: one session records a payroll event's employer cost at
-€18,000, a later session records €19,000 for the same event. A plain vector store does the worst
+record two different ways: in the original synthetic demo, one session records
+`INV-5521.amount` at €8,400 and a later session records €8,900 for the same field. A plain vector store does the worst
 possible thing here — it silently returns whichever one happened to rank higher,
 and never tells you the two ever conflicted. Your agent is now confidently wrong,
 and you have no way to know.
@@ -83,8 +83,9 @@ same-subject pairs by cosine, then asks the configured `QWEN_JUDGE_MODEL` whethe
 they directly contradict (`qwen-plus` is the rollback baseline; a candidate is
 eligible only after the versioned promotion gate), and a deterministic polarity/negation
 heuristic offline so it still runs in CI with no key. The online judge **fails
-closed**: any error or unparseable reply is treated as "no contradiction", never a
-manufactured one. It reuses the **same read-only resolution ladder** and, like the
+closed**: any error or unparseable reply returns an explicit `inconclusive` result
+with error metadata; it never masquerades as a clean no-conflict result or invents a
+contradiction. It reuses the **same read-only resolution ladder** and, like the
 rule-based path, **never mutates memory** — it runs *alongside* the field-level
 engine, additive, neither replacing the other. It is exposed over authenticated,
 quota-bounded HTTP and HTTP MCP (the `audit_memory` tool takes `semantic: true`),

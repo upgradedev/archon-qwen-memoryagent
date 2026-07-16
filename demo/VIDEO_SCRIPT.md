@@ -20,7 +20,7 @@ time the candidate is not claimed as deployed and the recording gate is red.
 | 2 · Exact live proof | 0:14–0:29 | Sanitized exact-SHA release card, `/health`, then `/ready` | Keep commit provenance separate from endpoint/model readiness. Never imply `/health` attests the Git commit. |
 | 3 · Architecture + scale path | 0:29–0:53 | [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg), held long enough to read | Trace evidence → trust edge → Qwen → pgvector → hybrid cited answer → read-only audit/human decision; point to tenant-scoped REST/MCP and pg-wire portability without claiming unmeasured scale. |
 | 4 · Cross-session memory | 0:53–1:19 | Live Explorer plus generated Session A/Session B proof | Fresh Session B receives a grounded cited answer from Session A. Product default is hybrid; the proof exposes pure cosine only for readable similarity. |
-| 5 · Headline differentiator | 1:19–1:40 | Two writes, field self-audit, both values and recommendation | Show `€18,000` vs `€19,000`, provenance, `recency`, no silent mutation, and separate human Accept / Override / Defer. |
+| 5 · Headline differentiator | 1:19–1:40 | Original synthetic `INV-5521`, two writes, field self-audit, both values and recommendation | Show `€8,400` vs `€8,900`, provenance, `recency`, no silent mutation, and separate human Accept / Override / Defer. |
 | 6 · Meaning + MCP | 1:40–1:58 | “always pays on time” vs “chronically late”, Qwen result, four-tool MCP card | Separate the working live semantic mechanism from the offline 90% fixture and distinguish authenticated HTTP from trusted-local stdio. |
 | 7 · Timely forgetting | 1:58–2:10 | Authenticated lifecycle preview followed by confirmed result | Show dry-run first, explicit reason + confirmation, tenant scope, and auditable transition; no surprise deletion. |
 | 8 · Evidence, not hype | 2:10–2:35 | One clean evidence card | Field **5/5, 0 FP**; policy **4/4**; deterministic semantic **90% recall, 100% precision, 0 FP**; MRR **0.883→0.911**, Recall@3 **90.0%→96.7%**. Keep fixture labels visible; do not show historical dirty-tree v1.1 as release evidence. |
@@ -55,8 +55,8 @@ never remove a claim caveat.
 > bank, with citations. This proof view deliberately exposes pure cosine scores for
 > readability; the product default remains hybrid.
 >
-> Now the differentiator. Two sessions write 18,000 and 19,000 euros for the same
-> field. Archon preserves both values and provenance, detects the disagreement,
+> Now the differentiator. In the original synthetic demo, two sessions write 8,400
+> and 8,900 euros for `INV-5521.amount`. Archon preserves both values and provenance, detects the disagreement,
 > and recommends the newer value under the declared recency policy. It does not
 > silently rewrite memory. Accept, Override, or Defer is a separate human action.
 >
@@ -105,9 +105,9 @@ never remove a claim caveat.
 - Do not claim every recall shown in the generated proof is hybrid: that capture
   deliberately selects dense cosine recall so the displayed score is meaningful.
 - Do not claim Function Compute/RDS is the live topology.
-- Label the two intentional contradiction fixtures instead of intercutting them as
-  one record: authenticated fresh-capture footage uses `€18,000`/`€19,000`; the
-  fixed public Explorer demo and gallery screenshot use `INV-5521` `8400`/`8900`.
+- Label `INV-5521` and all other displayed business records as original synthetic
+  demo data. Use the same canonical `€8,400`/`€8,900` pair in the story, thumbnail,
+  public Explorer, screenshots, captions, and final video.
 - Do not publish a candidate whose duration is `>=175` seconds, whose voice rights
   are unverified, or whose frames contain third-party material without permission.
 
