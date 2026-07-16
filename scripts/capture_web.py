@@ -35,7 +35,11 @@ from repo_paths import inside_repo
 
 BASE = os.environ.get("DEMO_BASE_URL", "https://memory.43.106.13.19.sslip.io").rstrip("/")
 COMPANY = os.environ.get("WEB_COMPANY", "Northwind Trading")
-QUESTION = os.environ.get("WEB_QUESTION", "What did it really cost to employ the team?")
+CANONICAL_RECALL_QUESTION = (
+    "Using only the retrieved memory, state the true employer cost for Northwind Trading in 2026-05 "
+    "and include citation marker [1] in the sentence."
+)
+QUESTION = os.environ.get("WEB_QUESTION", CANONICAL_RECALL_QUESTION)
 
 # Same positioning guard as scripts/capture_live.sh (+ `aade`): the memory is a
 # pure, domain-neutral financial engine — no country/authority-specific terms may

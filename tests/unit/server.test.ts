@@ -944,6 +944,12 @@ test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
   assert.match(res.body, /Archon MemoryAgent/);
   // The page wires the real recall endpoint (not a placeholder).
   assert.match(res.body, /\/recall/);
+  assert.match(
+    res.body,
+    /const recallBody = company \? \{ question, company, limit: 3 \} : \{ question, limit: 3 \};/,
+    "the shipped Explorer must bound live recall to at most three retrieved memories",
+  );
+  assert.match(res.body, /api\('POST', '\/recall', recallBody\)/, "the Explorer must send the bounded request body");
   // Guided tour assets (inline, no CDN) + the "Take the tour" trigger.
   assert.match(res.body, /Take the tour/);
   assert.match(res.body, /tour-overlay/);

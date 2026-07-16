@@ -909,7 +909,11 @@
       const btn = $('askBtn'); const prevLabel = btn.textContent;
       btn.disabled = true; btn.textContent = 'Recalling…';
       statusBusy('Recalling…');
-      try { const r = await api('POST', '/recall', company ? { question, company } : { question }); renderRecall(r); $('status').textContent = ''; }
+      const recallBody = company ? { question, company, limit: 3 } : { question, limit: 3 };
+      try {
+        const r = await api('POST', '/recall', recallBody);
+        renderRecall(r); $('status').textContent = '';
+      }
       catch (e) { $('status').className = 'err'; $('status').textContent = 'Recall failed: ' + e.message; }
       finally { btn.disabled = false; btn.textContent = prevLabel; refreshStatus(); }
     });

@@ -26,7 +26,12 @@ import { FakeJudge } from "../../src/memory/semantic-consistency.js";
 import { MemoryAgent } from "../../src/agents/memory-agent.js";
 import { SkillDispatcher } from "../../src/skills/dispatcher.js";
 import { buildMcpServer } from "../../src/mcp/server.js";
-import { DEMO_COMPANY, DEMO_TEMPLATES, DEMO_INVOICE_RECORD } from "../../src/demo-data.js";
+import {
+  DEMO_COMPANY,
+  DEMO_TEMPLATES,
+  DEMO_INVOICE_RECORD,
+  DEMO_PRIMARY_RECALL_QUESTION,
+} from "../../src/demo-data.js";
 
 const NO_MEMORY = "No relevant memories found in the agent's persistent memory.";
 
@@ -93,7 +98,7 @@ describe("JOURNEY: seed → recall → audit → semantic-audit → MCP → P&L 
     const res = await app.inject({
       method: "POST",
       url: "/recall",
-      payload: { question: "What did it really cost to employ the team?", company: DEMO_COMPANY },
+      payload: { question: DEMO_PRIMARY_RECALL_QUESTION, company: DEMO_COMPANY, limit: 3 },
     });
     assert.equal(res.statusCode, 200);
     const body = res.json();

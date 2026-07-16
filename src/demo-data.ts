@@ -119,8 +119,12 @@ export const DEMO_SALES: Array<{ content: string; metadata: Record<string, any> 
 //
 // `q` is the question; `c` pre-fills the company filter so recall is scoped to
 // the seeded company (the scope that guarantees a non-empty hit set).
+export const DEMO_PRIMARY_RECALL_QUESTION =
+  "Using only the retrieved memory, state the true employer cost for Northwind Trading in 2026-05 " +
+  "and include citation marker [1] in the sentence.";
+
 export const DEMO_TEMPLATES: Array<{ q: string; c: string }> = [
-  { q: "What did it really cost to employ the team?", c: DEMO_COMPANY },
+  { q: DEMO_PRIMARY_RECALL_QUESTION, c: DEMO_COMPANY },
   { q: "How much cash actually left the bank for salaries?", c: DEMO_COMPANY },
   { q: "Which employee costs the company the most?", c: DEMO_COMPANY },
   { q: "Is any invoice recorded with conflicting amounts?", c: DEMO_COMPANY },
