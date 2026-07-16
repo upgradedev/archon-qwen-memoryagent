@@ -2,6 +2,12 @@
 
 - `judge-architecture.jpg` — 1600×900 browser-rendered raster for Devpost and the slide deck.
 - Source: [`../../docs/judge-architecture.svg`](../../docs/judge-architecture.svg), retained as an editable, accessible 16:9 vector.
+- Publication sanitization is lossless and reproducible: run
+  `node scripts/sanitize-jpeg-metadata.mjs demo/final-media/judge-architecture.jpg --in-place --expect 1600x900x3`,
+  then repeat with `--verify-only`. The script removes COM/EXIF/XMP/IPTC-style
+  application metadata while retaining color-critical JFIF, ICC, and Adobe transform
+  markers when present. Its scan SHA-256 and three-component frame check prove the
+  dimensions and compressed color payload did not change.
 - The separate Devpost gallery thumbnail is [`../thumbnail.png`](../thumbnail.png),
   a 1500×1000 (3:2) raster rendered from [`../thumbnail.svg`](../thumbnail.svg).
 - `memoryagent-demo.mp4` — reserved canonical path for the new authenticated,

@@ -12,9 +12,10 @@ canonical nine-beat [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md). Use its real termina
 captures, transcript, and intermediate segments as source footage, then add the
 sanitized exact-SHA, architecture, evidence, and Alibaba frames in the final edit.
 Do not promote the unedited workflow output merely because the job is green.
-Never reuse `demo/video/final/`: it is explicitly historical pre-hardening evidence
-and its transcript describes an older BM25-labelled capture rather than the deployed
-PostgreSQL full-text path.
+Never use [`archive/pre-hardening-capture-transcript.txt`](./archive/pre-hardening-capture-transcript.txt)
+as a recording source: it is retained only as explicitly labelled historical evidence
+and describes an older BM25-labelled capture rather than the deployed PostgreSQL
+full-text path.
 
 ## 1. Preconditions
 

@@ -42,9 +42,8 @@ docs/screencast_transcript.txt
 demo/video/
 *.mp4
 *.mp3
-# ...except the final app-specific MemoryAgent runtime proof once sanitized.
+# Sanitized PNG proof frames remain eligible under the gallery directory.
 !demo/gallery/
-!demo/gallery/memoryagent-alibaba-runtime-proof.mp4
 caps/
 body.json
 # web-segment pipeline scratch (generated in CI from the live Explorer UI)

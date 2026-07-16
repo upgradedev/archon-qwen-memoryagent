@@ -1,4 +1,4 @@
-0.0 $ # HISTORICAL PRE-HARDENING CAPTURE TRANSCRIPT — DO NOT RECORD OR PUBLISH
+0.0 $ # ARCHIVED HISTORICAL PRE-HARDENING CAPTURE TRANSCRIPT — DO NOT RECORD OR PUBLISH
 0.1 $ # Protected routes below omit current reviewer auth. Use demo/FINAL_MEDIA_CHECKLIST.md for the final video.
 0.2 $ # Archon MemoryAgent  ·  persistent, queryable memory across sessions
 2.5 $ # An agent that forgets across sessions is useless for recurring back-office work.

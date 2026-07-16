@@ -114,7 +114,8 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
 
 ## 3. Public posts
 
-- [ ] Publish the technical article from [`BLOG.md`](./BLOG.md); replace relative image links with the hosted architecture image and keep the Qwen Cloud build journey explicit, as required for bonus eligibility.
+- [ ] Publish the technical article from [`BLOG.md`](./BLOG.md); remove its publisher-only HTML checklist, resolve only public video/Devpost placeholders, and keep its absolute architecture image URL and Qwen Cloud build journey intact.
+- [ ] Open the published article, architecture image, live CTA, repository CTA, and optional video/Devpost links in a signed-out/private browser; require every page to load without a login or access request.
 - [ ] Publish at least one social post from [`POST_DRAFTS.md`](./POST_DRAFTS.md).
 - [ ] Confirm each post is public in an incognito window.
 - [ ] Add the public blog/social URL to the Devpost submission for the optional bonus.

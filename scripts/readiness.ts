@@ -368,7 +368,7 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
       async run() {
         const checklist = readText("demo/FINAL_MEDIA_CHECKLIST.md");
         const review = readText("demo/JUDGE_REVIEW.md");
-        const historicalTranscript = readText("demo/video/final/docs/screencast_transcript.txt");
+        const historicalTranscript = readText("demo/archive/pre-hardening-capture-transcript.txt");
         const canonicalDir = existsSync(join(ROOT, "demo/final-media"));
         const durationGate = /strictly under 175 seconds/i.test(checklist);
         const visibilityGate = /Public visibility with no login or access request/i.test(checklist);
@@ -480,7 +480,7 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
         const rel = "demo/final-media/memoryagent-demo.mp4";
         const path = join(ROOT, rel);
         if (!existsSync(path)) {
-          return { ok: false, userGated: true, detail: `pending new authenticated capture at ${rel}; historical demo/video/final artifact is excluded` };
+          return { ok: false, userGated: true, detail: `pending new authenticated capture at ${rel}; archived pre-hardening transcript is excluded` };
         }
         const bytes = statSync(path).size;
         return {

@@ -576,7 +576,7 @@ Because the store is pg-wire, switching between the two is a `DATABASE_URL` swap
 
 This backend's qualifying path runs on **Alibaba Cloud ECS**. Two halves of proof:
 
-**1. Runtime recording** — only after [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) turns green for the current source candidate, capture the app-specific `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` from that verified live deployment. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized sequence; never reuse another entry's recording. Keep raw console footage only in ignored `demo/private-originals/`.
+**1. Runtime proof image** — only after [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) turns green for the current source candidate, generate the app-specific canonical PNG [`demo/gallery/08-alibaba-runtime-proof.png`](./demo/gallery/08-alibaba-runtime-proof.png) from that verified live deployment. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized composite; never reuse another entry's proof. Keep raw console captures only in ignored `demo/private-originals/`.
 
 ```text
 $ aliyun ecs DescribeInstances --RegionId ap-southeast-1 --InstanceIds "['<redacted-instance-id>']"
