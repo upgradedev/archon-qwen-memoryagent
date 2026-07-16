@@ -182,7 +182,7 @@ operator sheet and stop on Devpost's final step without clicking **Submit projec
       separate explicit authorization.
 
 **Devpost submission URL:** `____________________________________________`
-**Draft review proof saved:** `[ ]`  
+**Draft review proof saved:** `[ ]`
 **Submission receipt after separate authorization:** `[ ]`
 
 ## 5. Entrant and rights sign-off
