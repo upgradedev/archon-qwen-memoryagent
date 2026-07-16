@@ -109,6 +109,50 @@ interface CheckSpec {
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
+// Security boundary: reviewer credentials may be sent only to this code-reviewed
+// origin. README.md is presentation content and is never a credential-routing
+// source. Changing the live deployment therefore requires an explicit code diff.
+export const READINESS_LIVE_ORIGIN = "https://memory.43.106.13.19.sslip.io";
+const READINESS_LIVE_SEMANTIC_URL = `${READINESS_LIVE_ORIGIN}/consistency/semantic`;
+
+type ReadinessFetch = (
+  input: string,
+  init: RequestInit,
+) => Promise<{ status: number }>;
+
+export async function probePinnedLiveSemanticRoute(
+  reviewerKey: string | undefined,
+  fetchImpl: ReadinessFetch = fetch,
+): Promise<{ ok: boolean; detail: string; userGated: true }> {
+  if (!reviewerKey || reviewerKey.length < 32) {
+    return { ok: false, userGated: true, detail: "READINESS_JUDGE_API_KEY is required for the protected live probe" };
+  }
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const res = await fetchImpl(READINESS_LIVE_SEMANTIC_URL, {
+      method: "POST",
+      redirect: "error",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${reviewerKey}`,
+      },
+      body: JSON.stringify({ company: "Northwind Trading", kind: "insight" }),
+      signal: ctrl.signal,
+    });
+    return {
+      ok: res.status === 200,
+      userGated: true,
+      detail: `${READINESS_LIVE_SEMANTIC_URL} → HTTP ${res.status}`,
+    };
+  } catch {
+    return { ok: false, userGated: true, detail: "probe failed (network/provider detail withheld)" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const MODEL_RE = /\b(?:text-embedding-v\d+|qwen-[a-z]+(?:-[a-z]+)*)\b/g;
 const NON_MODEL_TOKENS = new Set(["qwen-memoryagent"]);
 function modelsIn(text: string): Set<string> {
@@ -428,30 +472,7 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
         if (process.env.READINESS_PROBE_LIVE !== "1") {
           return { ok: false, userGated: true, detail: "not probed (set READINESS_PROBE_LIVE=1 to probe the live deployment)" };
         }
-        const reviewerKey = process.env.READINESS_JUDGE_API_KEY;
-        if (!reviewerKey || reviewerKey.length < 32) {
-          return { ok: false, userGated: true, detail: "READINESS_JUDGE_API_KEY is required for the protected live probe" };
-        }
-        const README2 = README;
-        const host = README2.match(/https:\/\/memory\.[a-z0-9.-]+\.sslip\.io/)?.[0];
-        if (!host) return { ok: false, userGated: true, detail: "no live host URL found in README" };
-        try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 5000);
-          const res = await fetch(`${host}/consistency/semantic`, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              authorization: `Bearer ${reviewerKey}`,
-            },
-            body: JSON.stringify({ company: "Northwind Trading", kind: "insight" }),
-            signal: ctrl.signal,
-          });
-          clearTimeout(t);
-          return { ok: res.status === 200, userGated: true, detail: `${host}/consistency/semantic → HTTP ${res.status}` };
-        } catch {
-          return { ok: false, userGated: true, detail: "probe failed (network/provider detail withheld)" };
-        }
+        return probePinnedLiveSemanticRoute(process.env.READINESS_JUDGE_API_KEY);
       },
     },
     {

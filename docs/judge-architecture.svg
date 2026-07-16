@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
   <title id="title">Archon MemoryAgent judge architecture</title>
-  <desc id="desc">Tenant-scoped evidence is admitted through strict deterministic boundaries, embedded with Qwen text-embedding-v4, and persisted with audited provenance in pgvector. Hybrid recall and one bounded listwise qwen-plus rerank feed a citation-validated Qwen answer. A separate read-only self-audit uses a configured Qwen semantic judge to detect field and meaning-level contradictions; an authenticated human accepts, overrides, or defers a recommendation without silently rewriting history.</desc>
+  <desc id="desc">A browser UI and Fastify REST/MCP API run behind HTTPS on Alibaba ECS. Tenant-scoped evidence is admitted through strict deterministic boundaries, embedded through DashScope with Qwen text-embedding-v4, and persisted with audited provenance in PostgreSQL plus pgvector. Hybrid recall and one bounded listwise qwen-plus rerank feed a citation-validated Qwen answer. A separate read-only self-audit uses a configured Qwen semantic judge to detect field and meaning-level contradictions; an authenticated human accepts, overrides, or defers a recommendation without silently rewriting history.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop stop-color="#090b14"/>
@@ -41,11 +41,11 @@
   <text x="68" y="70" class="h1">Archon MemoryAgent</text>
   <text x="68" y="106" class="sub">Track 1 · persistent agent memory that recalls, cites — and challenges its own contradictions</text>
   <rect x="1268" y="48" width="264" height="54" rx="27" fill="url(#brand)"/>
-  <text x="1400" y="82" text-anchor="middle" class="title" style="font-size:18px">Qwen · Alibaba Cloud</text>
+  <text x="1400" y="82" text-anchor="middle" class="title" style="font-size:18px">Alibaba ECS · HTTPS</text>
 
   <!-- Ingress / trust plane -->
   <rect class="box" x="68" y="154" width="246" height="166" rx="18"/>
-  <text x="94" y="188" class="cap">EVIDENCE IN</text>
+  <text x="94" y="188" class="cap">BROWSER UI · FASTIFY</text>
   <text x="94" y="228" class="title">REST · MCP · skills</text>
   <text x="94" y="261" class="body">facts · events · images</text>
   <text x="94" y="289" class="small">pre-extracted text for PDF flows</text>
@@ -57,7 +57,7 @@
   <text x="386" y="289" class="small">bounded provider pools · fail closed</text>
 
   <rect class="box" x="694" y="154" width="260" height="166" rx="18"/>
-  <text x="720" y="188" class="cap">QWEN ENCODE</text>
+  <text x="720" y="188" class="cap">DASHSCOPE ENCODE</text>
   <text x="720" y="228" class="title">text-embedding-v4</text>
   <text x="720" y="261" class="mono">1024-dimensional vector</text>
   <text x="720" y="289" class="small">bounded batch · abort + drain</text>
@@ -84,7 +84,7 @@
   <text x="96" y="563" class="small">bounded listwise qwen-plus rerank</text>
 
   <rect x="482" y="390" width="396" height="205" rx="20" fill="#10263a" stroke="#0ea5e9" stroke-width="2.5"/>
-  <text x="510" y="426" class="cap" style="fill:#7dd3fc">GROUNDED ANSWER</text>
+  <text x="510" y="426" class="cap" style="fill:#7dd3fc">DASHSCOPE NARRATE</text>
   <text x="510" y="467" class="title">qwen-plus narrator</text>
   <text x="510" y="501" class="body">claim-local citation binding</text>
   <text x="510" y="534" class="body">repair or evidence-only fallback</text>
@@ -114,9 +114,9 @@
   <text x="692" y="766" class="body">bounded reads and auditable state transitions</text>
 
   <rect x="1102" y="657" width="430" height="132" rx="20" fill="#171d2b" stroke="#f59e0b" stroke-width="2"/>
-  <text x="1132" y="694" class="cap" style="fill:#fbbf24">PRODUCTIZATION PATH</text>
-  <text x="1132" y="735" class="title">REST + MCP + pg-wire</text>
-  <text x="1132" y="766" class="small">tenant-scoped · portable MIT core</text>
+  <text x="1132" y="694" class="cap" style="fill:#fbbf24">DEPLOYMENT SURFACE</text>
+  <text x="1132" y="735" class="title">ECS · REST + MCP</text>
+  <text x="1132" y="766" class="small">HTTPS reverse proxy · pg-wire database</text>
 
   <path d="M1180 595C1140 625 600 622 506 647" class="auditflow"/>
   <path class="flow" d="M612 723H651"/>

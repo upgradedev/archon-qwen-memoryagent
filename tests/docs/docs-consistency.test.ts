@@ -124,6 +124,23 @@ test("CHECK 1b (warn) — undocumented real business routes are surfaced, not fa
   assert.ok(true); // warn-only direction — never fails the build
 });
 
+test("CHECK 1c — Alibaba runtime proof uses the canonical gallery/10 path everywhere", () => {
+  const canonical = "demo/gallery/10-alibaba-runtime-proof.png";
+  const stale = "demo/gallery/08-alibaba-runtime-proof.png";
+  const manifest = readText("demo/SCREENSHOT_MANIFEST.md");
+  const captureScript = readText("scripts/capture_submission_gallery.py");
+  const videoBuilder = readText("demo/tools/build_caption_video.py");
+
+  assert.ok(README.includes(canonical), `README must link the canonical Alibaba proof at ${canonical}`);
+  assert.ok(manifest.includes(`\`${canonical}\``), "screenshot manifest must name the same canonical Alibaba proof");
+  assert.match(captureScript, /"10-alibaba-runtime-proof\.png"/);
+  assert.match(videoBuilder, /"10-alibaba-runtime-proof"/);
+  assert.ok(!README.includes(stale), "README must not mislabel the Qwen-VL gallery/08 slot as Alibaba runtime proof");
+  assert.ok(!manifest.includes(`\`${stale}\``), "screenshot manifest must not contain the stale Alibaba proof path");
+  assert.doesNotMatch(captureScript, /"08-alibaba-runtime-proof\.png"/);
+  assert.doesNotMatch(videoBuilder, /"08-alibaba-runtime-proof"/);
+});
+
 // ─── CHECK 2 — Mermaid diagram ↔ src/ modules (architecture conformance) ──────
 
 function mermaidBlock(): string {
@@ -227,7 +244,7 @@ test("CHECK 3 — README headline metrics equal the pinned golden.json values (w
   near(figures.completeEuroTraceability, g.complete_euro_figure_traceability_pct, percent, "complete euro-figure traceability");
 });
 
-test("CHECK 1c — skill kind descriptions are generated from the complete enum", () => {
+test("CHECK 1d — skill kind descriptions are generated from the complete enum", () => {
   const expected = `Memory kind: ${MEMORY_KINDS.join(" | ")}.`;
   for (const skill of SKILLS) {
     const kind = skill.parameters.properties.kind as { description?: string } | undefined;

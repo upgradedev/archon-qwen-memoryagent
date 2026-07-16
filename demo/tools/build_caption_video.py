@@ -33,6 +33,12 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 REPO_HINT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_HINT / "scripts"))
+from exact_deploy_evidence import (  # noqa: E402
+    ExactDeployEvidenceError,
+    STRICT_FINAL_MARKER,
+    TERMINAL_SUCCESS_TRUNCATED_OUTPUT,
+    validate_exact_deploy_evidence as _validate_exact_deploy_evidence,
+)
 from repo_paths import REPO_ROOT, inside_repo  # noqa: E402
 
 
@@ -512,6 +518,15 @@ def validate_claim_matrix(path: Path) -> None:
         require(snippet in text, f"claim/evidence matrix no longer supports the final evidence card: {snippet}")
 
 
+def validate_exact_deploy_evidence(expected_sha: str, status: Any, output: str) -> str:
+    """Translate the shared exact-deploy contract into this gate's error type."""
+
+    try:
+        return _validate_exact_deploy_evidence(expected_sha, status, output)
+    except ExactDeployEvidenceError as exc:
+        raise GateError(str(exc)) from exc
+
+
 def validate_exact_release(
     expected_sha: str,
     review: dict[str, Any],
@@ -525,17 +540,8 @@ def validate_exact_release(
     ensure_ignored_untracked(deployment_status, "deployment status")
 
     status = load_json(deployment_status, "deployment status")
-    require(isinstance(status, dict), "deployment status must be a JSON object")
-    require(status.get("memorySha") == expected_sha, "deployment status records a different MemoryAgent SHA")
-    require(status.get("status") == "Success", "deployment status is not Success")
-    require(status.get("terminal") is True and status.get("exitCode") == 0, "deployment invocation is not a successful terminal run")
-    require(status.get("outputCaptured") is True and status.get("projectContained") is True, "deployment evidence is incomplete or not project-contained")
-
     output = deployment_output.read_text(encoding="utf-8", errors="replace")
-    escaped = re.escape(expected_sha)
-    require(re.search(rf"^EXACT_CHECKOUT_OK app=memoryagent sha={escaped}$", output, re.MULTILINE) is not None, "deployment output has no exact checkout marker")
-    require(re.search(rf"^EXACT_APP_(?:DEPLOY|REUSE)_OK app=memoryagent sha={escaped}(?:\s|$)", output, re.MULTILINE) is not None, "deployment output has no exact app success marker")
-    require(re.search(rf"^EXACT_DEPLOY_SUCCESS memory={escaped}\s", output, re.MULTILINE) is not None, "deployment output has no final exact-deploy success marker")
+    validate_exact_deploy_evidence(expected_sha, status, output)
     validate_deploy_state(deploy_state, expected_sha)
 
     capture_head = review.get("submissionPackHeadAtCapture")
@@ -1055,6 +1061,49 @@ def self_test(*, full_duration: bool = False) -> int:
     fixture_root = root / "fixture-root"
     fixture_root.mkdir(parents=True)
     test_beats = BEATS if full_duration else tuple(replace(beat, seconds=1) for beat in BEATS)
+
+    evidence_sha = "1" * 40
+    evidence_status = {
+        "memorySha": evidence_sha,
+        "status": "Success",
+        "terminal": True,
+        "exitCode": 0,
+        "outputCaptured": True,
+        "projectContained": True,
+    }
+    marker_prefix = (
+        f"EXACT_CHECKOUT_OK app=memoryagent sha={evidence_sha}\n"
+        f"EXACT_APP_DEPLOY_OK app=memoryagent sha={evidence_sha}\n"
+    )
+    require(
+        validate_exact_deploy_evidence(
+            evidence_sha,
+            evidence_status,
+            marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={evidence_sha} synthetic_selftest=true\n",
+        ) == STRICT_FINAL_MARKER,
+        "strict final-marker evidence self-test failed",
+    )
+    require(
+        validate_exact_deploy_evidence(evidence_sha, evidence_status, marker_prefix)
+        == TERMINAL_SUCCESS_TRUNCATED_OUTPUT,
+        "terminal-success truncated-output evidence self-test failed",
+    )
+    rejected = False
+    try:
+        validate_exact_deploy_evidence(
+            evidence_sha,
+            evidence_status,
+            marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={'2' * 40} synthetic_selftest=true\n",
+        )
+    except GateError:
+        rejected = True
+    require(rejected, "exact-deploy evidence self-test accepted a conflicting final marker")
+    rejected = False
+    try:
+        validate_exact_deploy_evidence(evidence_sha, {**evidence_status, "outputCaptured": False}, marker_prefix)
+    except GateError:
+        rejected = True
+    require(rejected, "exact-deploy evidence self-test accepted an uncaptured truncation fallback")
 
     artifact_hashes: dict[str, str] = {}
     for rel in GALLERY_RELS:

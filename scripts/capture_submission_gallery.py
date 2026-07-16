@@ -36,6 +36,12 @@ from urllib import request as urlrequest
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
+from exact_deploy_evidence import (
+    ExactDeployEvidenceError,
+    STRICT_FINAL_MARKER,
+    TERMINAL_SUCCESS_TRUNCATED_OUTPUT,
+    validate_exact_deploy_evidence as _validate_exact_deploy_evidence,
+)
 from repo_paths import REPO_ROOT, inside_repo
 
 
@@ -132,6 +138,15 @@ def allowed_post_deploy_path(path: str) -> bool:
     return any(pattern.fullmatch(normalized) or pattern.match(normalized) for pattern in SAFE_POST_DEPLOY_PATHS)
 
 
+def validate_exact_deploy_evidence(expected_sha: str, status: Any, output: str) -> str:
+    """Translate the shared exact-deploy contract into this gate's error type."""
+
+    try:
+        return _validate_exact_deploy_evidence(expected_sha, status, output)
+    except ExactDeployEvidenceError as exc:
+        raise GateError(str(exc)) from exc
+
+
 def verify_exact_release(
     expected_sha: str,
     deployment_output: Path,
@@ -147,26 +162,8 @@ def verify_exact_release(
     require(commit_check.returncode == 0, "expected SHA is not present in this repository")
 
     status = load_json(deployment_status, "deployment status")
-    require(isinstance(status, dict), "deployment status must be a JSON object")
-    require(status.get("memorySha") == expected_sha, "deployment status records a different MemoryAgent SHA")
-    require(status.get("status") == "Success", "deployment status is not Success")
-    require(status.get("terminal") is True and status.get("exitCode") == 0, "deployment invocation is not a successful terminal run")
-    require(status.get("outputCaptured") is True and status.get("projectContained") is True, "deployment evidence is incomplete or not project-contained")
-
     output = deployment_output.read_text(encoding="utf-8", errors="replace")
-    escaped = re.escape(expected_sha)
-    require(
-        re.search(rf"^EXACT_CHECKOUT_OK app=memoryagent sha={escaped}$", output, re.MULTILINE) is not None,
-        "deployment output has no exact MemoryAgent checkout marker",
-    )
-    require(
-        re.search(rf"^EXACT_APP_(?:DEPLOY|REUSE)_OK app=memoryagent sha={escaped}(?:\s|$)", output, re.MULTILINE) is not None,
-        "deployment output has no successful exact MemoryAgent deployment marker",
-    )
-    require(
-        re.search(rf"^EXACT_DEPLOY_SUCCESS memory={escaped}\s", output, re.MULTILINE) is not None,
-        "deployment output has no final exact-deploy success marker",
-    )
+    validate_exact_deploy_evidence(expected_sha, status, output)
 
     compose = git("show", f"{expected_sha}:docker-compose.yml")
     require("127.0.0.1:${BACKEND_PORT:-9000}:9000" in compose, "exact source no longer binds the backend to loopback")
@@ -1661,6 +1658,49 @@ def self_test() -> int:
     if root.exists():
         shutil.rmtree(root)
     root.mkdir(parents=True)
+    evidence_sha = "1" * 40
+    evidence_status = {
+        "memorySha": evidence_sha,
+        "status": "Success",
+        "terminal": True,
+        "exitCode": 0,
+        "outputCaptured": True,
+        "projectContained": True,
+    }
+    marker_prefix = (
+        f"EXACT_CHECKOUT_OK app=memoryagent sha={evidence_sha}\n"
+        f"EXACT_APP_DEPLOY_OK app=memoryagent sha={evidence_sha}\n"
+    )
+    require(
+        validate_exact_deploy_evidence(
+            evidence_sha,
+            evidence_status,
+            marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={evidence_sha} synthetic_selftest=true\n",
+        ) == STRICT_FINAL_MARKER,
+        "strict final-marker evidence self-test failed",
+    )
+    require(
+        validate_exact_deploy_evidence(evidence_sha, evidence_status, marker_prefix)
+        == TERMINAL_SUCCESS_TRUNCATED_OUTPUT,
+        "terminal-success truncated-output evidence self-test failed",
+    )
+    rejected = False
+    try:
+        validate_exact_deploy_evidence(
+            evidence_sha,
+            evidence_status,
+            marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={'2' * 40} synthetic_selftest=true\n",
+        )
+    except GateError:
+        rejected = True
+    require(rejected, "exact-deploy evidence self-test accepted a conflicting final marker")
+    rejected = False
+    try:
+        validate_exact_deploy_evidence(evidence_sha, {**evidence_status, "terminal": False}, marker_prefix)
+    except GateError:
+        rejected = True
+    require(rejected, "exact-deploy evidence self-test accepted a non-terminal truncation fallback")
+
     raw = Image.new("RGB", (900, 500), "#10251f")
     draw = ImageDraw.Draw(raw)
     draw.text((55, 60), "SYNTHETIC SELF-TEST — NOT LIVE EVIDENCE", font=font(34, bold=True), fill="#ffffff")

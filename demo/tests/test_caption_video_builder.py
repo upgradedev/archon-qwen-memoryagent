@@ -123,5 +123,62 @@ class CaptionTimelineTests(unittest.TestCase):
         self.assertFalse(outside.exists())
 
 
+class ExactDeployEvidenceTests(unittest.TestCase):
+    SHA = "1" * 40
+
+    def setUp(self) -> None:
+        self.status = {
+            "memorySha": self.SHA,
+            "status": "Success",
+            "terminal": True,
+            "exitCode": 0,
+            "outputCaptured": True,
+            "projectContained": True,
+        }
+        self.prefix = (
+            f"EXACT_CHECKOUT_OK app=memoryagent sha={self.SHA}\n"
+            f"EXACT_APP_DEPLOY_OK app=memoryagent sha={self.SHA}\n"
+        )
+
+    @staticmethod
+    def validators():
+        return (
+            ("capture", capture.validate_exact_deploy_evidence, capture.GateError),
+            ("builder", builder.validate_exact_deploy_evidence, builder.GateError),
+        )
+
+    def test_strict_final_marker_and_terminal_truncation_paths_are_both_accepted(self) -> None:
+        strict = self.prefix + f"EXACT_DEPLOY_SUCCESS memory={self.SHA} synthetic_test=true\n"
+        for name, validator, _error in self.validators():
+            with self.subTest(parser=name, mode="strict"):
+                self.assertEqual(validator(self.SHA, self.status, strict), "strict-final-marker")
+            with self.subTest(parser=name, mode="truncated-output"):
+                self.assertEqual(
+                    validator(self.SHA, self.status, self.prefix),
+                    "terminal-success-truncated-output",
+                )
+
+    def test_truncation_fallback_rejects_weak_status_missing_markers_and_conflicts(self) -> None:
+        cases = (
+            ("non-terminal", {**self.status, "terminal": False}, self.prefix),
+            ("non-zero-exit", {**self.status, "exitCode": 1}, self.prefix),
+            ("boolean-exit-code", {**self.status, "exitCode": False}, self.prefix),
+            ("not-captured", {**self.status, "outputCaptured": False}, self.prefix),
+            ("not-contained", {**self.status, "projectContained": False}, self.prefix),
+            ("missing-app", self.status, f"EXACT_CHECKOUT_OK app=memoryagent sha={self.SHA}\n"),
+            (
+                "conflicting-final",
+                self.status,
+                self.prefix + f"EXACT_DEPLOY_SUCCESS memory={'2' * 40} synthetic_test=true\n",
+            ),
+            ("error-marker", self.status, self.prefix + "EXACT_DEPLOY_ERROR post-deploy failure\n"),
+        )
+        for parser_name, validator, error in self.validators():
+            for case_name, status, output in cases:
+                with self.subTest(parser=parser_name, case=case_name):
+                    with self.assertRaises(error):
+                        validator(self.SHA, status, output)
+
+
 if __name__ == "__main__":
     unittest.main()
