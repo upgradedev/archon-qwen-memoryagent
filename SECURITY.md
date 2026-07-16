@@ -49,8 +49,13 @@ available and affected credentials or deployments have been rotated.
 - Audit recommendations do not silently mutate memory. Confirmed conflict resolution,
   feedback, consolidation, and forgetting are separate authenticated operations with
   idempotency/provenance controls.
+- The production-image workflow retains SPDX/CycloneDX SBOMs and scans the exact
+  sealed inventory with pinned Syft, Grype, and vulnerability-database bytes.
+  High/critical findings fail with no current allowlist. The result is only as of
+  its recorded database snapshot and is not a security certification.
 
 See [`README.md`](./README.md),
+[`docs/SUPPLY_CHAIN.md`](./docs/SUPPLY_CHAIN.md),
 [`docs/CLAIM_EVIDENCE_MATRIX.md`](./docs/CLAIM_EVIDENCE_MATRIX.md), and the security
 test suites under [`tests/security/`](./tests/security/) for the exact supported
 claims. This policy does not claim that any system is vulnerability-free.

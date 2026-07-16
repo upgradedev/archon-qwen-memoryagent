@@ -1,0 +1,14 @@
+# Reviewed deterministic vulnerability policy. CI imports one SHA-256-pinned
+# database snapshot and disables every implicit update or external enrichment.
+check-for-app-update: false
+db:
+  auto-update: false
+  validate-age: false
+  require-update-check: false
+external-sources:
+  enable: false
+
+# No findings are suppressed. Any future exception must identify the exact CVE
+# and package, prove reachability/mitigation, name an owner and expiry, and
+# change the anti-weakening fitness test in the same review.
+ignore: []

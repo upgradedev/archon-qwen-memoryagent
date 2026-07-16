@@ -1,0 +1,556 @@
+name: Production Image Supply Chain
+
+# Builds the production Dockerfile, inventories that exact image, retains
+# SPDX/CycloneDX SBOMs, then scans the sealed Syft inventory with byte-pinned
+# Grype tooling and vulnerability data dated 2026-07-15.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: supply-chain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  image-sbom-vulnerability-gate:
+    name: Image SBOM + high/critical gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      IMAGE: archon-qwen-memoryagent:supply-chain
+      EVIDENCE_DIR: .artifacts/supply-chain
+      TOOLS_DIR: .artifacts/tools
+      BASH_ENV: /dev/null
+      DOCKER_BUILDKIT: "1"
+      EXPECTED_BUILD_IMAGE: node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
+      EXPECTED_RUNTIME_IMAGE: node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
+      EXPECTED_DOCKERFILE_SHA256: 398e815715d5ef483d2c8c15fdd6660746c53b8ff7ea3eaeb72a4c80c92f925e
+      EXPECTED_DOCKERIGNORE_SHA256: c0108efd77b12045c8196d5bcf6fa86a38c5309ec956edae8d3d8bc20035d22b
+      EXPECTED_GITATTRIBUTES_SHA256: 01ac22b93dd9d53364e9eb8383dbcd62514a5e84522b114f0c5c65226d6e5317
+      EXPECTED_PACKAGE_LOCK_SHA256: 2da4d50581b333f47136c171d0f68ae3c0eff402f5eff556b796591ae9c47c20
+      SYFT_VERSION: "1.46.0"
+      SYFT_SHA256: d654f678b709eb53c393d38519d5ed7d2e57205529404018614cfefa0fb2b5ca
+      EXPECTED_SYFT_BINARY_SHA256: 574df1a0862ff88ad933be214e81069e35b17618a13e019f8f1c84fe063222a2
+      GRYPE_VERSION: "0.115.0"
+      GRYPE_SHA256: 3fad92940650e514c0aa2dad83526942a055e210cec09a8a59d9c024adc2b90e
+      EXPECTED_GRYPE_BINARY_SHA256: 05ffd2c28a607e48fb2269d9aac5b3d53e8a51bbac501946644745eae2119907
+      GRYPE_DB_URL: https://grype.anchore.io/databases/v6/vulnerability-db_v6.1.8_2026-07-15T00:32:35Z_1784139280.tar.zst
+      GRYPE_DB_SHA256: 0d9ac9d49c93649ea6bf713c60960b46e33c939d49ac7de52df649453d29cf8e
+      GRYPE_DB_CACHE_DIR: .artifacts/supply-chain/grype-db
+      GRYPE_DB_AUTO_UPDATE: "false"
+      GRYPE_DB_VALIDATE_AGE: "false"
+      GRYPE_DB_REQUIRE_UPDATE_CHECK: "false"
+      GRYPE_CHECK_FOR_APP_UPDATE: "false"
+      GRYPE_EXTERNAL_SOURCES_ENABLE: "false"
+      SYFT_CHECK_FOR_APP_UPDATE: "false"
+      EXPECTED_SYFT_POLICY_SHA256: 6ab5c6199ecf7fca03c91cc577bc33eb41c0c1a01ba0a46eec7e5774f08353cf
+      EXPECTED_GRYPE_POLICY_SHA256: 874e6bf141aa28702079cb523851d686cae7dd4054e4e8c86817035b1ddb3582
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Select exact Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24.18.0"
+
+      - name: Anchor immutable production inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR/input-locks"
+          INPUTS=(Dockerfile .dockerignore .gitattributes package-lock.json .syft.yaml .grype.yaml)
+          for input in "${INPUTS[@]}"; do
+            test -f "$input"
+            test ! -L "$input"
+            test "$(stat -c '%h' "$input")" -eq 1
+            if LC_ALL=C grep -q $'\r' "$input"; then
+              echo "$input must be LF-only" >&2
+              exit 1
+            fi
+            test "$(tail -c 1 "$input" | od -An -t x1 | tr -d '[:space:]')" = "0a"
+          done
+          test "$(sha256sum Dockerfile | cut -d ' ' -f 1)" = "$EXPECTED_DOCKERFILE_SHA256"
+          test "$(sha256sum .dockerignore | cut -d ' ' -f 1)" = "$EXPECTED_DOCKERIGNORE_SHA256"
+          test "$(sha256sum .gitattributes | cut -d ' ' -f 1)" = "$EXPECTED_GITATTRIBUTES_SHA256"
+          test "$(sha256sum package-lock.json | cut -d ' ' -f 1)" = "$EXPECTED_PACKAGE_LOCK_SHA256"
+          test "$(sha256sum .syft.yaml | cut -d ' ' -f 1)" = "$EXPECTED_SYFT_POLICY_SHA256"
+          test "$(sha256sum .grype.yaml | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_POLICY_SHA256"
+          test "$(grep -Fxc "FROM $EXPECTED_BUILD_IMAGE AS build" Dockerfile)" -eq 1
+          test "$(grep -Fxc "FROM $EXPECTED_RUNTIME_IMAGE AS runtime" Dockerfile)" -eq 1
+          test "$(grep -xc '\.artifacts' .dockerignore)" -eq 1
+          for input in "${INPUTS[@]}"; do
+            target="$EVIDENCE_DIR/input-locks/${input#.}"
+            cp -- "$input" "$target"
+            cmp -- "$input" "$target"
+          done
+          (
+            cd "$EVIDENCE_DIR"
+            sha256sum input-locks/Dockerfile input-locks/dockerignore input-locks/gitattributes \
+              input-locks/package-lock.json input-locks/syft.yaml input-locks/grype.yaml \
+              > INPUT-LOCKS.sha256
+            sha256sum --check --strict INPUT-LOCKS.sha256
+          )
+
+      - name: Build the exact production image
+        id: build_image
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(sha256sum Dockerfile | cut -d ' ' -f 1)" = "$EXPECTED_DOCKERFILE_SHA256"
+          test "$(sha256sum .dockerignore | cut -d ' ' -f 1)" = "$EXPECTED_DOCKERIGNORE_SHA256"
+          test "$(sha256sum .gitattributes | cut -d ' ' -f 1)" = "$EXPECTED_GITATTRIBUTES_SHA256"
+          test "$(sha256sum package-lock.json | cut -d ' ' -f 1)" = "$EXPECTED_PACKAGE_LOCK_SHA256"
+          docker build --pull=false --no-cache --platform linux/amd64 --target runtime --tag "$IMAGE" .
+          IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+          test -n "$IMAGE_ID"
+          echo "image_id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Exercise the constrained production runtime
+        env:
+          EXPECTED_IMAGE_ID: ${{ steps.build_image.outputs.image_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_IMAGE_ID"
+          test "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$EXPECTED_IMAGE_ID"
+          docker image inspect --format '{{json .Config}}' "$IMAGE" \
+            > "$EVIDENCE_DIR/runtime-image-config.actual.json"
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFileSync } from "node:fs";
+          const config = JSON.parse(
+            readFileSync(process.env.EVIDENCE_DIR + "/runtime-image-config.actual.json", "utf8"),
+          );
+          assert.equal(config.WorkingDir, "/app");
+          assert.equal(config.User, "node");
+          assert.deepEqual(config.Entrypoint, ["docker-entrypoint.sh"]);
+          assert.deepEqual(config.Cmd, ["node", "dist/src/server.js"]);
+          assert.deepEqual(config.ExposedPorts, { "9000/tcp": {} });
+          for (const expected of ["NODE_ENV=production", "PORT=9000"]) {
+            assert.equal(config.Env.filter((entry) => entry === expected).length, 1);
+            const key = expected.split("=", 1)[0];
+            assert.equal(config.Env.filter((entry) => entry.startsWith(key + "=")).length, 1);
+          }
+          assert.deepEqual(config.Healthcheck?.Test, [
+            "CMD", "node", "-e",
+            "fetch('http://127.0.0.1:9000/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+          ]);
+          assert.equal(config.Healthcheck?.Interval, 30_000_000_000);
+          assert.equal(config.Healthcheck?.Timeout, 5_000_000_000);
+          assert.equal(config.Healthcheck?.StartPeriod, 15_000_000_000);
+          assert.equal(config.Healthcheck?.Retries, 3);
+          NODE
+          DEFAULT_ENTRYPOINT_OUTPUT="$(
+            docker run --rm --network none --read-only --cap-drop ALL \
+              --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 \
+              --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+              "$IMAGE" node --version
+          )"
+          test "$DEFAULT_ENTRYPOINT_OUTPUT" = "v24.18.0"
+          printf '%s\n' "$DEFAULT_ENTRYPOINT_OUTPUT" > "$EVIDENCE_DIR/runtime-entrypoint.txt"
+          test "$(wc -l < "$EVIDENCE_DIR/runtime-entrypoint.txt")" -eq 1
+          grep -Fx "v24.18.0" "$EVIDENCE_DIR/runtime-entrypoint.txt"
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m --entrypoint /bin/sh \
+            "$IMAGE" -euc '
+              test "$(node --version)" = "v24.18.0"
+              test "$(id -u)" = "1000"
+              test "$(id -g)" = "1000"
+              test -f /app/dist/src/server.js
+              test -f /app/dist/src/ui.html
+              test -f /app/dist/src/db/schema.sql
+              test -f /app/dist/bench/semantic-consistency-run.js
+              test ! -e /app/node_modules/typescript
+              test "$(find /app/node_modules -type f -name '*.node' | wc -l)" -eq 0
+              test ! -e /usr/local/lib/node_modules
+              ! command -v npm >/dev/null
+              ! command -v npx >/dev/null
+              ! command -v corepack >/dev/null
+              node -e "Promise.all([import(\"./dist/src/qwen/client.js\"),import(\"./dist/src/agents/memory-agent.js\")]).then(()=>console.log(\"runtime-app-import-passed\"))"
+              test "$(find /app -xdev -type f -perm /6000 -print | wc -l)" -eq 0
+              test -w /tmp
+              ! touch /app/.supply-chain-write-probe
+              echo runtime-boundary-passed
+            ' | tee "$EVIDENCE_DIR/runtime-boundary.txt"
+          grep -Fx runtime-boundary-passed "$EVIDENCE_DIR/runtime-boundary.txt"
+
+      - name: Install pinned Syft and Grype archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TOOLS_DIR/syft" "$TOOLS_DIR/grype"
+          SYFT_ARCHIVE="$TOOLS_DIR/syft/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          GRYPE_ARCHIVE="$TOOLS_DIR/grype/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output "$SYFT_ARCHIVE" \
+            "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output "$GRYPE_ARCHIVE" \
+            "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "$SYFT_SHA256  $SYFT_ARCHIVE" | sha256sum --check --strict
+          echo "$GRYPE_SHA256  $GRYPE_ARCHIVE" | sha256sum --check --strict
+          tar -xzf "$SYFT_ARCHIVE" -C "$TOOLS_DIR/syft" syft
+          tar -xzf "$GRYPE_ARCHIVE" -C "$TOOLS_DIR/grype" grype
+          chmod 0755 "$TOOLS_DIR/syft/syft" "$TOOLS_DIR/grype/grype"
+          for tool in "$TOOLS_DIR/syft/syft" "$TOOLS_DIR/grype/grype"; do
+            test -f "$tool"
+            test ! -L "$tool"
+            test "$(stat -c '%h' "$tool")" -eq 1
+            test "$(realpath "$tool")" = "$GITHUB_WORKSPACE/$tool"
+          done
+          test "$(sha256sum "$TOOLS_DIR/syft/syft" | cut -d ' ' -f 1)" = "$EXPECTED_SYFT_BINARY_SHA256"
+          test "$(sha256sum "$TOOLS_DIR/grype/grype" | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_BINARY_SHA256"
+
+      - name: Verify scanner policy and provenance
+        env:
+          EXPECTED_IMAGE_ID: ${{ steps.build_image.outputs.image_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$EXPECTED_IMAGE_ID"
+          test "$(sha256sum "$TOOLS_DIR/syft/syft" | cut -d ' ' -f 1)" = "$EXPECTED_SYFT_BINARY_SHA256"
+          test "$(sha256sum "$TOOLS_DIR/grype/grype" | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_BINARY_SHA256"
+          test "$(sha256sum .syft.yaml | cut -d ' ' -f 1)" = "$EXPECTED_SYFT_POLICY_SHA256"
+          test "$(sha256sum .grype.yaml | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_POLICY_SHA256"
+          cmp -- .syft.yaml "$EVIDENCE_DIR/input-locks/syft.yaml"
+          cmp -- .grype.yaml "$EVIDENCE_DIR/input-locks/grype.yaml"
+          printf '%s\n' GRYPE_CHECK_FOR_APP_UPDATE GRYPE_DB_AUTO_UPDATE GRYPE_DB_CACHE_DIR \
+            GRYPE_DB_REQUIRE_UPDATE_CHECK GRYPE_DB_SHA256 GRYPE_DB_URL GRYPE_DB_VALIDATE_AGE \
+            GRYPE_EXTERNAL_SOURCES_ENABLE GRYPE_SHA256 GRYPE_VERSION \
+            SYFT_CHECK_FOR_APP_UPDATE SYFT_SHA256 SYFT_VERSION \
+            | LC_ALL=C sort > /tmp/expected-scanner-environment
+          env | cut -d= -f1 | grep -E '^(GRYPE|SYFT)_' \
+            | LC_ALL=C sort > /tmp/actual-scanner-environment
+          diff -u /tmp/expected-scanner-environment /tmp/actual-scanner-environment
+          "$TOOLS_DIR/syft/syft" --config "$EVIDENCE_DIR/input-locks/syft.yaml" config --load \
+            > "$EVIDENCE_DIR/syft-config.effective.yaml"
+          "$TOOLS_DIR/grype/grype" --config "$EVIDENCE_DIR/input-locks/grype.yaml" config --load \
+            > "$EVIDENCE_DIR/grype-config.effective.yaml"
+          "$TOOLS_DIR/syft/syft" --config "$EVIDENCE_DIR/input-locks/syft.yaml" version \
+            | tee "$EVIDENCE_DIR/syft-version.txt"
+          "$TOOLS_DIR/grype/grype" --config "$EVIDENCE_DIR/input-locks/grype.yaml" version \
+            | tee "$EVIDENCE_DIR/grype-version.txt"
+          docker version | tee "$EVIDENCE_DIR/docker-version.txt"
+          grep -F "Version:       $SYFT_VERSION" "$EVIDENCE_DIR/syft-version.txt"
+          grep -F "Version:             $GRYPE_VERSION" "$EVIDENCE_DIR/grype-version.txt"
+          grep -E '^check-for-app-update:[[:space:]]+false$' "$EVIDENCE_DIR/syft-config.effective.yaml"
+          grep -E "^scope:[[:space:]]+'?squashed'?$" "$EVIDENCE_DIR/syft-config.effective.yaml"
+          test "$(grep -Ec '^(default-catalogers|select-catalogers|exclude):[[:space:]]+\[\]$' "$EVIDENCE_DIR/syft-config.effective.yaml")" -eq 3
+          grep -E '^check-for-app-update:[[:space:]]+false$' "$EVIDENCE_DIR/grype-config.effective.yaml"
+          grep -E '^ignore:[[:space:]]+\[\]$' "$EVIDENCE_DIR/grype-config.effective.yaml"
+          test "$(grep -Ec '^  (enable|auto-update|validate-age|require-update-check):[[:space:]]+false$' "$EVIDENCE_DIR/grype-config.effective.yaml")" -eq 4
+
+      - name: Import the immutable vulnerability database snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$TOOLS_DIR/grype/grype" | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_BINARY_SHA256"
+          test "$(sha256sum "$EVIDENCE_DIR/input-locks/grype.yaml" | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_POLICY_SHA256"
+          mkdir -p "$GRYPE_DB_CACHE_DIR"
+          DB_ARCHIVE="$EVIDENCE_DIR/grype-db-v6.1.8.tar.zst"
+          curl --fail --silent --show-error --location --output "$DB_ARCHIVE" "$GRYPE_DB_URL"
+          echo "$GRYPE_DB_SHA256  $DB_ARCHIVE" | sha256sum --check --strict
+          "$TOOLS_DIR/grype/grype" --config "$EVIDENCE_DIR/input-locks/grype.yaml" db import "$DB_ARCHIVE"
+          "$TOOLS_DIR/grype/grype" --config "$EVIDENCE_DIR/input-locks/grype.yaml" db status \
+            | tee "$EVIDENCE_DIR/grype-db-status.txt"
+          grep -E '^Schema:[[:space:]]+v6\.1\.8$' "$EVIDENCE_DIR/grype-db-status.txt"
+          grep -E '^Built:[[:space:]]+2026-07-15T' "$EVIDENCE_DIR/grype-db-status.txt"
+
+      - name: Generate retained image SBOMs
+        env:
+          EXPECTED_IMAGE_ID: ${{ steps.build_image.outputs.image_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$EXPECTED_IMAGE_ID"
+          test "$(sha256sum "$TOOLS_DIR/syft/syft" | cut -d ' ' -f 1)" = "$EXPECTED_SYFT_BINARY_SHA256"
+          test "$(sha256sum "$EVIDENCE_DIR/input-locks/syft.yaml" | cut -d ' ' -f 1)" = "$EXPECTED_SYFT_POLICY_SHA256"
+          test "$(sha256sum Dockerfile | cut -d ' ' -f 1)" = "$EXPECTED_DOCKERFILE_SHA256"
+          test "$(sha256sum package-lock.json | cut -d ' ' -f 1)" = "$EXPECTED_PACKAGE_LOCK_SHA256"
+          "$TOOLS_DIR/syft/syft" --config "$EVIDENCE_DIR/input-locks/syft.yaml" scan "docker:$IMAGE" --scope squashed \
+            --output "syft-json=$EVIDENCE_DIR/memoryagent.syft.json" \
+            --output "spdx-json=$EVIDENCE_DIR/memoryagent.spdx.json" \
+            --output "cyclonedx-json=$EVIDENCE_DIR/memoryagent.cyclonedx.json"
+          export EXPECTED_IMAGE_ID
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const provenance = {
+            sourceCommit: process.env.GITHUB_SHA,
+            imageName: process.env.IMAGE,
+            imageId: process.env.EXPECTED_IMAGE_ID,
+            dockerfile: { path: "Dockerfile", sha256: process.env.EXPECTED_DOCKERFILE_SHA256 },
+            dockerignoreSha256: process.env.EXPECTED_DOCKERIGNORE_SHA256,
+            gitattributesSha256: process.env.EXPECTED_GITATTRIBUTES_SHA256,
+            packageLockSha256: process.env.EXPECTED_PACKAGE_LOCK_SHA256,
+            platform: "linux/amd64",
+            scanners: {
+              syft: {
+                version: process.env.SYFT_VERSION,
+                archiveSha256: process.env.SYFT_SHA256,
+                binarySha256: process.env.EXPECTED_SYFT_BINARY_SHA256,
+                policySha256: process.env.EXPECTED_SYFT_POLICY_SHA256,
+              },
+              grype: {
+                version: process.env.GRYPE_VERSION,
+                archiveSha256: process.env.GRYPE_SHA256,
+                binarySha256: process.env.EXPECTED_GRYPE_BINARY_SHA256,
+                policySha256: process.env.EXPECTED_GRYPE_POLICY_SHA256,
+                databaseUrl: process.env.GRYPE_DB_URL,
+                databaseSha256: process.env.GRYPE_DB_SHA256,
+                databaseAsOf: "2026-07-15",
+              },
+            },
+          };
+          writeFileSync(
+            process.env.EVIDENCE_DIR + "/image-provenance.json",
+            JSON.stringify(provenance, null, 2) + "\n",
+          );
+          NODE
+
+      - name: Validate and seal the pre-scan SBOM bundle
+        id: seal_sbom
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFileSync } from "node:fs";
+          const read = (name) => JSON.parse(
+            readFileSync(process.env.EVIDENCE_DIR + "/" + name, "utf8"),
+          );
+          const syft = read("memoryagent.syft.json");
+          assert.ok(Array.isArray(syft.artifacts));
+          const forbiddenGlobalModules = syft.artifacts.flatMap((artifact) =>
+            (artifact.locations ?? [])
+              .map((location) => location?.path)
+              .filter((path) => typeof path === "string" && path.startsWith("/usr/local/lib/node_modules/"))
+              .map((path) => `${artifact.name}@${artifact.version}:${path}`),
+          );
+          assert.deepEqual(forbiddenGlobalModules, [], "production SBOM contains a global package-manager module");
+          const apkNames = new Set(
+            syft.artifacts.filter((artifact) => artifact?.type === "apk").map((artifact) => artifact.name),
+          );
+          for (const expected of ["alpine-release", "busybox", "ca-certificates-bundle", "libssl3", "musl"]) {
+            assert.ok(apkNames.has(expected), "Syft omitted runtime APK " + expected);
+          }
+          const nodeBinaries = syft.artifacts.filter(
+            (artifact) => artifact?.type === "binary" && artifact.name === "node" && artifact.version === "24.18.0",
+          );
+          assert.equal(nodeBinaries.length, 1, "Syft must inventory the exact Node 24.18.0 runtime binary once");
+          const packageLock = JSON.parse(readFileSync("package-lock.json", "utf8"));
+          assert.equal(packageLock.lockfileVersion, 3);
+          const productionEntries = Object.entries(packageLock.packages).filter(
+            ([path, metadata]) => path.startsWith("node_modules/") && metadata?.dev !== true,
+          );
+          assert.equal(productionEntries.length, 203);
+          const expectedNpm = new Set(
+            productionEntries.map(([path, metadata]) => {
+              assert.equal(typeof metadata.version, "string", "missing locked version for " + path);
+              const name = path.split("node_modules/").at(-1);
+              assert.ok(name, "invalid package-lock path " + path);
+              return name + "@" + metadata.version;
+            }),
+          );
+          assert.equal(expectedNpm.size, 196);
+          const actualNpm = new Set(
+            syft.artifacts.filter((item) => item?.type === "npm")
+              .map((item) => item.name + "@" + item.version),
+          );
+          for (const expected of expectedNpm) {
+            assert.ok(actualNpm.has(expected), "Syft omitted production npm package " + expected);
+          }
+          assert.equal(read("memoryagent.spdx.json").spdxVersion, "SPDX-2.3");
+          const cyclonedx = read("memoryagent.cyclonedx.json");
+          assert.equal(cyclonedx.bomFormat, "CycloneDX");
+          assert.ok(Array.isArray(cyclonedx.components));
+          assert.ok(cyclonedx.components.length > 0);
+          NODE
+          for artifact in memoryagent.syft.json memoryagent.spdx.json \
+            memoryagent.cyclonedx.json image-provenance.json; do
+            path="$EVIDENCE_DIR/$artifact"
+            test -s "$path"
+            test -f "$path"
+            test ! -L "$path"
+            test "$(stat -c '%h' "$path")" -eq 1
+          done
+          SCANNED_SBOM_SHA256="$(sha256sum "$EVIDENCE_DIR/memoryagent.syft.json" | cut -d ' ' -f 1)"
+          test -n "$SCANNED_SBOM_SHA256"
+          echo "syft_sha256=$SCANNED_SBOM_SHA256" >> "$GITHUB_OUTPUT"
+          printf '%s  %s\n' "$SCANNED_SBOM_SHA256" memoryagent.syft.json \
+            > "$EVIDENCE_DIR/SCANNED-SBOM.sha256"
+          (
+            cd "$EVIDENCE_DIR"
+            sha256sum --check --strict INPUT-LOCKS.sha256
+            sha256sum --check --strict SCANNED-SBOM.sha256
+            sha256sum INPUT-LOCKS.sha256 SCANNED-SBOM.sha256 docker-version.txt \
+              grype-config.effective.yaml grype-db-status.txt grype-version.txt \
+              image-provenance.json memoryagent.cyclonedx.json memoryagent.spdx.json \
+              memoryagent.syft.json runtime-boundary.txt runtime-entrypoint.txt \
+              runtime-image-config.actual.json \
+              syft-config.effective.yaml syft-version.txt input-locks/Dockerfile \
+              input-locks/dockerignore input-locks/gitattributes input-locks/package-lock.json input-locks/syft.yaml \
+              input-locks/grype.yaml > SBOM-SHA256SUMS
+            sha256sum --check --strict SBOM-SHA256SUMS
+          )
+
+      - name: Retain SBOM evidence before vulnerability scanning
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-sbom-${{ github.sha }}
+          path: |
+            .artifacts/supply-chain/memoryagent.cyclonedx.json
+            .artifacts/supply-chain/memoryagent.spdx.json
+            .artifacts/supply-chain/memoryagent.syft.json
+            .artifacts/supply-chain/SCANNED-SBOM.sha256
+            .artifacts/supply-chain/image-provenance.json
+            .artifacts/supply-chain/syft-version.txt
+            .artifacts/supply-chain/syft-config.effective.yaml
+            .artifacts/supply-chain/grype-version.txt
+            .artifacts/supply-chain/grype-config.effective.yaml
+            .artifacts/supply-chain/grype-db-status.txt
+            .artifacts/supply-chain/docker-version.txt
+            .artifacts/supply-chain/runtime-boundary.txt
+            .artifacts/supply-chain/runtime-entrypoint.txt
+            .artifacts/supply-chain/runtime-image-config.actual.json
+            .artifacts/supply-chain/INPUT-LOCKS.sha256
+            .artifacts/supply-chain/SBOM-SHA256SUMS
+            .artifacts/supply-chain/input-locks
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Produce JSON, SARIF, and human-readable vulnerability reports
+        id: grype_reports
+        env:
+          EXPECTED_SYFT_SHA256: ${{ steps.seal_sbom.outputs.syft_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$TOOLS_DIR/grype/grype" | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_BINARY_SHA256"
+          test "$(sha256sum "$EVIDENCE_DIR/input-locks/grype.yaml" | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_POLICY_SHA256"
+          test -n "$EXPECTED_SYFT_SHA256"
+          test "$(sha256sum "$EVIDENCE_DIR/memoryagent.syft.json" | cut -d ' ' -f 1)" = "$EXPECTED_SYFT_SHA256"
+          (cd "$EVIDENCE_DIR" && sha256sum --check --strict SCANNED-SBOM.sha256)
+          "$TOOLS_DIR/grype/grype" --config "$EVIDENCE_DIR/input-locks/grype.yaml" "sbom:$EVIDENCE_DIR/memoryagent.syft.json" --by-cve \
+            --output "json=$EVIDENCE_DIR/grype-report.json" \
+            --output "sarif=$EVIDENCE_DIR/grype-report.sarif" \
+            --output "table=$EVIDENCE_DIR/grype-report.txt"
+
+      - name: Gate every high or critical finding (no current allowlist)
+        id: grype_high_critical_gate
+        env:
+          EXPECTED_SYFT_SHA256: ${{ steps.seal_sbom.outputs.syft_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$TOOLS_DIR/grype/grype" | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_BINARY_SHA256"
+          test "$(sha256sum "$EVIDENCE_DIR/input-locks/grype.yaml" | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_POLICY_SHA256"
+          test -n "$EXPECTED_SYFT_SHA256"
+          test "$(sha256sum "$EVIDENCE_DIR/memoryagent.syft.json" | cut -d ' ' -f 1)" = "$EXPECTED_SYFT_SHA256"
+          (cd "$EVIDENCE_DIR" && sha256sum --check --strict SCANNED-SBOM.sha256)
+          "$TOOLS_DIR/grype/grype" --config "$EVIDENCE_DIR/input-locks/grype.yaml" "sbom:$EVIDENCE_DIR/memoryagent.syft.json" \
+            --by-cve --fail-on high --output table
+
+      - name: Validate and hash the combined evidence
+        id: validate_supply_evidence
+        if: ${{ !cancelled() && steps.grype_reports.outcome == 'success' }}
+        env:
+          GATE_OUTCOME: ${{ steps.grype_high_critical_gate.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFileSync, writeFileSync } from "node:fs";
+          const read = (name) => JSON.parse(
+            readFileSync(process.env.EVIDENCE_DIR + "/" + name, "utf8"),
+          );
+          const grype = read("grype-report.json");
+          assert.ok(Array.isArray(grype.matches));
+          const ignored = Object.hasOwn(grype, "ignoredMatches") ? grype.ignoredMatches : [];
+          assert.ok(Array.isArray(ignored));
+          assert.equal(ignored.length, 0);
+          const sarif = read("grype-report.sarif");
+          assert.equal(sarif.version, "2.1.0");
+          assert.ok(Array.isArray(sarif.runs));
+          const counts = {};
+          for (const match of grype.matches) {
+            const severity = match?.vulnerability?.severity;
+            assert.equal(typeof severity, "string");
+            counts[severity] = (counts[severity] ?? 0) + 1;
+          }
+          const blocked = (counts.High ?? 0) + (counts.Critical ?? 0);
+          if (process.env.GATE_OUTCOME === "success") assert.equal(blocked, 0);
+          assert.ok(["success", "failure"].includes(process.env.GATE_OUTCOME));
+          const summary = {
+            databaseAsOf: "2026-07-15",
+            gate: "all high and critical findings, including no-fix findings",
+            ignoredMatches: 0,
+            counts,
+            gateOutcome: process.env.GATE_OUTCOME,
+          };
+          writeFileSync(
+            process.env.EVIDENCE_DIR + "/vulnerability-summary.json",
+            JSON.stringify(summary, null, 2) + "\n",
+          );
+          NODE
+          (
+            cd "$EVIDENCE_DIR"
+            sha256sum --check --strict INPUT-LOCKS.sha256
+            sha256sum --check --strict SCANNED-SBOM.sha256
+            sha256sum --check --strict SBOM-SHA256SUMS
+            sha256sum INPUT-LOCKS.sha256 SBOM-SHA256SUMS SCANNED-SBOM.sha256 \
+              docker-version.txt grype-config.effective.yaml grype-db-status.txt \
+              grype-report.json grype-report.sarif grype-report.txt grype-version.txt \
+              image-provenance.json memoryagent.cyclonedx.json memoryagent.spdx.json \
+              memoryagent.syft.json runtime-boundary.txt runtime-entrypoint.txt \
+              runtime-image-config.actual.json \
+              syft-config.effective.yaml syft-version.txt vulnerability-summary.json \
+              input-locks/Dockerfile input-locks/dockerignore input-locks/gitattributes input-locks/package-lock.json \
+              input-locks/syft.yaml input-locks/grype.yaml > SHA256SUMS
+            sha256sum --check --strict SHA256SUMS
+          )
+
+      - name: Upload Grype SARIF to GitHub code scanning
+        if: ${{ !cancelled() && steps.validate_supply_evidence.outcome == 'success' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@e5d2f324924c57b6cabef9bdd7a1c85d62a89be2 # v3.37.0
+        with:
+          sarif_file: .artifacts/supply-chain/grype-report.sarif
+          category: grype-production-image
+
+      - name: Retain SBOM, scan, database, and provenance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-supply-chain-${{ github.sha }}
+          path: |
+            .artifacts/supply-chain/memoryagent.cyclonedx.json
+            .artifacts/supply-chain/memoryagent.spdx.json
+            .artifacts/supply-chain/memoryagent.syft.json
+            .artifacts/supply-chain/SCANNED-SBOM.sha256
+            .artifacts/supply-chain/grype-report.json
+            .artifacts/supply-chain/grype-report.sarif
+            .artifacts/supply-chain/grype-report.txt
+            .artifacts/supply-chain/grype-db-status.txt
+            .artifacts/supply-chain/image-provenance.json
+            .artifacts/supply-chain/syft-version.txt
+            .artifacts/supply-chain/syft-config.effective.yaml
+            .artifacts/supply-chain/grype-version.txt
+            .artifacts/supply-chain/grype-config.effective.yaml
+            .artifacts/supply-chain/docker-version.txt
+            .artifacts/supply-chain/runtime-boundary.txt
+            .artifacts/supply-chain/runtime-entrypoint.txt
+            .artifacts/supply-chain/runtime-image-config.actual.json
+            .artifacts/supply-chain/vulnerability-summary.json
+            .artifacts/supply-chain/INPUT-LOCKS.sha256
+            .artifacts/supply-chain/SBOM-SHA256SUMS
+            .artifacts/supply-chain/SHA256SUMS
+            .artifacts/supply-chain/input-locks
+          if-no-files-found: warn
+          retention-days: 30

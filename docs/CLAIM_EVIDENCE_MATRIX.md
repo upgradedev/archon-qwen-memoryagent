@@ -53,6 +53,7 @@ Use this file as the single source of truth while writing the Devpost page, reco
 |---|---|
 | Full test run and coverage | Use the immutable artifacts from the final CI run; do not hand-copy counts into submission text. |
 | Docs consistency | `npm run test:docs` |
+| Production image supply chain | [`.github/workflows/supply-chain.yml`](../.github/workflows/supply-chain.yml) and [`SUPPLY_CHAIN.md`](./SUPPLY_CHAIN.md) produce retained SPDX 2.3/CycloneDX/Syft SBOMs and fail on every high/critical Grype finding against the byte-pinned 2026-07-15 database snapshot. This is dated evidence, not a security certification; cite it only after the exact commit's hosted run succeeds. |
 | Fail-closed final media evidence | `python scripts/capture_submission_gallery.py ...` → `demo/gallery/CAPTURE_REVIEW.json`; requires exact-deploy evidence plus live vision, feedback-persistence, one-row lifecycle, cleanup, model and artifact-hash gates before finals are written. Human-control capture is explicitly Defer-only. |
 | Judge architecture hero | [`judge-architecture.svg`](./judge-architecture.svg) and [`demo/final-media/judge-architecture.jpg`](../demo/final-media/judge-architecture.jpg) |
 | Dense technical architecture | [`architecture.mmd`](./architecture.mmd), [`architecture.svg`](./architecture.svg), [`architecture.png`](./architecture.png) |
