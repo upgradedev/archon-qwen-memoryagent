@@ -16,11 +16,17 @@ RUN npm run build \
     && npm cache clean --force \
     && test "$(find node_modules -type f -name '*.node' | wc -l)" -eq 0
 
-# Node 26.5.0 carries the patched embedded Undici release. Keeping the exact
-# Node 24/npm pair in the build stage preserves the reviewed lock/build
-# contract, while the forward-compatible emitted JavaScript runs in the
-# independently pinned, smaller Alpine production runtime.
-FROM node:26.5.0-alpine3.24@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66 AS runtime
+# Keep build, CI, package metadata, and runtime on the same reviewed LTS/ABI.
+# Alpine removes the Debian package surface; the next step removes package
+# managers that the compiled production service never invokes.
+FROM node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runtime
+
+# The long-lived service executes compiled JavaScript only. Remove package
+# managers and their transitive graph (including npm's bundled HTTP client)
+# from the production attack surface before application files are copied.
+RUN rm -rf /usr/local/lib/node_modules /opt/yarn-* \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+      /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx
 
 ENV NODE_ENV=production \
     PORT=9000

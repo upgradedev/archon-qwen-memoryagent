@@ -15,9 +15,11 @@ The release boundary fails closed unless all of these statements hold:
 1. `Dockerfile`, `.dockerignore`, `.gitattributes`, `package-lock.json`,
    `.syft.yaml`, and `.grype.yaml` match reviewed SHA-256 identities and are
    regular, single-link, LF-only files.
-2. Both production stages use the exact digest-pinned Node 24.18.0 Bookworm-slim
-   image. The Docker build uses the production `runtime` target, Linux AMD64,
-   no base pull, and no build cache.
+2. Both stages use the exact digest-pinned Node 24.18.0 Alpine image, matching
+   package metadata and CI. The Docker build selects the production `runtime`
+   target, Linux AMD64, no base pull, and no build cache. The emitted
+   application has no native addon, and the constrained canary imports core
+   compiled application modules under the final runtime.
 3. The built image ID is carried as an immutable step output. The runtime
    configuration must match the production contract, including the exact
    `docker-entrypoint.sh` inherited from the digest-pinned official Node image.
@@ -55,13 +57,18 @@ gate still run.
 | Input | Reviewed identity |
 |---|---|
 | Build base | `node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd` |
-| Runtime base | `node:26.5.0-alpine3.24@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66` |
+| Runtime base | `node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd` |
 | Syft archive | v1.46.0 · SHA-256 `d654f678b709eb53c393d38519d5ed7d2e57205529404018614cfefa0fb2b5ca` |
 | Syft executable | SHA-256 `574df1a0862ff88ad933be214e81069e35b17618a13e019f8f1c84fe063222a2` |
 | Grype archive | v0.115.0 · SHA-256 `3fad92940650e514c0aa2dad83526942a055e210cec09a8a59d9c024adc2b90e` |
 | Grype executable | SHA-256 `05ffd2c28a607e48fb2269d9aac5b3d53e8a51bbac501946644745eae2119907` |
 | Vulnerability DB | schema v6.1.8, built 2026-07-15 · SHA-256 `0d9ac9d49c93649ea6bf713c60960b46e33c939d49ac7de52df649453d29cf8e` |
 | GitHub Actions | Full 40-character release commits; checked by `npm run test:docs` |
+
+The final image removes npm, npx, Corepack, Yarn, and pnpm after the pinned
+runtime stage is selected. The service starts compiled JavaScript with `node`;
+no package manager or install path is required in production. The constrained
+runtime canary fails if those tools or their global module directory return.
 
 `package-lock.json` also integrity-locks the npm registry artifacts. The
 workflow records Docker, scanner, policy, database, source-commit, image-ID, and
