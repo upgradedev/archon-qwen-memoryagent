@@ -19,7 +19,7 @@ test("live readiness bearer destination is code-pinned and cannot be redirected 
   let calls = 0;
   let observedUrl = "";
   let observedAuthorization = "";
-  let observedRedirect: RequestRedirect | undefined;
+  let observedRedirect: "error" | "follow" | "manual" | undefined;
   const result = await probePinnedLiveSemanticRoute(reviewerKey, async (input, init) => {
     calls++;
     observedUrl = input;
