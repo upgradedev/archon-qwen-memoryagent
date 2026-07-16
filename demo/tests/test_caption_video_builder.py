@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import importlib.util
 import hashlib
-import io
+from http import client as httpclient
 import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import sys
 import traceback
 import unittest
 from unittest import mock
-from urllib import error as urlerror
-from urllib import request as urlrequest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,62 +34,159 @@ CAPTURE_SPEC.loader.exec_module(capture)
 from repo_paths import read_project_file_once
 
 
-class FakeJsonResponse:
-    """Small context-managed urllib response used by transport-only tests."""
+class FakeHttpResponse:
+    """Fully readable response that leaves its owning connection reusable."""
 
-    def __init__(self, payload: bytes, *, status: int = 200) -> None:
+    def __init__(
+        self,
+        payload: bytes,
+        *,
+        status: int = 200,
+        read_failure: BaseException | None = None,
+        close_failure: BaseException | None = None,
+    ) -> None:
         self.payload = payload
         self.status = status
-        self.headers = {"Content-Type": "application/json"}
-
-    def __enter__(self) -> "FakeJsonResponse":
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        return None
+        self.read_failure = read_failure
+        self.close_failure = close_failure
+        self.read_calls = 0
+        self.close_calls = 0
 
     def read(self) -> bytes:
+        self.read_calls += 1
+        if self.read_failure is not None:
+            raise self.read_failure
         return self.payload
 
+    def getheaders(self) -> list[tuple[str, str]]:
+        return [("Content-Type", "application/json")]
 
-class CaptureTransportRetryTests(unittest.TestCase):
+    def close(self) -> None:
+        self.close_calls += 1
+        if self.close_failure is not None:
+            raise self.close_failure
+
+
+class FakePersistentConnection:
+    """Scripted stdlib HTTPSConnection double with explicit close evidence."""
+
+    def __init__(self, *outcomes: FakeHttpResponse | BaseException) -> None:
+        self.outcomes = list(outcomes)
+        self.requests: list[tuple[str, str, bytes | None, dict[str, str]]] = []
+        self.close_calls = 0
+        self.timeout: float | None = None
+        self.sock = None
+        self._pending: FakeHttpResponse | None = None
+
+    def request(self, method: str, path: str, *, body: bytes | None, headers: dict[str, str]) -> None:
+        self.requests.append((method, path, body, dict(headers)))
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        self._pending = outcome
+
+    def getresponse(self) -> FakeHttpResponse:
+        assert self._pending is not None
+        response = self._pending
+        self._pending = None
+        return response
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class FakeConnectionFactory:
+    def __init__(self, *connections: FakePersistentConnection) -> None:
+        self.connections = list(connections)
+        self.calls: list[tuple[str, int, float, ssl.SSLContext]] = []
+
+    def __call__(
+        self,
+        host: str,
+        port: int,
+        *,
+        timeout: float,
+        context: ssl.SSLContext,
+    ) -> FakePersistentConnection:
+        self.calls.append((host, port, timeout, context))
+        connection = self.connections.pop(0)
+        connection.timeout = timeout
+        return connection
+
+
+class CapturePersistentTransportTests(unittest.TestCase):
     TOKEN = "reviewer-secret-that-must-never-leak-1234567890"
 
-    def test_body_free_get_retries_transport_failure_on_exact_schedule(self) -> None:
-        requests: list[urlrequest.Request] = []
+    def make_transport(
+        self,
+        *connections: FakePersistentConnection,
+    ) -> tuple[object, FakeConnectionFactory, ssl.SSLContext]:
+        context = ssl.create_default_context()
+        factory = FakeConnectionFactory(*connections)
+        transport = capture.PinnedHttpsJsonTransport(ssl_context=context, connection_factory=factory)
+        return transport, factory, context
 
-        def open_once_then_succeed(req: urlrequest.Request, *, timeout: float) -> FakeJsonResponse:
-            requests.append(req)
-            self.assertEqual(timeout, 7.0)
-            if len(requests) == 1:
-                raise urlerror.URLError("temporary TCP connect timeout")
-            return FakeJsonResponse(b'{"status":"ok"}')
+    def test_successive_requests_reuse_one_verified_pinned_connection(self) -> None:
+        health_response = FakeHttpResponse(b'{"status":"ok"}')
+        ready_response = FakeHttpResponse(b'{"status":"ready"}')
+        connection = FakePersistentConnection(health_response, ready_response)
+        transport, factory, context = self.make_transport(connection)
 
-        with (
-            mock.patch.object(capture.NO_REDIRECT_OPENER, "open", side_effect=open_once_then_succeed),
-            mock.patch.object(capture.time, "sleep") as sleep,
-        ):
-            payload, headers = capture.request_json(
+        with mock.patch.object(capture, "LIVE_JSON_TRANSPORT", transport):
+            health, headers = capture.request_json(
                 "GET",
                 capture.DEFAULT_BASE_URL,
                 "/health",
                 reviewer_token=self.TOKEN,
                 timeout=7.0,
             )
+            ready, _ = capture.request_json("GET", capture.DEFAULT_BASE_URL, "/ready", timeout=11.0)
+
+        self.assertEqual(health, {"status": "ok"})
+        self.assertEqual(ready, {"status": "ready"})
+        self.assertEqual(headers, {"content-type": "application/json"})
+        self.assertEqual(
+            factory.calls,
+            [(capture.PINNED_LIVE_HOST, capture.PINNED_LIVE_PORT, 7.0, context)],
+        )
+        self.assertEqual(connection.timeout, 11.0)
+        self.assertEqual([request[1] for request in connection.requests], ["/health", "/ready"])
+        self.assertEqual(connection.requests[0][3]["Authorization"], f"Bearer {self.TOKEN}")
+        self.assertNotIn("Authorization", connection.requests[1][3])
+        self.assertEqual(health_response.close_calls, 1)
+        self.assertEqual(ready_response.close_calls, 1)
+
+    def test_broken_safe_get_resets_connection_then_retries_on_exact_schedule(self) -> None:
+        broken = FakePersistentConnection(OSError(f"temporary failure {self.TOKEN}"))
+        recovered = FakePersistentConnection(FakeHttpResponse(b'{"status":"ok"}'))
+        transport, factory, _ = self.make_transport(broken, recovered)
+
+        with (
+            mock.patch.object(capture, "LIVE_JSON_TRANSPORT", transport),
+            mock.patch.object(capture.time, "sleep") as sleep,
+        ):
+            payload, _ = capture.request_json(
+                "GET",
+                capture.DEFAULT_BASE_URL,
+                "/health",
+                reviewer_token=self.TOKEN,
+            )
 
         self.assertEqual(payload, {"status": "ok"})
-        self.assertEqual(headers, {"content-type": "application/json"})
-        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(factory.calls), 2)
+        self.assertEqual(broken.close_calls, 1)
+        self.assertEqual(recovered.close_calls, 0)
         self.assertEqual(sleep.call_args_list, [mock.call(capture.GET_TRANSPORT_RETRY_DELAYS_SECONDS[0])])
-        for req in requests:
-            self.assertEqual(req.get_method(), "GET")
-            self.assertEqual(req.full_url, capture.DEFAULT_BASE_URL + "/health")
-            self.assertEqual(req.get_header("Authorization"), f"Bearer {self.TOKEN}")
+        self.assertEqual(recovered.requests[0][3]["Authorization"], f"Bearer {self.TOKEN}")
 
     def test_get_transport_retry_is_bounded_and_scrubs_exception_details(self) -> None:
-        transport = urlerror.URLError(f"upstream accidentally included {self.TOKEN}")
+        connections = [
+            FakePersistentConnection(OSError(f"upstream accidentally included {self.TOKEN}"))
+            for _ in range(capture.GET_TRANSPORT_MAX_ATTEMPTS)
+        ]
+        transport, factory, _ = self.make_transport(*connections)
         with (
-            mock.patch.object(capture.NO_REDIRECT_OPENER, "open", side_effect=transport) as open_mock,
+            mock.patch.object(capture, "LIVE_JSON_TRANSPORT", transport),
             mock.patch.object(capture.time, "sleep") as sleep,
             self.assertRaises(capture.GateError) as raised,
         ):
@@ -101,7 +197,8 @@ class CaptureTransportRetryTests(unittest.TestCase):
                 reviewer_token=self.TOKEN,
             )
 
-        self.assertEqual(open_mock.call_count, capture.GET_TRANSPORT_MAX_ATTEMPTS)
+        self.assertEqual(len(factory.calls), capture.GET_TRANSPORT_MAX_ATTEMPTS)
+        self.assertTrue(all(connection.close_calls == 1 for connection in connections))
         self.assertEqual(
             sleep.call_args_list,
             [mock.call(delay) for delay in capture.GET_TRANSPORT_RETRY_DELAYS_SECONDS],
@@ -112,111 +209,131 @@ class CaptureTransportRetryTests(unittest.TestCase):
             f"GET /ready/deep was unreachable after {capture.GET_TRANSPORT_MAX_ATTEMPTS} transport attempts",
         )
         self.assertNotIn(self.TOKEN, message)
-        self.assertNotIn(str(transport.reason), message)
         self.assertIsNone(raised.exception.__cause__)
         self.assertTrue(raised.exception.__suppress_context__)
         self.assertNotIn(self.TOKEN, "".join(traceback.format_exception(raised.exception)))
 
-    def test_each_supported_transport_exception_is_retryable_for_safe_get(self) -> None:
+    def test_each_supported_transport_exception_resets_and_retries_safe_get(self) -> None:
         cases = (
-            urlerror.URLError("connect timeout"),
+            httpclient.RemoteDisconnected("peer closed"),
+            ssl.SSLError("TLS read failed"),
             TimeoutError("socket timeout"),
             OSError("connection reset"),
         )
-        for transport in cases:
+        for failure in cases:
+            broken = FakePersistentConnection(failure)
+            recovered = FakePersistentConnection(FakeHttpResponse(b'{"status":"ok"}'))
+            transport, factory, _ = self.make_transport(broken, recovered)
             with (
-                self.subTest(transport=type(transport).__name__),
-                mock.patch.object(
-                    capture.NO_REDIRECT_OPENER,
-                    "open",
-                    side_effect=[transport, FakeJsonResponse(b'{"status":"ok"}')],
-                ) as open_mock,
+                self.subTest(transport=type(failure).__name__),
+                mock.patch.object(capture, "LIVE_JSON_TRANSPORT", transport),
                 mock.patch.object(capture.time, "sleep") as sleep,
             ):
                 payload, _ = capture.request_json("GET", capture.DEFAULT_BASE_URL, "/health")
             self.assertEqual(payload, {"status": "ok"})
-            self.assertEqual(open_mock.call_count, 2)
+            self.assertEqual(len(factory.calls), 2)
+            self.assertEqual(broken.close_calls, 1)
             self.assertEqual(
                 sleep.call_args_list,
                 [mock.call(capture.GET_TRANSPORT_RETRY_DELAYS_SECONDS[0])],
             )
 
-    def test_post_transport_failure_is_never_retried(self) -> None:
+    def test_mutation_transport_failure_is_never_retried(self) -> None:
         for method in ("POST", "PUT", "PATCH", "DELETE"):
-            transport = urlerror.URLError(f"mutation failure {self.TOKEN}")
+            mutation_response = FakeHttpResponse(
+                b"",
+                read_failure=OSError(f"post-send response failure {self.TOKEN}"),
+            )
+            connection = FakePersistentConnection(
+                FakeHttpResponse(b'{"status":"ok"}'),
+                mutation_response,
+            )
+            transport, factory, _ = self.make_transport(connection)
             with (
                 self.subTest(method=method),
-                mock.patch.object(capture.NO_REDIRECT_OPENER, "open", side_effect=transport) as open_mock,
+                mock.patch.object(capture, "LIVE_JSON_TRANSPORT", transport),
                 mock.patch.object(capture.time, "sleep") as sleep,
-                self.assertRaises(capture.GateError) as raised,
             ):
-                capture.request_json(
-                    method,
-                    capture.DEFAULT_BASE_URL,
-                    "/demo/seed",
-                    body={},
-                    reviewer_token=self.TOKEN,
-                )
+                capture.request_json("GET", capture.DEFAULT_BASE_URL, "/health")
+                with self.assertRaises(capture.GateError) as raised:
+                    capture.request_json(
+                        method,
+                        capture.DEFAULT_BASE_URL,
+                        "/demo/seed",
+                        body={},
+                        reviewer_token=self.TOKEN,
+                    )
 
-            self.assertEqual(open_mock.call_count, 1)
+            self.assertEqual(len(factory.calls), 1)
+            self.assertEqual(len(connection.requests), 2)
+            self.assertEqual(connection.requests[1][2], b"{}")
+            self.assertEqual(connection.close_calls, 1)
+            self.assertEqual(mutation_response.read_calls, 1)
+            self.assertEqual(mutation_response.close_calls, 1)
             sleep.assert_not_called()
             self.assertEqual(str(raised.exception), f"{method} /demo/seed was unreachable")
             self.assertNotIn(self.TOKEN, str(raised.exception))
             self.assertIsNone(raised.exception.__cause__)
 
     def test_get_with_body_is_not_eligible_for_retry(self) -> None:
+        connection = FakePersistentConnection(OSError("transport failure"))
+        transport, factory, _ = self.make_transport(connection)
         with (
-            mock.patch.object(
-                capture.NO_REDIRECT_OPENER,
-                "open",
-                side_effect=urlerror.URLError("transport failure"),
-            ) as open_mock,
+            mock.patch.object(capture, "LIVE_JSON_TRANSPORT", transport),
             mock.patch.object(capture.time, "sleep") as sleep,
-            self.assertRaises(capture.GateError),
+            self.assertRaises(capture.GateError) as raised,
         ):
             capture.request_json("GET", capture.DEFAULT_BASE_URL, "/health", body={})
 
-        self.assertEqual(open_mock.call_count, 1)
+        self.assertEqual(len(factory.calls), 1)
+        self.assertEqual(connection.close_calls, 1)
         sleep.assert_not_called()
+        self.assertEqual(str(raised.exception), "GET /health was unreachable")
 
-    def test_http_errors_and_redirects_are_never_retried(self) -> None:
+    def test_http_errors_and_redirects_are_authoritative_and_never_retried(self) -> None:
         cases = (
-            (503, "GET /health returned HTTP 503"),
-            (302, "GET /health attempted a forbidden HTTP redirect"),
+            (503, None, "GET /health returned HTTP 503"),
+            (302, None, "GET /health attempted a forbidden HTTP redirect"),
+            (503, OSError(f"close failure {self.TOKEN}"), "GET /health returned HTTP 503"),
         )
-        for code, expected in cases:
-            error = urlerror.HTTPError(
-                capture.DEFAULT_BASE_URL + "/health",
-                code,
-                "untrusted detail",
-                {},
-                io.BytesIO(b'{"secret":"untrusted"}'),
+        for status, close_failure, expected in cases:
+            response = FakeHttpResponse(
+                b'{"secret":"untrusted"}',
+                status=status,
+                close_failure=close_failure,
             )
+            connection = FakePersistentConnection(response)
+            transport, factory, _ = self.make_transport(connection)
             with (
-                self.subTest(code=code),
-                mock.patch.object(capture.NO_REDIRECT_OPENER, "open", side_effect=error) as open_mock,
+                self.subTest(status=status),
+                mock.patch.object(capture, "LIVE_JSON_TRANSPORT", transport),
                 mock.patch.object(capture.time, "sleep") as sleep,
                 self.assertRaises(capture.GateError) as raised,
             ):
                 capture.request_json("GET", capture.DEFAULT_BASE_URL, "/health")
-            self.assertEqual(open_mock.call_count, 1)
+            self.assertEqual(len(factory.calls), 1)
+            self.assertEqual(len(connection.requests), 1)
+            self.assertEqual(connection.close_calls, 1)
+            self.assertEqual(response.read_calls, 0)
+            self.assertEqual(response.close_calls, 1)
             sleep.assert_not_called()
             self.assertEqual(str(raised.exception), expected)
+            self.assertNotIn("untrusted", str(raised.exception))
 
     def test_invalid_json_and_semantic_failure_are_not_retried(self) -> None:
+        invalid = FakePersistentConnection(FakeHttpResponse(("not-json-" + self.TOKEN).encode("utf-8")))
+        transport, factory, _ = self.make_transport(invalid)
         with (
-            mock.patch.object(
-                capture.NO_REDIRECT_OPENER,
-                "open",
-                return_value=FakeJsonResponse(b"not-json"),
-            ) as open_mock,
+            mock.patch.object(capture, "LIVE_JSON_TRANSPORT", transport),
             mock.patch.object(capture.time, "sleep") as sleep,
             self.assertRaises(capture.GateError) as raised,
         ):
             capture.request_json("GET", capture.DEFAULT_BASE_URL, "/health")
-        self.assertEqual(open_mock.call_count, 1)
+        self.assertEqual(len(factory.calls), 1)
+        self.assertEqual(len(invalid.requests), 1)
         sleep.assert_not_called()
         self.assertEqual(str(raised.exception), "GET /health did not return JSON")
+        self.assertNotIn(self.TOKEN, "".join(traceback.format_exception(raised.exception)))
 
         wrong_health = json.dumps(
             {
@@ -227,19 +344,28 @@ class CaptureTransportRetryTests(unittest.TestCase):
                 "embedDim": capture.EXPECTED_DIMENSION,
             }
         ).encode("utf-8")
+        semantic = FakePersistentConnection(FakeHttpResponse(wrong_health))
+        transport, factory, _ = self.make_transport(semantic)
         with (
-            mock.patch.object(
-                capture.NO_REDIRECT_OPENER,
-                "open",
-                return_value=FakeJsonResponse(wrong_health),
-            ) as open_mock,
+            mock.patch.object(capture, "LIVE_JSON_TRANSPORT", transport),
             mock.patch.object(capture.time, "sleep") as sleep,
             self.assertRaises(capture.GateError) as raised,
         ):
             capture.public_release_probes(capture.DEFAULT_BASE_URL, self.TOKEN)
-        self.assertEqual(open_mock.call_count, 1)
+        self.assertEqual(len(factory.calls), 1)
+        self.assertEqual(len(semantic.requests), 1)
         sleep.assert_not_called()
         self.assertEqual(str(raised.exception), "/health is not ok")
+
+    def test_tls_context_must_verify_the_exact_hostname_and_certificate(self) -> None:
+        no_hostname = ssl.create_default_context()
+        no_hostname.check_hostname = False
+        with self.assertRaisesRegex(capture.GateError, "verify the pinned hostname"):
+            capture.PinnedHttpsJsonTransport(ssl_context=no_hostname)
+
+        no_certificate = mock.Mock(check_hostname=True, verify_mode=ssl.CERT_NONE)
+        with self.assertRaisesRegex(capture.GateError, "require certificate validation"):
+            capture.PinnedHttpsJsonTransport(ssl_context=no_certificate)
 
 
 class CaptionTimelineTests(unittest.TestCase):
@@ -491,20 +617,10 @@ class ReleaseBoundaryTests(unittest.TestCase):
                 with self.assertRaises(capture.GateError):
                     capture.validate_live_origin(unsafe)
 
-    def test_capture_http_redirect_handler_refuses_to_construct_followup(self) -> None:
-        req = urlrequest.Request(
-            capture.DEFAULT_BASE_URL + "/ready/deep",
-            headers={"Authorization": "Bearer " + "x" * 32},
-        )
-        redirected = capture.NoRedirectHandler().redirect_request(
-            req,
-            io.BytesIO(),
-            302,
-            "Found",
-            {},
-            "https://example.invalid/steal",
-        )
-        self.assertIsNone(redirected)
+    def test_capture_transport_rejects_authority_style_request_paths(self) -> None:
+        transport = capture.PinnedHttpsJsonTransport()
+        with self.assertRaisesRegex(capture.GateError, "origin-relative"):
+            transport.request_json("GET", capture.DEFAULT_BASE_URL, "//example.invalid/steal")
 
     def test_browser_network_guard_rejects_redirects_and_other_origins(self) -> None:
         self.assertTrue(capture.is_pinned_live_request(capture.DEFAULT_BASE_URL + "/ready/deep"))

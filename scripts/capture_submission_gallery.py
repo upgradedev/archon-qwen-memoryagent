@@ -15,10 +15,12 @@ screenshot, or placed in a tracked file.
 
 from __future__ import annotations
 
+import atexit
 import argparse
 import base64
 import datetime as dt
 import hashlib
+from http import client as httpclient
 import io
 import json
 import os
@@ -26,6 +28,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import ssl
 import subprocess
 import sys
 import time
@@ -53,6 +56,8 @@ PROOF_FRAMES = FINAL_MEDIA / "proof-frames"
 ARCHITECTURE = FINAL_MEDIA / "judge-architecture.jpg"
 
 DEFAULT_BASE_URL = "https://memory.43.106.13.19.sslip.io"
+PINNED_LIVE_HOST = "memory.43.106.13.19.sslip.io"
+PINNED_LIVE_PORT = 443
 DEFAULT_REPO_URL = "https://github.com/upgradedev/archon-qwen-memoryagent"
 EXPECTED_EMBEDDER = "text-embedding-v4"
 EXPECTED_NARRATOR = "qwen-plus"
@@ -128,24 +133,6 @@ def snapshot_project_file(value: str | Path, label: str) -> ProjectFileSnapshot:
         raise GateError(str(exc)) from exc
 
 
-class NoRedirectHandler(urlrequest.HTTPRedirectHandler):
-    """Turn every HTTP redirect into an error instead of a follow-up request."""
-
-    def redirect_request(
-        self,
-        req: urlrequest.Request,
-        fp: Any,
-        code: int,
-        msg: str,
-        headers: Any,
-        newurl: str,
-    ) -> None:
-        return None
-
-
-NO_REDIRECT_OPENER = urlrequest.build_opener(NoRedirectHandler())
-
-
 def validate_live_origin(value: str) -> str:
     require(value == DEFAULT_BASE_URL, f"live credential destination must be exactly {DEFAULT_BASE_URL}")
     parsed = urlparse.urlparse(value)
@@ -155,7 +142,7 @@ def validate_live_origin(value: str) -> str:
         raise GateError("live credential destination has an invalid port") from exc
     require(
         parsed.scheme == "https"
-        and parsed.hostname == "memory.43.106.13.19.sslip.io"
+        and parsed.hostname == PINNED_LIVE_HOST
         and port in {None, 443}
         and parsed.username is None
         and parsed.password is None
@@ -178,11 +165,146 @@ def is_pinned_live_request(url: str, *, redirected: bool = False) -> bool:
         return False
     return (
         parsed.scheme == "https"
-        and parsed.hostname == "memory.43.106.13.19.sslip.io"
+        and parsed.hostname == PINNED_LIVE_HOST
         and port in {None, 443}
         and parsed.username is None
         and parsed.password is None
     )
+
+
+class PinnedHttpsJsonTransport:
+    """One fail-closed, reusable TLS connection to the exact live origin.
+
+    Body-free GET probes may reconnect on transport failures.  Any request with
+    a body, and every mutation, is attempted exactly once because a broken
+    connection cannot prove whether the server applied it.
+    """
+
+    TRANSPORT_ERRORS = (httpclient.HTTPException, ssl.SSLError, TimeoutError, OSError)
+
+    def __init__(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        *,
+        ssl_context: ssl.SSLContext | None = None,
+        connection_factory: Any = httpclient.HTTPSConnection,
+    ) -> None:
+        self.base_url = validate_live_origin(base_url)
+        context = ssl_context or ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
+        require(context.check_hostname is True, "live transport TLS context must verify the pinned hostname")
+        require(
+            context.verify_mode == ssl.CERT_REQUIRED,
+            "live transport TLS context must require certificate validation",
+        )
+        self._ssl_context = context
+        self._connection_factory = connection_factory
+        self._connection: Any | None = None
+
+    def close(self) -> None:
+        connection = self._connection
+        self._connection = None
+        if connection is not None:
+            try:
+                connection.close()
+            except (httpclient.HTTPException, OSError):
+                pass
+
+    def _connection_for(self, timeout: float) -> Any:
+        if self._connection is None:
+            self._connection = self._connection_factory(
+                PINNED_LIVE_HOST,
+                PINNED_LIVE_PORT,
+                timeout=timeout,
+                context=self._ssl_context,
+            )
+        else:
+            self._connection.timeout = timeout
+            sock = getattr(self._connection, "sock", None)
+            if sock is not None:
+                sock.settimeout(timeout)
+        return self._connection
+
+    def _request_once(
+        self,
+        method: str,
+        path: str,
+        data: bytes | None,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> tuple[int, bytes, dict[str, str]]:
+        connection = self._connection_for(timeout)
+        response: Any | None = None
+        try:
+            connection.request(method, path, body=data, headers=headers)
+            response = connection.getresponse()
+            status = response.status
+            if status != 200:
+                # Never parse or expose an untrusted error/redirect body.  Drop
+                # the connection instead of draining it, while preserving the
+                # authoritative HTTP result and zero-retry contract.
+                self.close()
+                return status, b"", {}
+            raw = response.read()
+            response_headers = {str(key).lower(): str(value) for key, value in response.getheaders()}
+            return status, raw, response_headers
+        finally:
+            if response is not None:
+                try:
+                    response.close()
+                except self.TRANSPORT_ERRORS:
+                    # A response status/body already received is authoritative.
+                    # Cleanup failure only invalidates future reuse; it must not
+                    # turn this completed request into a retry (especially after
+                    # a mutation or an HTTP error response).
+                    self.close()
+
+    def request_json(
+        self,
+        method: str,
+        base_url: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        reviewer_token: str | None = None,
+        timeout: float = 90.0,
+    ) -> tuple[Any, dict[str, str]]:
+        require(validate_live_origin(base_url) == self.base_url, "live transport origin changed during capture")
+        require(path.startswith("/") and not path.startswith("//"), "live request path must be origin-relative")
+
+        data = json.dumps(body, separators=(",", ":")).encode("utf-8") if body is not None else None
+        headers = {"Accept": "application/json", "User-Agent": "Archon-MemoryAgent-Media-Gate/1.0"}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        if reviewer_token:
+            headers["Authorization"] = f"Bearer {reviewer_token}"
+
+        retry_delays = GET_TRANSPORT_RETRY_DELAYS_SECONDS if method == "GET" and body is None else ()
+        retry_index = 0
+        while True:
+            try:
+                status, raw, response_headers = self._request_once(method, path, data, headers, timeout)
+            except self.TRANSPORT_ERRORS:
+                self.close()
+                if retry_index >= len(retry_delays):
+                    attempts = retry_index + 1
+                    suffix = f" after {attempts} transport attempts" if attempts > 1 else ""
+                    raise GateError(f"{method} {path} was unreachable{suffix}") from None
+                time.sleep(retry_delays[retry_index])
+                retry_index += 1
+                continue
+            break
+
+        if 300 <= status < 400:
+            raise GateError(f"{method} {path} attempted a forbidden HTTP redirect")
+        require(status == 200, f"{method} {path} returned HTTP {status}")
+        try:
+            return json.loads(raw.decode("utf-8")), response_headers
+        except (UnicodeError, json.JSONDecodeError):
+            raise GateError(f"{method} {path} did not return JSON") from None
+
+
+LIVE_JSON_TRANSPORT = PinnedHttpsJsonTransport()
+atexit.register(LIVE_JSON_TRANSPORT.close)
 
 
 def sha256_file(path: Path) -> str:
@@ -339,44 +461,14 @@ def request_json(
     reviewer_token: str | None = None,
     timeout: float = 90.0,
 ) -> tuple[Any, dict[str, str]]:
-    base_url = validate_live_origin(base_url)
-    url = base_url.rstrip("/") + path
-    data = json.dumps(body, separators=(",", ":")).encode("utf-8") if body is not None else None
-    headers = {"Accept": "application/json", "User-Agent": "Archon-MemoryAgent-Media-Gate/1.0"}
-    if body is not None:
-        headers["Content-Type"] = "application/json"
-    if reviewer_token:
-        headers["Authorization"] = f"Bearer {reviewer_token}"
-    retry_delays = GET_TRANSPORT_RETRY_DELAYS_SECONDS if method == "GET" and body is None else ()
-    retry_index = 0
-    while True:
-        # Rebuild the request for every safe retry.  No exception detail, header,
-        # or credential is ever copied into logs or the public gate error.
-        req = urlrequest.Request(url, data=data, headers=headers, method=method)
-        try:
-            with NO_REDIRECT_OPENER.open(req, timeout=timeout) as response:
-                raw = response.read()
-                status = response.status
-                response_headers = {key.lower(): value for key, value in response.headers.items()}
-            break
-        except urlerror.HTTPError as exc:
-            # The body can contain operational details.  Report only path + status.
-            # HTTP responses are authoritative and are never transport-retried.
-            if 300 <= exc.code < 400:
-                raise GateError(f"{method} {path} attempted a forbidden HTTP redirect") from None
-            raise GateError(f"{method} {path} returned HTTP {exc.code}") from None
-        except (urlerror.URLError, TimeoutError, OSError) as exc:
-            if retry_index >= len(retry_delays):
-                attempts = retry_index + 1
-                suffix = f" after {attempts} transport attempts" if attempts > 1 else ""
-                raise GateError(f"{method} {path} was unreachable{suffix}") from None
-            time.sleep(retry_delays[retry_index])
-            retry_index += 1
-    require(status == 200, f"{method} {path} returned HTTP {status}")
-    try:
-        return json.loads(raw.decode("utf-8")), response_headers
-    except (UnicodeError, json.JSONDecodeError) as exc:
-        raise GateError(f"{method} {path} did not return JSON") from exc
+    return LIVE_JSON_TRANSPORT.request_json(
+        method,
+        base_url,
+        path,
+        body=body,
+        reviewer_token=reviewer_token,
+        timeout=timeout,
+    )
 
 
 def model_is_real(value: Any) -> bool:
