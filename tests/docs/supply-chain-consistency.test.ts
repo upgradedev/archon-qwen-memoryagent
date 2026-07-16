@@ -16,8 +16,10 @@ const readText = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 const NODE_VERSION = "24.18.0";
 const NPM_VERSION = "11.16.0";
 const PYTHON_VERSION = "3.11.15";
-const NODE_IMAGE =
-  "node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d";
+const BUILD_NODE_IMAGE =
+  "node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd";
+const RUNTIME_NODE_IMAGE =
+  "node:26.5.0-alpine3.24@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66";
 const PGVECTOR_IMAGE =
   "pgvector/pgvector:0.8.5-pg16-bookworm@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb";
 const K6_VERSION = "2.1.0";
@@ -77,8 +79,8 @@ test("CHECK 4b — CI runtimes, runner OS, Docker base, and package metadata agr
 
   const dockerfile = readText("Dockerfile");
   const nodeBases = [...dockerfile.matchAll(/^FROM\s+(node:\S+)\s+AS\s+/gm)].map((match) => match[1]);
-  assert.ok(nodeBases.length >= 2, "expected both build and runtime Node stages");
-  assert.deepEqual(new Set(nodeBases), new Set([NODE_IMAGE]));
+  assert.equal(nodeBases.length, 2, "expected exactly one build and one runtime Node stage");
+  assert.deepEqual(nodeBases, [BUILD_NODE_IMAGE, RUNTIME_NODE_IMAGE]);
   assert.equal(readText(".nvmrc").trim(), NODE_VERSION);
 
   for (const rel of ["package.json", "web/package.json"]) {
@@ -383,7 +385,7 @@ test("CHECK 4h — sealed-SBOM vulnerability gate has no suppression or substitu
   }
   assert.ok(!entrypointCanary.includes("--entrypoint"));
   assert.match(entrypointCanary, /"\$IMAGE" node --version/);
-  assert.match(runtimeBlock, /test "\$DEFAULT_ENTRYPOINT_OUTPUT" = "v24\.18\.0"/);
+  assert.match(runtimeBlock, /test "\$DEFAULT_ENTRYPOINT_OUTPUT" = "v26\.5\.0"/);
   assert.match(
     runtimeBlock,
     /printf '%s\\n' "\$DEFAULT_ENTRYPOINT_OUTPUT" > "\$EVIDENCE_DIR\/runtime-entrypoint\.txt"/,

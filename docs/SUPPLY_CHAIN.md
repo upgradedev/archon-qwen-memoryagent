@@ -54,7 +54,8 @@ gate still run.
 
 | Input | Reviewed identity |
 |---|---|
-| Build/runtime base | `node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d` |
+| Build base | `node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd` |
+| Runtime base | `node:26.5.0-alpine3.24@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66` |
 | Syft archive | v1.46.0 · SHA-256 `d654f678b709eb53c393d38519d5ed7d2e57205529404018614cfefa0fb2b5ca` |
 | Syft executable | SHA-256 `574df1a0862ff88ad933be214e81069e35b17618a13e019f8f1c84fe063222a2` |
 | Grype archive | v0.115.0 · SHA-256 `3fad92940650e514c0aa2dad83526942a055e210cec09a8a59d9c024adc2b90e` |

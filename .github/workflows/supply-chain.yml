@@ -29,8 +29,9 @@ jobs:
       TOOLS_DIR: .artifacts/tools
       BASH_ENV: /dev/null
       DOCKER_BUILDKIT: "1"
-      EXPECTED_BASE_IMAGE: node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
-      EXPECTED_DOCKERFILE_SHA256: 5b22c3fa938f2b36d4705c6fdc9010b10252005ccbefd58af83a5938e407826d
+      EXPECTED_BUILD_IMAGE: node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
+      EXPECTED_RUNTIME_IMAGE: node:26.5.0-alpine3.24@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66
+      EXPECTED_DOCKERFILE_SHA256: 8339666ff9b111d85d690eab468329f16d6a3a3170a18a43bbe300c5c9dd85a6
       EXPECTED_DOCKERIGNORE_SHA256: c0108efd77b12045c8196d5bcf6fa86a38c5309ec956edae8d3d8bc20035d22b
       EXPECTED_GITATTRIBUTES_SHA256: 01ac22b93dd9d53364e9eb8383dbcd62514a5e84522b114f0c5c65226d6e5317
       EXPECTED_PACKAGE_LOCK_SHA256: 2da4d50581b333f47136c171d0f68ae3c0eff402f5eff556b796591ae9c47c20
@@ -82,8 +83,8 @@ jobs:
           test "$(sha256sum package-lock.json | cut -d ' ' -f 1)" = "$EXPECTED_PACKAGE_LOCK_SHA256"
           test "$(sha256sum .syft.yaml | cut -d ' ' -f 1)" = "$EXPECTED_SYFT_POLICY_SHA256"
           test "$(sha256sum .grype.yaml | cut -d ' ' -f 1)" = "$EXPECTED_GRYPE_POLICY_SHA256"
-          test "$(grep -Fxc "FROM $EXPECTED_BASE_IMAGE AS build" Dockerfile)" -eq 1
-          test "$(grep -Fxc "FROM $EXPECTED_BASE_IMAGE AS runtime" Dockerfile)" -eq 1
+          test "$(grep -Fxc "FROM $EXPECTED_BUILD_IMAGE AS build" Dockerfile)" -eq 1
+          test "$(grep -Fxc "FROM $EXPECTED_RUNTIME_IMAGE AS runtime" Dockerfile)" -eq 1
           test "$(grep -xc '\.artifacts' .dockerignore)" -eq 1
           for input in "${INPUTS[@]}"; do
             target="$EVIDENCE_DIR/input-locks/${input#.}"
@@ -153,15 +154,15 @@ jobs:
               --tmpfs /tmp:rw,noexec,nosuid,size=16m \
               "$IMAGE" node --version
           )"
-          test "$DEFAULT_ENTRYPOINT_OUTPUT" = "v24.18.0"
+          test "$DEFAULT_ENTRYPOINT_OUTPUT" = "v26.5.0"
           printf '%s\n' "$DEFAULT_ENTRYPOINT_OUTPUT" > "$EVIDENCE_DIR/runtime-entrypoint.txt"
           test "$(wc -l < "$EVIDENCE_DIR/runtime-entrypoint.txt")" -eq 1
-          grep -Fx "v24.18.0" "$EVIDENCE_DIR/runtime-entrypoint.txt"
+          grep -Fx "v26.5.0" "$EVIDENCE_DIR/runtime-entrypoint.txt"
           docker run --rm --network none --read-only --cap-drop ALL \
             --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m --entrypoint /bin/sh \
             "$IMAGE" -euc '
-              test "$(node --version)" = "v24.18.0"
+              test "$(node --version)" = "v26.5.0"
               test "$(id -u)" = "1000"
               test "$(id -g)" = "1000"
               test -f /app/dist/src/server.js
@@ -169,6 +170,7 @@ jobs:
               test -f /app/dist/src/db/schema.sql
               test -f /app/dist/bench/semantic-consistency-run.js
               test ! -e /app/node_modules/typescript
+              test "$(find /app/node_modules -type f -name '*.node' | wc -l)" -eq 0
               test "$(find /app -xdev -type f -perm /6000 -print | wc -l)" -eq 0
               test -w /tmp
               ! touch /app/.supply-chain-write-probe
