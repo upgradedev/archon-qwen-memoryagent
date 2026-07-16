@@ -77,6 +77,12 @@ CANONICAL_RECALL_QUESTION = (
 )
 VALID_GROUNDING_RESULTS = frozenset({("passed", 1), ("repaired", 2)})
 
+# Capture-only ingress resilience.  The four deterministic delays yield at most
+# five transport attempts for body-free GET probes.  Mutations, HTTP responses,
+# malformed payloads, and failed semantic gates are deliberately never retried.
+GET_TRANSPORT_RETRY_DELAYS_SECONDS = (0.25, 0.5, 1.0, 2.0)
+GET_TRANSPORT_MAX_ATTEMPTS = len(GET_TRANSPORT_RETRY_DELAYS_SECONDS) + 1
+
 SECONDARY_OUTPUTS = (
     "08-qwen-vl-document-canary.png",
     "09-live-health-readiness.png",
@@ -341,19 +347,31 @@ def request_json(
         headers["Content-Type"] = "application/json"
     if reviewer_token:
         headers["Authorization"] = f"Bearer {reviewer_token}"
-    req = urlrequest.Request(url, data=data, headers=headers, method=method)
-    try:
-        with NO_REDIRECT_OPENER.open(req, timeout=timeout) as response:
-            raw = response.read()
-            status = response.status
-            response_headers = {key.lower(): value for key, value in response.headers.items()}
-    except urlerror.HTTPError as exc:
-        # The body can contain operational details.  Report only path + status.
-        if 300 <= exc.code < 400:
-            raise GateError(f"{method} {path} attempted a forbidden HTTP redirect") from exc
-        raise GateError(f"{method} {path} returned HTTP {exc.code}") from exc
-    except (urlerror.URLError, TimeoutError, OSError) as exc:
-        raise GateError(f"{method} {path} was unreachable") from exc
+    retry_delays = GET_TRANSPORT_RETRY_DELAYS_SECONDS if method == "GET" and body is None else ()
+    retry_index = 0
+    while True:
+        # Rebuild the request for every safe retry.  No exception detail, header,
+        # or credential is ever copied into logs or the public gate error.
+        req = urlrequest.Request(url, data=data, headers=headers, method=method)
+        try:
+            with NO_REDIRECT_OPENER.open(req, timeout=timeout) as response:
+                raw = response.read()
+                status = response.status
+                response_headers = {key.lower(): value for key, value in response.headers.items()}
+            break
+        except urlerror.HTTPError as exc:
+            # The body can contain operational details.  Report only path + status.
+            # HTTP responses are authoritative and are never transport-retried.
+            if 300 <= exc.code < 400:
+                raise GateError(f"{method} {path} attempted a forbidden HTTP redirect") from None
+            raise GateError(f"{method} {path} returned HTTP {exc.code}") from None
+        except (urlerror.URLError, TimeoutError, OSError) as exc:
+            if retry_index >= len(retry_delays):
+                attempts = retry_index + 1
+                suffix = f" after {attempts} transport attempts" if attempts > 1 else ""
+                raise GateError(f"{method} {path} was unreachable{suffix}") from None
+            time.sleep(retry_delays[retry_index])
+            retry_index += 1
     require(status == 200, f"{method} {path} returned HTTP {status}")
     try:
         return json.loads(raw.decode("utf-8")), response_headers

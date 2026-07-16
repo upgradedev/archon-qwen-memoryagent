@@ -10,7 +10,10 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import traceback
 import unittest
+from unittest import mock
+from urllib import error as urlerror
 from urllib import request as urlrequest
 
 
@@ -30,6 +33,213 @@ sys.modules[CAPTURE_SPEC.name] = capture
 CAPTURE_SPEC.loader.exec_module(capture)
 
 from repo_paths import read_project_file_once
+
+
+class FakeJsonResponse:
+    """Small context-managed urllib response used by transport-only tests."""
+
+    def __init__(self, payload: bytes, *, status: int = 200) -> None:
+        self.payload = payload
+        self.status = status
+        self.headers = {"Content-Type": "application/json"}
+
+    def __enter__(self) -> "FakeJsonResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.payload
+
+
+class CaptureTransportRetryTests(unittest.TestCase):
+    TOKEN = "reviewer-secret-that-must-never-leak-1234567890"
+
+    def test_body_free_get_retries_transport_failure_on_exact_schedule(self) -> None:
+        requests: list[urlrequest.Request] = []
+
+        def open_once_then_succeed(req: urlrequest.Request, *, timeout: float) -> FakeJsonResponse:
+            requests.append(req)
+            self.assertEqual(timeout, 7.0)
+            if len(requests) == 1:
+                raise urlerror.URLError("temporary TCP connect timeout")
+            return FakeJsonResponse(b'{"status":"ok"}')
+
+        with (
+            mock.patch.object(capture.NO_REDIRECT_OPENER, "open", side_effect=open_once_then_succeed),
+            mock.patch.object(capture.time, "sleep") as sleep,
+        ):
+            payload, headers = capture.request_json(
+                "GET",
+                capture.DEFAULT_BASE_URL,
+                "/health",
+                reviewer_token=self.TOKEN,
+                timeout=7.0,
+            )
+
+        self.assertEqual(payload, {"status": "ok"})
+        self.assertEqual(headers, {"content-type": "application/json"})
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(sleep.call_args_list, [mock.call(capture.GET_TRANSPORT_RETRY_DELAYS_SECONDS[0])])
+        for req in requests:
+            self.assertEqual(req.get_method(), "GET")
+            self.assertEqual(req.full_url, capture.DEFAULT_BASE_URL + "/health")
+            self.assertEqual(req.get_header("Authorization"), f"Bearer {self.TOKEN}")
+
+    def test_get_transport_retry_is_bounded_and_scrubs_exception_details(self) -> None:
+        transport = urlerror.URLError(f"upstream accidentally included {self.TOKEN}")
+        with (
+            mock.patch.object(capture.NO_REDIRECT_OPENER, "open", side_effect=transport) as open_mock,
+            mock.patch.object(capture.time, "sleep") as sleep,
+            self.assertRaises(capture.GateError) as raised,
+        ):
+            capture.request_json(
+                "GET",
+                capture.DEFAULT_BASE_URL,
+                "/ready/deep",
+                reviewer_token=self.TOKEN,
+            )
+
+        self.assertEqual(open_mock.call_count, capture.GET_TRANSPORT_MAX_ATTEMPTS)
+        self.assertEqual(
+            sleep.call_args_list,
+            [mock.call(delay) for delay in capture.GET_TRANSPORT_RETRY_DELAYS_SECONDS],
+        )
+        message = str(raised.exception)
+        self.assertEqual(
+            message,
+            f"GET /ready/deep was unreachable after {capture.GET_TRANSPORT_MAX_ATTEMPTS} transport attempts",
+        )
+        self.assertNotIn(self.TOKEN, message)
+        self.assertNotIn(str(transport.reason), message)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertTrue(raised.exception.__suppress_context__)
+        self.assertNotIn(self.TOKEN, "".join(traceback.format_exception(raised.exception)))
+
+    def test_each_supported_transport_exception_is_retryable_for_safe_get(self) -> None:
+        cases = (
+            urlerror.URLError("connect timeout"),
+            TimeoutError("socket timeout"),
+            OSError("connection reset"),
+        )
+        for transport in cases:
+            with (
+                self.subTest(transport=type(transport).__name__),
+                mock.patch.object(
+                    capture.NO_REDIRECT_OPENER,
+                    "open",
+                    side_effect=[transport, FakeJsonResponse(b'{"status":"ok"}')],
+                ) as open_mock,
+                mock.patch.object(capture.time, "sleep") as sleep,
+            ):
+                payload, _ = capture.request_json("GET", capture.DEFAULT_BASE_URL, "/health")
+            self.assertEqual(payload, {"status": "ok"})
+            self.assertEqual(open_mock.call_count, 2)
+            self.assertEqual(
+                sleep.call_args_list,
+                [mock.call(capture.GET_TRANSPORT_RETRY_DELAYS_SECONDS[0])],
+            )
+
+    def test_post_transport_failure_is_never_retried(self) -> None:
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            transport = urlerror.URLError(f"mutation failure {self.TOKEN}")
+            with (
+                self.subTest(method=method),
+                mock.patch.object(capture.NO_REDIRECT_OPENER, "open", side_effect=transport) as open_mock,
+                mock.patch.object(capture.time, "sleep") as sleep,
+                self.assertRaises(capture.GateError) as raised,
+            ):
+                capture.request_json(
+                    method,
+                    capture.DEFAULT_BASE_URL,
+                    "/demo/seed",
+                    body={},
+                    reviewer_token=self.TOKEN,
+                )
+
+            self.assertEqual(open_mock.call_count, 1)
+            sleep.assert_not_called()
+            self.assertEqual(str(raised.exception), f"{method} /demo/seed was unreachable")
+            self.assertNotIn(self.TOKEN, str(raised.exception))
+            self.assertIsNone(raised.exception.__cause__)
+
+    def test_get_with_body_is_not_eligible_for_retry(self) -> None:
+        with (
+            mock.patch.object(
+                capture.NO_REDIRECT_OPENER,
+                "open",
+                side_effect=urlerror.URLError("transport failure"),
+            ) as open_mock,
+            mock.patch.object(capture.time, "sleep") as sleep,
+            self.assertRaises(capture.GateError),
+        ):
+            capture.request_json("GET", capture.DEFAULT_BASE_URL, "/health", body={})
+
+        self.assertEqual(open_mock.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_http_errors_and_redirects_are_never_retried(self) -> None:
+        cases = (
+            (503, "GET /health returned HTTP 503"),
+            (302, "GET /health attempted a forbidden HTTP redirect"),
+        )
+        for code, expected in cases:
+            error = urlerror.HTTPError(
+                capture.DEFAULT_BASE_URL + "/health",
+                code,
+                "untrusted detail",
+                {},
+                io.BytesIO(b'{"secret":"untrusted"}'),
+            )
+            with (
+                self.subTest(code=code),
+                mock.patch.object(capture.NO_REDIRECT_OPENER, "open", side_effect=error) as open_mock,
+                mock.patch.object(capture.time, "sleep") as sleep,
+                self.assertRaises(capture.GateError) as raised,
+            ):
+                capture.request_json("GET", capture.DEFAULT_BASE_URL, "/health")
+            self.assertEqual(open_mock.call_count, 1)
+            sleep.assert_not_called()
+            self.assertEqual(str(raised.exception), expected)
+
+    def test_invalid_json_and_semantic_failure_are_not_retried(self) -> None:
+        with (
+            mock.patch.object(
+                capture.NO_REDIRECT_OPENER,
+                "open",
+                return_value=FakeJsonResponse(b"not-json"),
+            ) as open_mock,
+            mock.patch.object(capture.time, "sleep") as sleep,
+            self.assertRaises(capture.GateError) as raised,
+        ):
+            capture.request_json("GET", capture.DEFAULT_BASE_URL, "/health")
+        self.assertEqual(open_mock.call_count, 1)
+        sleep.assert_not_called()
+        self.assertEqual(str(raised.exception), "GET /health did not return JSON")
+
+        wrong_health = json.dumps(
+            {
+                "status": "degraded",
+                "embedder": capture.EXPECTED_EMBEDDER,
+                "narrator": capture.EXPECTED_NARRATOR,
+                "judge": "qwen-plus",
+                "embedDim": capture.EXPECTED_DIMENSION,
+            }
+        ).encode("utf-8")
+        with (
+            mock.patch.object(
+                capture.NO_REDIRECT_OPENER,
+                "open",
+                return_value=FakeJsonResponse(wrong_health),
+            ) as open_mock,
+            mock.patch.object(capture.time, "sleep") as sleep,
+            self.assertRaises(capture.GateError) as raised,
+        ):
+            capture.public_release_probes(capture.DEFAULT_BASE_URL, self.TOKEN)
+        self.assertEqual(open_mock.call_count, 1)
+        sleep.assert_not_called()
+        self.assertEqual(str(raised.exception), "/health is not ok")
 
 
 class CaptionTimelineTests(unittest.TestCase):
