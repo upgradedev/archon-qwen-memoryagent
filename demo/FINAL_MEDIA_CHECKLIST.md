@@ -94,11 +94,10 @@ English captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
 - [ ] Field self-audit: `INV-5521`, both values, and the recency recommendation visible.
 - [ ] Semantic self-audit: meaning-level pair and read-only resolution visible; clear/crop out the Judge token field and all auth details.
 - [ ] Feedback/lifecycle: correction result or dry-run preview with `confirm` semantics visible.
-- [ ] Architecture: upload the generated 3:2
+- [ ] Architecture: use the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg)
+      for video/custom architecture upload; upload the generated 3:2
       [`gallery/06-qwen-memoryagent-architecture.png`](./gallery/06-qwen-memoryagent-architecture.png)
-      to the Devpost gallery. Keep the canonical 16:9
-      [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg)
-      for video/custom architecture upload, not a screenshot of raw Mermaid. Keep
+      to the Devpost gallery, not a screenshot of raw Mermaid. Keep
       [`../docs/architecture.png`](../docs/architecture.png) only as the dense technical appendix.
 - [ ] Live proof: `/ready` and `/health` showing ready + real Qwen model ids.
 - [ ] Alibaba proof: ECS/container service and live endpoint in one safe frame; redact account IDs/IP metadata not needed for proof.
