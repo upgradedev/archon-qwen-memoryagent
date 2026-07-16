@@ -532,9 +532,9 @@ Both surfaces are covered by offline unit tests ([`tests/unit/mcp.test.ts`](./te
 
 ### Live path — ECS + docker-compose (backend + pgvector container)
 
-This is how the entry actually runs on Alibaba Cloud. A single ECS instance (`ecs.e-c1m2.large`, ap-southeast-1) runs docker-compose with the backend container plus a self-hosted `pgvector/pgvector` container as the memory store, behind one public URL. The final verified live runtime source is exact commit [`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd). Later documentation, sanitized-media, or non-runtime recording-tooling commits may move repository HEAD without changing that runtime; any runtime-affecting descendant requires a fresh exact deploy.
+This is how the entry runs on Alibaba Cloud: a single ECS instance (`ecs.e-c1m2.large`, ap-southeast-1) runs docker-compose with the backend container plus a self-hosted `pgvector/pgvector` container as the memory store, behind one public URL. The previous exact live runtime source [`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd) remains historical deployment evidence. Current `main` candidate [`aee7897d4d436501fc9b0dc1ed28e3757131f559`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/aee7897d4d436501fc9b0dc1ed28e3757131f559) contains a runtime UI fix and is **not yet claimed as deployed**. [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) keeps the recording/submission gate red until a new exact deploy and live verification are recorded.
 
-[`deploy/redeploy.sh`](./deploy/redeploy.sh) is the schema-first redeploy helper. [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) records the exact verified runtime commit and the secret-safe release contract; current public proof is `/ready` 200, real-model `/health`, and the final OpenAPI smoke in [`demo/FINAL_MEDIA_CHECKLIST.md`](./demo/FINAL_MEDIA_CHECKLIST.md). Any later runtime-code change requires a new deploy and a refreshed exact-SHA record before recording.
+[`deploy/redeploy.sh`](./deploy/redeploy.sh) is the schema-first redeploy helper. [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) records the exact source candidate and secret-safe release contract. Public `/ready` and real-model `/health` prove endpoint readiness, not source identity; exact checkout/build plus the final smoke in [`demo/FINAL_MEDIA_CHECKLIST.md`](./demo/FINAL_MEDIA_CHECKLIST.md) must attest the candidate before recording.
 
 ```bash
 # On the ECS box:
@@ -576,7 +576,7 @@ Because the store is pg-wire, switching between the two is a `DATABASE_URL` swap
 
 This backend's qualifying path runs on **Alibaba Cloud ECS**. Two halves of proof:
 
-**1. Runtime recording** — capture the app-specific `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` from the verified live deployment during final media production. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized sequence; never reuse another entry's recording. Keep raw console footage only in ignored `demo/private-originals/`.
+**1. Runtime recording** — only after [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) turns green for the current source candidate, capture the app-specific `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` from that verified live deployment. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized sequence; never reuse another entry's recording. Keep raw console footage only in ignored `demo/private-originals/`.
 
 ```text
 $ aliyun ecs DescribeInstances --RegionId ap-southeast-1 --InstanceIds "['<redacted-instance-id>']"

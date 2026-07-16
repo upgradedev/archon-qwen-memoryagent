@@ -7,12 +7,12 @@ script. The authenticated renderer currently speaks
 footage, but its assembled MP4 is only a candidate: it does not replace the exact-SHA,
 architecture, evidence, and Alibaba proof beats required below.
 
-Record only while [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) identifies
-final verified runtime-source commit
-[`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd)
-and the public release checks remain green. A later repository HEAD is acceptable
-only when every descendant change is documentation, sanitized submission media, or
-non-runtime recording tooling.
+Do not record until [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) changes
+from **REDEPLOY REQUIRED** to final verified and identifies current runtime candidate
+[`aee7897d4d436501fc9b0dc1ed28e3757131f559`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/aee7897d4d436501fc9b0dc1ed28e3757131f559)
+as exact-deployed. A later repository HEAD is acceptable only when every change
+after that candidate stays inside the stated submission-pack allowlist. At authoring
+time the candidate is not claimed as deployed and the recording gate is red.
 
 | Beat | Target | What judges see | Narration job |
 |---|---:|---|---|

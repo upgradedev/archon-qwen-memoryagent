@@ -1,15 +1,44 @@
 # MemoryAgent deployment state and production runbook
 
-Updated: **2026-07-15**. This is the authoritative hardened live-release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
+Updated: **2026-07-16**. This is the authoritative hardened live-release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
 
-> **Status: FINAL LIVE RUNTIME VERIFIED — recording release gate green.**
+> **Status: REDEPLOY REQUIRED — recording and submission release gates are RED.**
 > <https://memory.43.106.13.19.sslip.io>
 >
-> Verified live runtime-source commit: [`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd). Exact deploy attempt 8 passed exact checkout/build, schema/grants, DML-only runtime identity, cross-application database denial, `/health`, `/ready`, a real-embedding ingest → grounded recall → cleanup smoke, and public UI/health/ready TLS checks with certificate verification enabled.
+> Required runtime candidate:
+> [`aee7897d4d436501fc9b0dc1ed28e3757131f559`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/aee7897d4d436501fc9b0dc1ed28e3757131f559)
+> (`main`, merging application fix `64d2cd2`). **It is not yet claimed as deployed
+> or live-verified.** The fix makes the Explorer's P&L request include the selected
+> company; the previously verified image can therefore no longer represent current
+> source for recording or submission.
 >
-> The public v4 seed reconciliation then reported `reconciled=true`; Northwind P&L contained one EUR bucket, `unknown_currency_records=0`, employer cost `14600`, revenue `42700`, net profit `28100`, `events=3`, and `sales_count=2`. A second seed was idempotent: `alreadySeeded=true`, `reconciled=false`, `events=0`.
+> Previous live runtime-source commit
+> [`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd)
+> passed exact deploy attempt 8, including checkout/build, schema/grants, DML-only
+> runtime identity, cross-application database denial, `/health`, `/ready`, a
+> real-embedding ingest → grounded recall → cleanup smoke, public TLS checks, and v4
+> seed reconciliation. That evidence is retained as **historical topology and release
+> evidence only**; it does not attest `aee7897…` or current `main`.
 >
-> Repository `main` may advance beyond that runtime-source SHA through documentation, sanitized submission media, or non-runtime recording-tooling commits. Those descendants do not require a runtime rebuild. The permitted submission-pack paths are `README.md`, `SECURITY.md`, `deploy/DEPLOY_STATE.md`, `demo/**`, `docs/**`, `.github/workflows/demo-video.yml`, `scripts/capture_live.sh`, and `scripts/captions.txt`. Before capture, inspect every changed path after `e4b208a…`; anything outside that allowlist, or any application, dependency, schema, container, runtime/deployment-workflow, or deployment-script delta, requires a new exact deploy and a refreshed record here.
+> Repository `main` may advance beyond that runtime-source SHA through reviewed
+> non-runtime evidence, CI/test-harness, documentation, sanitized submission-media,
+> or recording-tooling commits. Public commit
+> [`a2c6bccaf4bc1bdd30f6e2ea8f224467a5168083`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/a2c6bccaf4bc1bdd30f6e2ea8f224467a5168083)
+> is the reviewed non-runtime descendant anchor: its delta from `e4b208a…` changes
+> CI/test enumeration, tests, published load evidence, documentation/media and
+> recording tooling; `package.json` changes only the test-script dispatcher. It has
+> no `src/**`, dependency-lock, Docker/compose, database-schema, deploy-script or
+> deployment-workflow delta. This does **not** make `a2c6bcc…` the deployed source;
+> the previous verified live runtime remains `e4b208a…`. Commit `aee7897…` is a
+> runtime-affecting descendant and deliberately terminates that exception: it must
+> pass a new exact deployment before the gate can turn green. After `aee7897…`,
+> permitted submission-pack paths are `README.md`, `SECURITY.md`, `deploy/DEPLOY_STATE.md`,
+> `demo/**`, `docs/**`, `.github/workflows/demo-video.yml`,
+> `scripts/capture_live.sh`, and `scripts/captions.txt`. Before capture, verify that
+> `aee7897…` is an ancestor of `origin/main` and inspect every later changed path.
+> Any new path outside that allowlist—or any application, dependency, schema,
+> container, runtime/deployment-workflow or deploy-script delta—requires review and,
+> when runtime-affecting, a new exact deploy plus a refreshed record here.
 
 ## Historical note — do not operate from the old snapshot
 
@@ -230,11 +259,15 @@ Run the protected command only in Bash with tracing disabled (`set +x`). Crop/cl
 
 A release is judge-ready only when all of the following are true:
 
-1. HTTPS is public, but backend `9000` and PostgreSQL `5432` are not.
-2. `/ready` returns `200`; `/health` reports real Qwen.
-3. Public and protected reviewer-credential paths pass.
-4. The named database volume is present and backed up before risky operations.
-5. Database, judge, DashScope, SSH, and any formerly copied credentials have been rotated as required.
-6. No secrets appear in Git, Docker inspection output shared publicly, screenshots, videos, posts, or Devpost public fields.
+1. This file records `aee7897d4d436501fc9b0dc1ed28e3757131f559`
+   (or a later explicitly reviewed runtime candidate) as exact deployed and
+   live-verified. **This condition is currently false.**
+2. HTTPS is public, but backend `9000` and PostgreSQL `5432` are not.
+3. `/ready` returns `200`; `/health` reports real Qwen.
+4. Public and protected reviewer-credential paths pass, including selected-company
+   Explorer P&L behavior.
+5. The named database volume is present and backed up before risky operations.
+6. Database, judge, DashScope, SSH, and any formerly copied credentials have been rotated as required.
+7. No secrets appear in Git, Docker inspection output shared publicly, screenshots, videos, posts, or Devpost public fields.
 
 Function Compute remains an alternative. The submission's active proof is the hardened ECS + HTTPS proxy + loopback backend + private durable pgvector topology above.

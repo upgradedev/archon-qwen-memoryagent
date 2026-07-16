@@ -4,6 +4,11 @@
 (MemoryAgent), approximately 600 words. Do not substitute
 [`PROJECT_STORY.md`](./PROJECT_STORY.md); that file is the long-form evidence story.*
 
+All other form fields, custom-question answers and the deliberate pre-submit stop
+point are staged in [`DEVPOST_STAGING.md`](./DEVPOST_STAGING.md). Testing-copy and
+credential handling are isolated in
+[`DEVPOST_PRIVATE_TESTING.md`](./DEVPOST_PRIVATE_TESTING.md).
+
 Submission operators should use the [official rules](https://qwencloud-hackathon.devpost.com/rules)
 and [official schedule](https://qwencloud-hackathon.devpost.com/details/dates) as
 the controlling references. Public video/blog URLs and any dedicated reviewer
