@@ -1,7 +1,7 @@
 # Archon MemoryAgent — Devpost submission description
 
 *Paste the body below as the canonical Devpost Project Story for Track 1
-(MemoryAgent), approximately 600 words. Do not substitute
+(MemoryAgent), approximately 750 words. Do not substitute
 [`PROJECT_STORY.md`](./PROJECT_STORY.md); that file is the long-form evidence story.*
 
 All other form fields, custom-question answers and the deliberate pre-submit stop
@@ -51,8 +51,9 @@ reusable beyond this financial proof without claiming unmeasured production scal
 - **Meaning-level self-audit**: a companion `POST /consistency/semantic` catches
   memories that oppose each other in *meaning* with no shared field (*"pays on
   time"* vs *"chronically late"*): it embeds each memory, keeps same-subject pairs
-  by cosine, then asks the configured **`QWEN_JUDGE_MODEL`** online, a deterministic polarity
-  heuristic offline — whether they contradict, reusing the same read-only
+  by cosine, then asks the configured **`QWEN_JUDGE_MODEL`** online—or runs a
+  deterministic polarity heuristic offline—to judge whether they contradict,
+  reusing the same read-only
   resolution ladder and **never mutating**. The HTTP route is authenticated and
   quota-bounded; the same operation is reachable over authenticated HTTP MCP
   (`audit_memory` with `semantic: true`) and seeded into the live demo. Honest
@@ -72,6 +73,12 @@ reusable beyond this financial proof without claiming unmeasured production scal
 - **Honest positioning**: a pinned probe vs Mem0 (retrieval parity; no separately
   named contradiction/resolution method matched the disclosed `dir()` probe) with Zep cited — the differentiator
   is a portable, explainable, read-only audit plus explicit human resolution.
+- **Release evidence with boundaries**: exact source `104a002…` passed the
+  project-contained deployment controller. A separately published earlier exact
+  release completed a live, read-only k6 ramp with 342 requests, 42 grounded Qwen
+  recalls and zero HTTP failures; that modest profile is stability evidence, not a
+  saturation or maximum-capacity claim. Exact test/coverage totals come only from the
+  submitted commit's immutable CI artifact.
 
 The public judge path provides a fixed, idempotent seed plus public-tenant recall
 and field audit with bounded quotas. Mutations, semantic audit, and lifecycle use

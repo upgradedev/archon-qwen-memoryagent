@@ -53,9 +53,10 @@ hash is stale, or the measured SRT differs from the burned-caption timeline.
 1. Confirm the default branch and live runtime evidence are aligned with
    [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). The required recording
    runtime candidate is `<FINAL_RUNTIME_SHA>` and it must be replaced with the real
-   40-character post-merge SHA and explicitly recorded there as exact-deployed/live-verified. Its current
-   **REDEPLOY REQUIRED** state is a hard stop. Submission-pack-only descendants may
-   move repository HEAD after that candidate; runtime descendants require a new deploy.
+   40-character post-merge SHA and explicitly recorded there as exact-deployed/live-verified.
+   Current exact runtime source `104a002…` is green. Submission-pack-only descendants
+   may move repository HEAD after that candidate; any runtime descendant is a hard
+   stop until another exact deploy.
 2. Run the secret-safe pre-recording checks in
    [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md).
 3. Configure `MEMORYAGENT_JUDGE_API_KEY` only as a private Actions secret. Never put

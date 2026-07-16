@@ -15,7 +15,7 @@
 | Auth, tenant isolation, quotas, idempotency | Ready in source | security/e2e suites and [`CLAIM_EVIDENCE_MATRIX.md`](./CLAIM_EVIDENCE_MATRIX.md) |
 | Submission architecture image | Ready | [`judge-architecture.svg`](./judge-architecture.svg) plus [`demo/final-media/judge-architecture.jpg`](../demo/final-media/judge-architecture.jpg); dense appendix in `architecture.*` |
 | Judge path + credential instructions | Ready as copy | [`JUDGE-GUIDE.md`](./JUDGE-GUIDE.md) and media checklist; field visibility must be verified before paste |
-| Exact live runtime release | **Blocked — redeploy required** | Previous `e4b208a…` proof is historical. Current runtime candidate [`aee7897d4d436501fc9b0dc1ed28e3757131f559`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/aee7897d4d436501fc9b0dc1ed28e3757131f559) contains the selected-company P&L UI fix and is not yet claimed as deployed; see [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). |
+| Exact live runtime release | **Green; final capture pending** | Exact runtime source [`104a002820607c754d857473877da28b69ebb44d`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/104a002820607c754d857473877da28b69ebb44d) passed project-contained exact-deploy attempt 22 on 2026-07-16. Final gallery/video must bind to that SHA and the retained controller status/output; see [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). |
 
 Exact test and coverage values must be copied only from the final immutable CI
 artifact. Real-DB slices skip explicitly when no integration database is supplied.

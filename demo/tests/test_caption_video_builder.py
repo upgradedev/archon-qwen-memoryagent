@@ -82,6 +82,8 @@ class CaptionTimelineTests(unittest.TestCase):
 
     def test_captions_retain_every_material_claim_boundary(self) -> None:
         captions = " ".join(beat.caption for beat in builder.BEATS).lower()
+        self.assertIn("14,600 workforce cost versus 10,800 bank outflow", captions)
+        self.assertNotIn("15,800 workforce cost versus 10,000 bank outflow", captions)
         for lock in (
             "original synthetic",
             "two-png",

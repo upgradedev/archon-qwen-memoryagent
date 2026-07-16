@@ -9,8 +9,9 @@ This is a claim audit for **Track 1: MemoryAgent** only. The Autopilot entry has
 | Public source repository | <https://github.com/upgradedev/archon-qwen-memoryagent> | Ready after final changes are pushed |
 | Detectable open-source license | Root [`LICENSE`](../LICENSE) | Ready (MIT) |
 | Alibaba/Qwen code proof | [`src/qwen/client.ts`](../src/qwen/client.ts) and [`ALIBABA_PROOF.md`](./ALIBABA_PROOF.md) | Ready |
-| Working Alibaba deployment | [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md), public `/health` + `/ready` | **Blocked for current source:** previous `e4b208a…` proof is historical; `aee7897…` runtime fix is not yet exact-deployed/live-verified |
+| Working Alibaba deployment | [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md), project-contained controller evidence, public `/health` + `/ready` | **Ready for current runtime source:** `104a002…` passed exact-deploy attempt 22; final media capture remains pending and must bind to that evidence |
 | Architecture diagram | [`docs/judge-architecture.svg`](../docs/judge-architecture.svg) / [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg) | Ready |
+| Organizer PPT/PDF deck (strict-union artifact) | `demo/deck/archon-memoryagent-judge-deck.pptx` + matching PDF | **Pending final exact-release screenshots and layout/hash review; never upload a placeholder build** |
 | Text description + track | [`SUBMISSION.md`](./SUBMISSION.md) and [`PROJECT_STORY.md`](./PROJECT_STORY.md) | Ready |
 | Public video under three minutes | Final recording must be hosted on an accepted public platform | **Pending user upload; a local MP4 is not a pass** |
 | Free/unrestricted judging access | Public no-login path plus dedicated low-privilege reviewer credential in Devpost testing instructions | Ready as instructions; entrant must verify field visibility, preview logged out, and rotate after judging |
@@ -32,6 +33,10 @@ This is a claim audit for **Track 1: MemoryAgent** only. The Autopilot entry has
 - Server-owned tenant mapping, protected mutations/heavy semantic audit, durable two-tier quotas, exact invoice idempotency, dry-run/confirm lifecycle, and HTTP MCP fail-closed authentication.
 - Currency-safe P&L never combines mixed currencies; unknown/partial/refund cash states remain explicit.
 - Exact suite and coverage values come from the final immutable CI artifact; real-DB skips are explicit. A real-PostgreSQL integration slice verifies document `dryRun` executes the pipeline while adding zero rows.
+- Published historical live load evidence records a rate-bounded, read-only ramp of
+  342 HTTP requests with 42 grounded Qwen recalls and zero HTTP failures. It is
+  stability/latency evidence for exact release `e4b208a…`, not saturation,
+  maximum-throughput or current-source attestation.
 
 ### Value (25%)
 
@@ -47,9 +52,9 @@ The README leads with the differentiator, the judge guide separates public and a
 2. The Mem0 evidence supports only the pinned version/configuration and disclosed `dir()`/search probe. The honest conclusion is retrieval parity plus no separately named contradiction/resolution method matched there—not absence of internal/differently named behavior or universal superiority.
 3. Payroll source documents are the implemented vision/text pipeline. Purchase/sales invoices use a strict JSON endpoint. Orders, receipts, general bank statements, EBITDA, and sales targets are outside the shipped claim.
 4. Public seed and recall are quota-bounded; protected features require the dedicated judge credential. The final video must show both paths without exposing it.
-5. Current-source deployment claims are invalid until `aee7897…` passes exact
-   checkout/build/deploy, `/ready`, real-model `/health`, OpenAPI, public/protected
-   journeys and the selected-company P&L smoke. Endpoint health alone does not attest a commit.
+5. Exact runtime source `104a002…` passed the project-contained deployment controller.
+   Final media still requires a fresh SHA-bound capture review, including public and
+   protected journeys; endpoint health alone does not attest a commit or media file.
 6. The human-control gallery frame intentionally proves **Defer only** with zero API
    call and zero mutation. Accept/Override are protected product actions with separate
    tests, not live actions claimed by that frame. The lifecycle row is
@@ -57,9 +62,8 @@ The README leads with the differentiator, the judge guide separates public and a
 
 ## Final verdict
 
-The source and evidence package are ready, but the exact-runtime release gate is
-**red**: current candidate `aee7897d4d436501fc9b0dc1ed28e3757131f559`
-must be deployed and live-verified before any final recording, screenshot or Devpost
-draft claims current-source parity. After that, remaining user-owned work is media
-publication, platform fields, eligibility/rights sign-off, judging-window monitoring
-and the eventual submission receipt. Deadline: **2026-07-20, 2:00 PM PDT**.
+The source and exact-runtime release gate are **green** for
+`104a002820607c754d857473877da28b69ebb44d`. Remaining gates are SHA-bound gallery
+and video capture, public media/post hosting, platform fields, eligibility/rights
+sign-off, judging-window monitoring and—only after separate entrant authorization—the
+eventual submission receipt. Deadline: **2026-07-20, 2:00 PM PDT**.

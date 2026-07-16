@@ -10,12 +10,12 @@ authenticated renderer speaks
 footage, but its assembled MP4 is only a candidate: it does not replace the exact-SHA,
 architecture, evidence, and Alibaba proof beats required below.
 
-Do not record until [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) changes
-from **REDEPLOY REQUIRED** to final verified and replaces `<FINAL_RUNTIME_SHA>` with
-the real 40-character post-merge SHA recorded as exact-deployed. A later repository
-HEAD is acceptable only when every change
-after that candidate stays inside the stated submission-pack allowlist. At authoring
-time the candidate is not claimed as deployed and the recording gate is red.
+Record only while [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
+the final verified 40-character source SHA. Current exact runtime source `104a002…`
+passed project-contained exact-deploy attempt 22; final media must bind its retained
+controller status/output and SHA, not infer source from endpoint health. A later
+repository HEAD is acceptable only when every change stays inside the stated
+submission-pack allowlist; any runtime-affecting delta requires another exact deploy.
 
 | Beat | Target | What judges see | Narration job |
 |---|---:|---|---|
@@ -55,7 +55,7 @@ never remove a claim caveat.
 > explicit human control sit behind tenant-scoped REST and MCP.
 >
 > Session A commits financial facts and disconnects. A fresh Session B asks by
-> meaning. Qwen returns 15,800 euros true workforce cost against 10,000 euros bank
+> meaning. Qwen returns 14,600 euros true workforce cost against 10,800 euros bank
 > outflow, with citations. This proof exposes cosine scores for readability; product
 > default stays hybrid.
 >

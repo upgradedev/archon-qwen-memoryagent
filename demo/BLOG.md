@@ -215,6 +215,13 @@ Offline, with no DashScope key, deterministic Fakes exercise the model seams and
 pgvector/fixture path with zero cloud credentials. Production is fail-closed: real
 Qwen plus configured judge authentication are required for `/ready`.
 
+A [published live k6 record](https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/load/RESULTS_2026-07-15.md)
+adds bounded operational evidence: on earlier exact release `e4b208a…`, a read-only
+`0 → 1 → 2 → 0` arrival-rate ramp completed 342 HTTP requests and 42 grounded Qwen
+recalls with zero HTTP failures. It is deliberately modest production-path
+stability/latency evidence—not a saturation test, maximum-throughput claim, or
+attestation of the later submitted source.
+
 ## Build journey: four iterations that changed the product
 
 We did not begin with a polished contradiction engine. The first milestone was the

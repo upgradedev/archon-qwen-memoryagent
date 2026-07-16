@@ -17,7 +17,7 @@ The canonical current sources are:
 | Field-level self-audit | **5/5 injected problems detected · 0 false positives** |
 | Resolution policy | **4/4 declared-policy conformance (selected memory + rule)** |
 | Meaning-level self-audit | **90% recall · 100% precision · 0 false positives** on the committed offline labelled set |
-| Historical online meaning-level evidence | **97.92% accuracy · 100% precision · 95.83% recall** per frozen developer-labelled synthetic-set stability repetition; one embedding timeout retained as an inconclusive false negative; immutable metadata records a dirty tree, so final promotion uses the new clean-source A/B artifact |
+| Historical online meaning-level evidence | **97.92% accuracy · 100% precision · 95.83% recall** per frozen developer-labelled synthetic-set stability repetition; one embedding timeout retained as an inconclusive false negative; immutable metadata records a dirty tree. No candidate score/promotion is claimed; `qwen-plus` remains the runtime baseline unless a clean same-commit A/B artifact passes the frozen gate. |
 | Reranked hybrid retrieval | **MRR 0.911 · nDCG@5 0.938 · Recall@3 96.7%** |
 | Answer fixture EUR-token checks | **11/11 gold EUR-token hit · 10/11 complete EUR-labelled amount traceability** |
 

@@ -37,6 +37,8 @@ publication.
 >
 > Reproducible deployment path: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh
 >
+> Technical build journey: `[PUBLIC_BLOG_URL — replace after signed-out publication, or remove this line]`
+>
 > Evaluation numbers shown in the video are frozen, developer-labelled fixtures—not
 > production-traffic accuracy or universal superiority: field audit 5/5 with 0
 > false positives; declared resolution policy 4/4; deterministic semantic fixture

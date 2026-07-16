@@ -126,7 +126,7 @@ BEATS: tuple[Beat, ...] = (
         4,
         "Cross-session memory",
         22,
-        "Original synthetic Northwind data: Session B recalls 15,800 workforce cost versus 10,000 bank outflow with citations. This proof shows pure cosine; the product default remains hybrid.",
+        "Original synthetic Northwind data: Session B recalls 14,600 workforce cost versus 10,800 bank outflow with citations. This proof shows pure cosine; the product default remains hybrid.",
         (PROOF_RELS[0],),
         ("Fresh session · grounded cited recall",),
     ),
