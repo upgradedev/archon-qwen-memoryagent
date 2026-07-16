@@ -14,10 +14,11 @@ manifest and every hash before it can produce the 172-second caption-led final.
 Every Devpost file produced here is exactly 1500×1000 (3:2). Its no-crop 1920×1080
 video equivalent is written under `demo/final-media/proof-frames/` with the same
 stem plus `-16x9`. The deterministic set contains seven primary and four secondary
-frames. `CAPTURE_REVIEW.json` records exact-release/model gates, live qwen-vl
-dry-run/absence, Session-A → fresh-Session-B feedback persistence, the exact
-one-preview/one-delete lifecycle cleanup, the honest Defer-only human-control
-boundary, and the SHA-256 of every approved artifact.
+frames. `CAPTURE_REVIEW.json` records the exact strict/fallback deployment-evidence
+mode, producer invocation/command ids and immutable status/output byte bindings,
+exact-release/model gates, live qwen-vl dry-run/absence, Session-A → fresh-Session-B
+feedback persistence, the exact one-preview/one-delete lifecycle cleanup, the
+honest Defer-only human-control boundary, and the SHA-256 of every approved artifact.
 
 No screenshot is committed yet; absence is intentional until the verified live
 release is captured and every frame passes the security and rights review.

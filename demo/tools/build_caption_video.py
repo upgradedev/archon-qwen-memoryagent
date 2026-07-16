@@ -18,13 +18,17 @@ from array import array
 from dataclasses import dataclass, replace
 import datetime as dt
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 from typing import Any, Iterable, Sequence
 from urllib.parse import urlparse
 
@@ -33,7 +37,13 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 REPO_HINT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_HINT / "scripts"))
-from repo_paths import REPO_ROOT, inside_repo  # noqa: E402
+from exact_deploy_evidence import (  # noqa: E402
+    ExactDeployEvidenceError,
+    STRICT_FINAL_MARKER,
+    TERMINAL_SUCCESS_TRUNCATED_OUTPUT,
+    validate_exact_deploy_evidence as _validate_exact_deploy_evidence,
+)
+from repo_paths import ProjectFileSnapshot, REPO_ROOT, inside_repo, read_project_file_once  # noqa: E402
 
 
 REPO = Path(REPO_ROOT)
@@ -46,6 +56,7 @@ EXPECTED_EMBEDDER = "text-embedding-v4"
 EXPECTED_NARRATOR = "qwen-plus"
 EXPECTED_VISION = "qwen-vl-max"
 EXPECTED_EMBED_DIM = 1024
+EXPECTED_LIVE_ORIGIN = "https://memory.43.106.13.19.sslip.io"
 
 CAPTURE_REVIEW_REL = "demo/gallery/CAPTURE_REVIEW.json"
 DEPLOY_STATE_REL = "deploy/DEPLOY_STATE.md"
@@ -203,6 +214,10 @@ SAFE_POST_CAPTURE_PATTERNS = (
 )
 SHA40 = re.compile(r"[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
+PRODUCER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")
+DEPLOY_STATE_RECORD = re.compile(
+    r"<!-- MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha=([0-9a-f]{40}) -->"
+)
 EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 BEARER = re.compile(r"\bBearer\s+[A-Za-z0-9._~+\-/=]{8,}", re.IGNORECASE)
 PRIVATE_IPV4 = re.compile(
@@ -221,13 +236,16 @@ class ValidatedInputs:
     current_head: str
     captured_at: str
     live_base_url: str
-    capture_review_path: Path
-    deploy_state_path: Path
-    claim_matrix_path: Path
-    deployment_output_path: Path
-    deployment_status_path: Path
-    artifact_paths: dict[str, Path]
-    artifact_hashes: dict[str, str]
+    exact_deploy_evidence_mode: str
+    deployment_producer: dict[str, str | int]
+    builder_source: ProjectFileSnapshot
+    capture_review: ProjectFileSnapshot
+    deploy_state: ProjectFileSnapshot
+    claim_matrix: ProjectFileSnapshot
+    deployment_output: ProjectFileSnapshot
+    deployment_status: ProjectFileSnapshot
+    architecture_source: ProjectFileSnapshot
+    artifact_files: dict[str, ProjectFileSnapshot]
 
 
 def require(condition: bool, message: str) -> None:
@@ -238,6 +256,13 @@ def require(condition: bool, message: str) -> None:
 def project_path(value: str | Path, label: str, *, must_exist: bool = False) -> Path:
     try:
         return Path(inside_repo(value, label, must_exist=must_exist))
+    except ValueError as exc:
+        raise GateError(str(exc)) from exc
+
+
+def snapshot_project_file(value: str | Path, label: str) -> ProjectFileSnapshot:
+    try:
+        return read_project_file_once(value, label)
     except ValueError as exc:
         raise GateError(str(exc)) from exc
 
@@ -254,10 +279,52 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def load_json(path: Path, label: str) -> Any:
+def _is_reparse(metadata: os.stat_result) -> bool:
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return stat.S_ISLNK(metadata.st_mode) or bool(
+        reparse_flag and getattr(metadata, "st_file_attributes", 0) & reparse_flag
+    )
+
+
+def create_build_session(scratch: Path) -> Path:
+    """Create an unpredictable, private scratch child for one encode."""
+
+    scratch.mkdir(parents=True, exist_ok=True)
+    metadata = scratch.lstat()
+    require(stat.S_ISDIR(metadata.st_mode) and not _is_reparse(metadata), "caption video scratch must be a real directory")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        scratch.resolve(strict=True).relative_to(REPO)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise GateError("caption video scratch must remain project-contained") from exc
+    session = Path(tempfile.mkdtemp(prefix="memoryagent-caption-build-", dir=scratch))
+    session_metadata = session.lstat()
+    require(stat.S_ISDIR(session_metadata.st_mode) and not _is_reparse(session_metadata), "build session is not a real directory")
+    require(session.parent == scratch, "build session escaped the requested scratch root")
+    return session
+
+
+def exclusive_write_bytes(path: Path, content: bytes) -> None:
+    """Create one new regular file without following a pre-existing link."""
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        view = memoryview(content)
+        written = 0
+        while written < len(view):
+            count = os.write(descriptor, view[written:])
+            if count <= 0:
+                raise OSError("exclusive scratch write made no progress")
+            written += count
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def load_snapshot_json(snapshot: ProjectFileSnapshot, label: str) -> Any:
+    try:
+        return json.loads(snapshot.text())
+    except (UnicodeError, json.JSONDecodeError) as exc:
         raise GateError(f"{label} is not valid UTF-8 JSON") from exc
 
 
@@ -308,10 +375,26 @@ def ensure_ignored_untracked(path: Path, label: str) -> None:
     require(git_success("check-ignore", "--quiet", "--", rel), f"{label} must live under an ignored project path")
 
 
-def ensure_clean_tracked(path: Path, label: str) -> None:
-    rel = relative_repo_path(path)
+def ensure_snapshot_matches_head(snapshot: ProjectFileSnapshot, label: str) -> None:
+    """Bind retained bytes directly to the tracked blob named by current HEAD.
+
+    ``hash-object --path`` applies Git's checked-in clean filter, so a normal
+    CRLF checkout compares to the LF blob without reopening the working file.
+    """
+
+    rel = snapshot.relative_path
     require(git_success("ls-files", "--error-unmatch", "--", rel), f"{label} must be committed before a production build")
-    require(git_success("diff", "--quiet", "HEAD", "--", rel), f"{label} differs from current HEAD; commit it before a production build")
+    result = subprocess.run(
+        ["git", "-C", str(REPO), "hash-object", f"--path={rel}", "--stdin"],
+        check=False,
+        input=snapshot.data,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    require(result.returncode == 0, f"{label} snapshot could not be mapped to a Git blob")
+    snapshot_blob = result.stdout.decode("ascii", errors="strict").strip()
+    head_blob = git("rev-parse", f"HEAD:{rel}")
+    require(snapshot_blob == head_blob, f"{label} snapshot is not byte-equal to current HEAD after Git clean filtering")
 
 
 def caption_windows(beats: Sequence[Beat] = BEATS) -> list[list[int | str]]:
@@ -344,21 +427,21 @@ def write_caption_windows(path: Path) -> None:
     path.write_text(payload, encoding="utf-8", newline="\n")
 
 
-def artifact_path(artifact_root: Path, rel: str) -> Path:
+def artifact_snapshot(artifact_root: Path, rel: str) -> ProjectFileSnapshot:
     root = artifact_root.resolve(strict=True)
-    candidate = (root / Path(rel)).resolve(strict=True)
+    snapshot = snapshot_project_file(root / Path(rel), f"capture artifact {rel}")
     try:
-        candidate.relative_to(root)
+        snapshot.path.relative_to(root)
     except ValueError as exc:
         raise GateError(f"capture artifact {rel} escapes its project-contained root") from exc
-    return candidate
+    return snapshot
 
 
-def validate_image_dimensions(rel: str, path: Path) -> None:
+def validate_image_dimensions(rel: str, content: bytes) -> None:
     try:
-        with Image.open(path) as image:
+        with Image.open(io.BytesIO(content)) as image:
             image.verify()
-        with Image.open(path) as image:
+        with Image.open(io.BytesIO(content)) as image:
             size = image.size
     except (OSError, SyntaxError) as exc:
         raise GateError(f"capture artifact {rel} is not a valid image") from exc
@@ -375,10 +458,17 @@ def validate_capture_review(
     artifact_root: Path,
     expected_sha: str,
     beats: Sequence[Beat],
-) -> tuple[dict[str, Any], dict[str, Path], dict[str, str]]:
-    review = load_json(review_path, "capture review")
+) -> tuple[
+    dict[str, Any],
+    dict[str, ProjectFileSnapshot],
+    dict[str, str],
+    ProjectFileSnapshot,
+    ProjectFileSnapshot,
+]:
+    review_snapshot = snapshot_project_file(review_path, "capture review")
+    review = load_snapshot_json(review_snapshot, "capture review")
     require(isinstance(review, dict), "capture review must be a JSON object")
-    require(review.get("schemaVersion") == 2 and review.get("status") == "passed", "capture review is not schema-v2 passed")
+    require(review.get("schemaVersion") == 3 and review.get("status") == "passed", "capture review is not schema-v3 passed")
     require(review.get("exactRuntimeSource") == expected_sha, "capture review exact runtime differs from --expected-sha")
 
     captured_at = review.get("capturedAt")
@@ -392,6 +482,7 @@ def validate_capture_review(
 
     base_url = review.get("liveBaseUrl")
     parsed = urlparse(base_url) if isinstance(base_url, str) else None
+    require(base_url == EXPECTED_LIVE_ORIGIN, "capture review liveBaseUrl is not the pinned credential destination")
     require(parsed is not None and parsed.scheme == "https" and parsed.hostname, "capture review liveBaseUrl is not an HTTPS origin")
     try:
         parsed_port = parsed.port
@@ -421,6 +512,29 @@ def validate_capture_review(
     require(isinstance(gates, dict), "capture review has no gate results")
     for name, expected in REQUIRED_BOOLEAN_GATES.items():
         require(gates.get(name) is expected, f"capture review gate {name} is not {expected}")
+    evidence_mode = gates.get("exactDeploymentEvidenceMode")
+    require(
+        evidence_mode in {STRICT_FINAL_MARKER, TERMINAL_SUCCESS_TRUNCATED_OUTPUT},
+        "capture review has no recognized exact-deploy evidence mode",
+    )
+    deployment_evidence = review.get("deploymentEvidence")
+    require(isinstance(deployment_evidence, dict), "capture review has no bound deployment evidence record")
+    require(deployment_evidence.get("mode") == evidence_mode, "capture review deployment evidence mode is inconsistent")
+    producer = deployment_evidence.get("producer")
+    require(isinstance(producer, dict), "capture review has no producer-bound deployment identity")
+    for name in ("invocationId", "commandId"):
+        value = producer.get(name)
+        require(
+            isinstance(value, str) and PRODUCER_ID.fullmatch(value) is not None,
+            f"capture review deployment producer {name} is invalid",
+        )
+    output_record = deployment_evidence.get("output")
+    require(isinstance(output_record, dict), "capture review has no deployment output binding")
+    require(producer.get("outputSha256") == output_record.get("sha256"), "capture review producer outputSha256 is inconsistent")
+    require(
+        type(producer.get("outputBytes")) is int and producer.get("outputBytes") == output_record.get("size"),
+        "capture review producer outputBytes is inconsistent",
+    )
 
     vision_gate = gates.get("qwenVlOriginalSyntheticDryRun")
     require(isinstance(vision_gate, dict), "capture review has no Qwen-VL dry-run gate")
@@ -476,66 +590,98 @@ def validate_capture_review(
     architecture_raster_hash = architecture.get("rasterSha256")
     require(isinstance(architecture_source_hash, str) and SHA256.fullmatch(architecture_source_hash.lower()), "capture review architecture source hash is invalid")
     require(isinstance(architecture_raster_hash, str) and SHA256.fullmatch(architecture_raster_hash.lower()), "capture review architecture raster hash is invalid")
-    require(sha256_file(project_path(ARCHITECTURE_SOURCE_REL, "architecture source", must_exist=True)) == architecture_source_hash.lower(), "architecture source changed after capture")
+    architecture_source = snapshot_project_file(ARCHITECTURE_SOURCE_REL, "architecture source")
+    require(architecture_source.sha256 == architecture_source_hash.lower(), "architecture source changed after capture")
     require(normalized.get(ARCHITECTURE_REL) == architecture_raster_hash.lower(), "architecture raster hash disagrees with the artifact inventory")
 
-    paths: dict[str, Path] = {}
+    files: dict[str, ProjectFileSnapshot] = {}
     for rel, expected_hash in normalized.items():
-        path = artifact_path(artifact_root, rel)
-        require(path.is_file(), f"capture artifact {rel} is missing")
-        require(sha256_file(path) == expected_hash, f"capture artifact {rel} is stale or differs from CAPTURE_REVIEW.json")
-        if path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
-            validate_image_dimensions(rel, path)
-        paths[rel] = path
+        snapshot = artifact_snapshot(artifact_root, rel)
+        require(snapshot.sha256 == expected_hash, f"capture artifact {rel} is stale or differs from CAPTURE_REVIEW.json")
+        if snapshot.path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+            validate_image_dimensions(rel, snapshot.data)
+        files[rel] = snapshot
 
-    canonical_srt_bytes = paths[SRT_REL].read_bytes()
+    canonical_srt_bytes = files[SRT_REL].data
     expected_srt_bytes = expected_srt(beats).encode("utf-8")
     require(canonical_srt_bytes == expected_srt_bytes, "measured SRT bytes do not exactly match the canonical ten-beat frame timeline")
     canonical_srt = canonical_srt_bytes.decode("utf-8")
     require(BEARER.search(canonical_srt) is None and EMAIL.search(canonical_srt) is None, "measured SRT contains secret-shaped content")
-    return review, paths, normalized
+    return review, files, normalized, review_snapshot, architecture_source
 
 
-def validate_deploy_state(path: Path, expected_sha: str) -> None:
-    text = path.read_text(encoding="utf-8", errors="replace")
-    require(expected_sha in text, "DEPLOY_STATE.md does not identify the expected runtime SHA")
-    match = re.search(r"\*\*Status:\s*([^*]+)\*\*", text, re.IGNORECASE)
-    require(match is not None, "DEPLOY_STATE.md has no machine-readable Status line")
-    status = match.group(1).strip().upper()
-    require(not any(word in status for word in ("REDEPLOY", "REQUIRED", "RED", "BLOCKED", "PENDING")), "DEPLOY_STATE.md release status is not green")
-    require(any(word in status for word in ("READY", "VERIFIED", "SUCCESS")), "DEPLOY_STATE.md status does not explicitly say ready, verified, or success")
+def validate_deploy_state_text(text: str, expected_sha: str) -> None:
+    candidate_lines = [line.strip() for line in text.splitlines() if "MEMORYAGENT_DEPLOY_STATE_V1" in line]
+    require(len(candidate_lines) == 1, "DEPLOY_STATE.md must contain exactly one v1 machine release record")
+    match = DEPLOY_STATE_RECORD.fullmatch(candidate_lines[0])
+    require(match is not None, "DEPLOY_STATE.md machine release record is malformed or not LIVE_VERIFIED_READY")
+    require(match.group(1) == expected_sha, "DEPLOY_STATE.md machine release record binds a different runtime SHA")
 
 
-def validate_claim_matrix(path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
+def validate_deploy_state(snapshot: ProjectFileSnapshot, expected_sha: str) -> None:
+    validate_deploy_state_text(snapshot.text(errors="replace"), expected_sha)
+
+
+def validate_claim_matrix(snapshot: ProjectFileSnapshot | Path) -> None:
+    if isinstance(snapshot, Path):
+        snapshot = snapshot_project_file(snapshot, "claim/evidence matrix")
+    text = snapshot.text()
     for snippet in REQUIRED_CLAIM_SNIPPETS:
         require(snippet in text, f"claim/evidence matrix no longer supports the final evidence card: {snippet}")
+
+
+def validate_bound_deployment_evidence(
+    review: dict[str, Any],
+    status: ProjectFileSnapshot,
+    output: ProjectFileSnapshot,
+    observed_mode: str,
+) -> None:
+    evidence = review.get("deploymentEvidence")
+    require(isinstance(evidence, dict), "capture review has no deployment evidence binding")
+    require(evidence.get("mode") == observed_mode, "deployment evidence mode differs from the capture review")
+    status_payload = load_snapshot_json(status, "deployment status")
+    require(isinstance(status_payload, dict), "deployment status must be a JSON object")
+    producer = evidence.get("producer")
+    require(isinstance(producer, dict), "capture review has no deployment producer binding")
+    expected_producer = {
+        "invocationId": status_payload.get("invocationId"),
+        "commandId": status_payload.get("commandId"),
+        "outputSha256": output.sha256,
+        "outputBytes": output.size,
+    }
+    require(producer == expected_producer, "deployment producer identity or output binding differs from the capture review")
+    for name, snapshot in (("status", status), ("output", output)):
+        record = evidence.get(name)
+        require(isinstance(record, dict), f"capture review has no deployment {name} binding")
+        require(record.get("path") == snapshot.relative_path, f"deployment {name} path differs from the capture review")
+        require(record.get("sha256") == snapshot.sha256, f"deployment {name} bytes differ from the capture review")
+        require(type(record.get("size")) is int and record.get("size") == snapshot.size, f"deployment {name} size differs from the capture review")
+
+
+def validate_exact_deploy_evidence(expected_sha: str, status: Any, output: str | bytes) -> str:
+    """Translate the shared exact-deploy contract into this gate's error type."""
+
+    try:
+        return _validate_exact_deploy_evidence(expected_sha, status, output)
+    except ExactDeployEvidenceError as exc:
+        raise GateError(str(exc)) from exc
 
 
 def validate_exact_release(
     expected_sha: str,
     review: dict[str, Any],
-    deployment_output: Path,
-    deployment_status: Path,
-    deploy_state: Path,
-) -> tuple[str, str]:
+    deployment_output: ProjectFileSnapshot,
+    deployment_status: ProjectFileSnapshot,
+    deploy_state: ProjectFileSnapshot,
+) -> tuple[str, str, str, dict[str, str | int]]:
     require(SHA40.fullmatch(expected_sha) is not None, "--expected-sha must be 40 lowercase hex characters")
     require(git_success("cat-file", "-e", f"{expected_sha}^{{commit}}"), "expected runtime SHA is absent from this repository")
-    ensure_ignored_untracked(deployment_output, "deployment output")
-    ensure_ignored_untracked(deployment_status, "deployment status")
+    ensure_ignored_untracked(deployment_output.path, "deployment output")
+    ensure_ignored_untracked(deployment_status.path, "deployment status")
 
-    status = load_json(deployment_status, "deployment status")
-    require(isinstance(status, dict), "deployment status must be a JSON object")
-    require(status.get("memorySha") == expected_sha, "deployment status records a different MemoryAgent SHA")
-    require(status.get("status") == "Success", "deployment status is not Success")
-    require(status.get("terminal") is True and status.get("exitCode") == 0, "deployment invocation is not a successful terminal run")
-    require(status.get("outputCaptured") is True and status.get("projectContained") is True, "deployment evidence is incomplete or not project-contained")
-
-    output = deployment_output.read_text(encoding="utf-8", errors="replace")
-    escaped = re.escape(expected_sha)
-    require(re.search(rf"^EXACT_CHECKOUT_OK app=memoryagent sha={escaped}$", output, re.MULTILINE) is not None, "deployment output has no exact checkout marker")
-    require(re.search(rf"^EXACT_APP_(?:DEPLOY|REUSE)_OK app=memoryagent sha={escaped}(?:\s|$)", output, re.MULTILINE) is not None, "deployment output has no exact app success marker")
-    require(re.search(rf"^EXACT_DEPLOY_SUCCESS memory={escaped}\s", output, re.MULTILINE) is not None, "deployment output has no final exact-deploy success marker")
+    status = load_snapshot_json(deployment_status, "deployment status")
+    evidence_mode = validate_exact_deploy_evidence(expected_sha, status, deployment_output.data)
+    validate_bound_deployment_evidence(review, deployment_status, deployment_output, evidence_mode)
     validate_deploy_state(deploy_state, expected_sha)
 
     capture_head = review.get("submissionPackHeadAtCapture")
@@ -552,7 +698,13 @@ def validate_exact_release(
     require(not unsafe_later, f"runtime-affecting path changed after capture: {unsafe_later[0] if unsafe_later else ''}")
     unsafe_dirty = [path for path in sorted(working_tree_paths()) if not allowed_submission_path(path)]
     require(not unsafe_dirty, f"runtime-affecting working-tree path makes the capture stale: {unsafe_dirty[0] if unsafe_dirty else ''}")
-    return capture_head, current_head
+    producer = {
+        "invocationId": str(status["invocationId"]),
+        "commandId": str(status["commandId"]),
+        "outputSha256": deployment_output.sha256,
+        "outputBytes": deployment_output.size,
+    }
+    return capture_head, current_head, evidence_mode, producer
 
 
 def validate_inputs(
@@ -566,27 +718,47 @@ def validate_inputs(
     beats: Sequence[Beat] = BEATS,
     production_mode: bool = True,
 ) -> ValidatedInputs:
-    review, artifact_paths, artifact_hashes = validate_capture_review(capture_review, artifact_root, expected_sha, beats)
-    capture_head, current_head = validate_exact_release(expected_sha, review, deployment_output, deployment_status, deploy_state)
-    claim_matrix = project_path(CLAIM_MATRIX_REL, "claim/evidence matrix", must_exist=True)
-    validate_claim_matrix(claim_matrix)
+    deployment_output_snapshot = snapshot_project_file(deployment_output, "deployment output")
+    deployment_status_snapshot = snapshot_project_file(deployment_status, "deployment status")
+    deploy_state_snapshot = snapshot_project_file(deploy_state, "deployment state")
+    review, artifact_files, _artifact_hashes, review_snapshot, architecture_source = validate_capture_review(
+        capture_review,
+        artifact_root,
+        expected_sha,
+        beats,
+    )
+    claim_matrix_path = project_path(CLAIM_MATRIX_REL, "claim/evidence matrix", must_exist=True)
+    builder_source = snapshot_project_file("demo/tools/build_caption_video.py", "caption video builder")
+    claim_matrix_snapshot = snapshot_project_file(claim_matrix_path, "claim/evidence matrix")
     if production_mode:
-        ensure_clean_tracked(project_path("demo/tools/build_caption_video.py", "caption video builder", must_exist=True), "caption video builder")
-        ensure_clean_tracked(claim_matrix, "claim/evidence matrix")
-        ensure_clean_tracked(deploy_state, "deployment state")
+        ensure_snapshot_matches_head(builder_source, "caption video builder")
+        ensure_snapshot_matches_head(claim_matrix_snapshot, "claim/evidence matrix")
+        ensure_snapshot_matches_head(deploy_state_snapshot, "deployment state")
+        ensure_snapshot_matches_head(architecture_source, "architecture source")
+    validate_claim_matrix(claim_matrix_snapshot)
+    capture_head, current_head, evidence_mode, producer = validate_exact_release(
+        expected_sha,
+        review,
+        deployment_output_snapshot,
+        deployment_status_snapshot,
+        deploy_state_snapshot,
+    )
     return ValidatedInputs(
         exact_runtime_sha=expected_sha,
         capture_head=capture_head,
         current_head=current_head,
         captured_at=str(review["capturedAt"]),
         live_base_url=str(review["liveBaseUrl"]),
-        capture_review_path=capture_review,
-        deploy_state_path=deploy_state,
-        deployment_output_path=deployment_output,
-        deployment_status_path=deployment_status,
-        claim_matrix_path=claim_matrix,
-        artifact_paths=artifact_paths,
-        artifact_hashes=artifact_hashes,
+        exact_deploy_evidence_mode=evidence_mode,
+        deployment_producer=producer,
+        builder_source=builder_source,
+        capture_review=review_snapshot,
+        deploy_state=deploy_state_snapshot,
+        deployment_output=deployment_output_snapshot,
+        deployment_status=deployment_status_snapshot,
+        claim_matrix=claim_matrix_snapshot,
+        architecture_source=architecture_source,
+        artifact_files=artifact_files,
     )
 
 
@@ -617,10 +789,10 @@ def fit_text(draw: ImageDraw.ImageDraw, text: str, max_width: int, max_lines: in
     raise GateError("caption cannot fit the 1080p safe area")
 
 
-def place_contained(canvas: Image.Image, source_path: Path, box: tuple[int, int, int, int]) -> None:
+def place_contained(canvas: Image.Image, source: ProjectFileSnapshot, box: tuple[int, int, int, int]) -> None:
     x0, y0, x1, y1 = box
-    with Image.open(source_path) as source:
-        fitted = ImageOps.contain(source.convert("RGB"), (x1 - x0, y1 - y0), Image.Resampling.LANCZOS)
+    with Image.open(io.BytesIO(source.data)) as image:
+        fitted = ImageOps.contain(image.convert("RGB"), (x1 - x0, y1 - y0), Image.Resampling.LANCZOS)
     x = x0 + (x1 - x0 - fitted.width) // 2
     y = y0 + (y1 - y0 - fitted.height) // 2
     canvas.paste(fitted, (x, y))
@@ -630,9 +802,9 @@ def draw_panel(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], *, fil
     draw.rounded_rectangle(box, radius=22, fill=fill, outline=outline, width=3)
 
 
-def render_title(canvas: Image.Image, draw: ImageDraw.ImageDraw, source_path: Path, live_base_url: str) -> None:
-    with Image.open(source_path) as source:
-        background = ImageOps.fit(source.convert("RGB"), CANVAS, Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(7))
+def render_title(canvas: Image.Image, draw: ImageDraw.ImageDraw, source: ProjectFileSnapshot, live_base_url: str) -> None:
+    with Image.open(io.BytesIO(source.data)) as image:
+        background = ImageOps.fit(image.convert("RGB"), CANVAS, Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(7))
     overlay = Image.new("RGBA", CANVAS, (2, 15, 11, 190))
     canvas.paste(Image.alpha_composite(background.convert("RGBA"), overlay).convert("RGB"), (0, 0))
     draw.rectangle((0, 0, CANVAS[0], 10), fill="#34d399")
@@ -671,7 +843,7 @@ def render_beat_frame(
     canvas = Image.new("RGB", CANVAS, "#071510")
     draw = ImageDraw.Draw(canvas)
     if beat.treatment == "title":
-        render_title(canvas, draw, inputs.artifact_paths[beat.visuals[0]], inputs.live_base_url)
+        render_title(canvas, draw, inputs.artifact_files[beat.visuals[0]], inputs.live_base_url)
     else:
         draw.rectangle((0, 0, CANVAS[0], 10), fill="#34d399")
         draw.text((58, 51), f"BEAT {beat.number:02d} / {len(BEATS):02d}", anchor="lm", font=font(23), fill="#65e6ae")
@@ -682,7 +854,7 @@ def render_beat_frame(
         elif len(beat.visuals) == 1:
             box = (70, 120, 1850, 770)
             draw_panel(draw, box, fill="#091b15")
-            place_contained(canvas, inputs.artifact_paths[beat.visuals[0]], (85, 135, 1835, 755))
+            place_contained(canvas, inputs.artifact_files[beat.visuals[0]], (85, 135, 1835, 755))
             if beat.labels:
                 draw.rounded_rectangle((110, 680, 1810, 748), radius=18, fill="#071510", outline="#3b755e", width=2)
                 draw.text((960, 714), beat.labels[0], anchor="mm", font=font(25), fill="#d8eee5")
@@ -690,7 +862,7 @@ def render_beat_frame(
             boxes = ((55, 125, 940, 765), (980, 125, 1865, 765))
             for index, (visual, box) in enumerate(zip(beat.visuals, boxes)):
                 draw_panel(draw, box, fill="#091b15")
-                place_contained(canvas, inputs.artifact_paths[visual], (box[0] + 14, box[1] + 14, box[2] - 14, box[3] - 74))
+                place_contained(canvas, inputs.artifact_files[visual], (box[0] + 14, box[1] + 14, box[2] - 14, box[3] - 74))
                 label = beat.labels[index] if index < len(beat.labels) else Path(visual).stem
                 draw.text(((box[0] + box[2]) // 2, box[3] - 38), label, anchor="mm", font=font(22), fill="#d8eee5")
 
@@ -709,9 +881,11 @@ def render_beat_frame(
         draw.rounded_rectangle((650, 12, 1270, 40), radius=12, fill="#a71919", outline="#ff8b8b", width=1)
         draw.text((960, 26), "SYNTHETIC SELF-TEST - NOT SUBMISSION EVIDENCE", anchor="mm", font=font(15), fill="#ffffff")
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    canvas.save(output, format="PNG", optimize=True)
-    with Image.open(output) as check:
+    encoded = io.BytesIO()
+    canvas.save(encoded, format="PNG", optimize=True)
+    rendered = encoded.getvalue()
+    exclusive_write_bytes(output, rendered)
+    with Image.open(io.BytesIO(rendered)) as check:
         require(check.size == CANVAS, f"rendered beat {beat.number} is not 1920x1080")
 
 
@@ -746,13 +920,13 @@ def encode_video(frame_paths: Sequence[Path], beats: Sequence[Beat], output: Pat
         lines.append(f"file '{frame_path.name}'")
         lines.append(f"duration {beat.seconds:.6f}")
     lines.append(f"file '{frame_paths[-1].name}'")
-    concat_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    exclusive_write_bytes(concat_path, ("\n".join(lines) + "\n").encode("utf-8"))
 
     total_seconds = sum(beat.seconds for beat in beats)
     total_frames = total_seconds * FPS
     command = [
         ffmpeg,
-        "-y",
+        "-n",
         "-hide_banner",
         "-loglevel",
         "error",
@@ -806,7 +980,7 @@ def encode_video(frame_paths: Sequence[Path], beats: Sequence[Beat], output: Pat
         str(output),
     ]
     result = subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    (scratch / "ffmpeg.stderr.log").write_bytes(result.stderr)
+    exclusive_write_bytes(scratch / "ffmpeg.stderr.log", result.stderr)
     require(result.returncode == 0 and output.is_file() and output.stat().st_size > 1024, f"ffmpeg encode failed (exit {result.returncode}); inspect the repo-local scratch log")
 
 
@@ -894,8 +1068,8 @@ def probe_video(path: Path, expected_seconds: int) -> dict[str, Any]:
 
 
 def atomic_write_text(path: Path, content: str, scratch: Path) -> None:
-    temp = scratch / f".{path.name}.writing"
-    temp.write_text(content, encoding="utf-8", newline="\n")
+    temp = scratch / f".{path.name}.{secrets.token_hex(16)}.writing"
+    exclusive_write_bytes(temp, content.encode("utf-8"))
     path.parent.mkdir(parents=True, exist_ok=True)
     os.replace(temp, path)
 
@@ -938,51 +1112,53 @@ def build_video(
     require(srt_path.suffix.lower() == ".srt", "subtitle output extension must be .srt")
     require(len({output, srt_path, manifest_path, scratch}) == 4, "output, SRT, manifest, and scratch paths must be distinct")
 
-    scratch.mkdir(parents=True, exist_ok=True)
+    session_scratch = create_build_session(scratch)
     frame_paths: list[Path] = []
     for beat in beats:
-        frame_path = scratch / f"beat-{beat.number:02d}.png"
+        frame_path = session_scratch / f"beat-{beat.number:02d}-{secrets.token_hex(12)}.png"
         render_beat_frame(beat, inputs, frame_path, self_test_label=self_test_label)
         frame_paths.append(frame_path)
 
-    temporary_video = scratch / "memoryagent-caption-video.rendering.mp4"
-    if temporary_video.exists():
-        temporary_video.unlink()
-    encode_video(frame_paths, beats, temporary_video, scratch)
+    temporary_video = session_scratch / f"memoryagent-caption-video-{secrets.token_hex(16)}.rendering.mp4"
+    encode_video(frame_paths, beats, temporary_video, session_scratch)
     technical = probe_video(temporary_video, total_seconds)
 
     # The gallery gate has already hash-bound this exact SRT. Re-emit only the same
     # bytes after video verification; a mismatch was rejected before any build write.
-    atomic_write_text(srt_path, expected_srt(beats), scratch)
+    atomic_write_text(srt_path, expected_srt(beats), session_scratch)
     output.parent.mkdir(parents=True, exist_ok=True)
     os.replace(temporary_video, output)
 
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "status": "passed",
-        "builder": "memoryagent-caption-led-ten-beat-v2",
+        "builder": "memoryagent-caption-led-ten-beat-v3",
         "generatedAt": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "exactRuntimeSource": inputs.exact_runtime_sha,
         "captureSubmissionHead": inputs.capture_head,
         "builderSourceHead": inputs.current_head,
         "builderSource": {
-            "path": "demo/tools/build_caption_video.py",
-            "sha256": sha256_file(REPO / "demo" / "tools" / "build_caption_video.py"),
+            "path": inputs.builder_source.relative_path,
+            "sha256": inputs.builder_source.sha256,
+            "size": inputs.builder_source.size,
         },
         "captureReview": {
-            "path": relative_repo_path(inputs.capture_review_path),
-            "sha256": sha256_file(inputs.capture_review_path),
+            "path": inputs.capture_review.relative_path,
+            "sha256": inputs.capture_review.sha256,
+            "size": inputs.capture_review.size,
             "capturedAt": inputs.captured_at,
             "liveBaseUrl": inputs.live_base_url,
         },
         "releaseEvidence": {
-            "deployState": {"path": relative_repo_path(inputs.deploy_state_path), "sha256": sha256_file(inputs.deploy_state_path)},
-            "deploymentStatus": {"path": relative_repo_path(inputs.deployment_status_path), "sha256": sha256_file(inputs.deployment_status_path)},
-            "deploymentOutput": {"path": relative_repo_path(inputs.deployment_output_path), "sha256": sha256_file(inputs.deployment_output_path)},
-            "claimEvidenceMatrix": {"path": relative_repo_path(inputs.claim_matrix_path), "sha256": sha256_file(inputs.claim_matrix_path)},
+            "exactDeployEvidenceMode": inputs.exact_deploy_evidence_mode,
+            "producer": inputs.deployment_producer,
+            "deployState": {"path": inputs.deploy_state.relative_path, "sha256": inputs.deploy_state.sha256, "size": inputs.deploy_state.size},
+            "deploymentStatus": {"path": inputs.deployment_status.relative_path, "sha256": inputs.deployment_status.sha256, "size": inputs.deployment_status.size},
+            "deploymentOutput": {"path": inputs.deployment_output.relative_path, "sha256": inputs.deployment_output.sha256, "size": inputs.deployment_output.size},
+            "claimEvidenceMatrix": {"path": inputs.claim_matrix.relative_path, "sha256": inputs.claim_matrix.sha256, "size": inputs.claim_matrix.size},
             "architectureBinding": {
-                "source": {"path": ARCHITECTURE_SOURCE_REL, "sha256": sha256_file(REPO / ARCHITECTURE_SOURCE_REL)},
-                "raster": {"path": ARCHITECTURE_REL, "sha256": inputs.artifact_hashes[ARCHITECTURE_REL]},
+                "source": {"path": inputs.architecture_source.relative_path, "sha256": inputs.architecture_source.sha256, "size": inputs.architecture_source.size},
+                "raster": {"path": ARCHITECTURE_REL, "sha256": inputs.artifact_files[ARCHITECTURE_REL].sha256, "size": inputs.artifact_files[ARCHITECTURE_REL].size},
             },
         },
         "timeline": {
@@ -1019,13 +1195,13 @@ def build_video(
             "lifecycleBoundary": "one feedback-superseded synthetic candidate previewed and deleted; protected state unchanged; zero residue; not age-expired",
             "topologyBoundary": "Alibaba ECS plus self-hosted pgvector is active; Function Compute/RDS is alternative-only",
         },
-        "inputs": inputs.artifact_hashes,
+        "inputs": {rel: snapshot.sha256 for rel, snapshot in inputs.artifact_files.items()},
         "outputs": {
             "video": {"path": relative_repo_path(output), "sha256": sha256_file(output), **technical},
             "subtitles": {"path": relative_repo_path(srt_path), "sha256": sha256_file(srt_path), "entries": len(beats), "timing": "frame-exact"},
         },
     }
-    atomic_write_text(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", scratch)
+    atomic_write_text(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", session_scratch)
     return manifest
 
 
@@ -1056,6 +1232,59 @@ def self_test(*, full_duration: bool = False) -> int:
     fixture_root.mkdir(parents=True)
     test_beats = BEATS if full_duration else tuple(replace(beat, seconds=1) for beat in BEATS)
 
+    evidence_sha = "1" * 40
+    evidence_status_base = {
+        "memorySha": evidence_sha,
+        "status": "Success",
+        "terminal": True,
+        "exitCode": 0,
+        "outputCaptured": True,
+        "projectContained": True,
+        "invocationId": "invoke-caption-parser-selftest",
+        "commandId": "command-caption-parser-selftest",
+    }
+    marker_prefix = (
+        f"EXACT_CHECKOUT_OK app=memoryagent sha={evidence_sha}\n"
+        f"EXACT_APP_DEPLOY_OK app=memoryagent sha={evidence_sha}\n"
+    )
+    def bound_status(output: str, **overrides: Any) -> dict[str, Any]:
+        raw = output.encode("utf-8")
+        return {
+            **evidence_status_base,
+            "outputSha256": hashlib.sha256(raw).hexdigest(),
+            "outputBytes": len(raw),
+            **overrides,
+        }
+
+    autopilot_sha = "a" * 40
+    strict_output = marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={evidence_sha} autopilot={autopilot_sha}\n"
+    require(
+        validate_exact_deploy_evidence(
+            evidence_sha,
+            bound_status(strict_output),
+            strict_output,
+        ) == STRICT_FINAL_MARKER,
+        "strict final-marker evidence self-test failed",
+    )
+    require(
+        validate_exact_deploy_evidence(evidence_sha, bound_status(marker_prefix), marker_prefix)
+        == TERMINAL_SUCCESS_TRUNCATED_OUTPUT,
+        "terminal-success truncated-output evidence self-test failed",
+    )
+    rejected = False
+    try:
+        conflicting_output = marker_prefix + f"EXACT_DEPLOY_SUCCESS memory={'2' * 40} autopilot={autopilot_sha}\n"
+        validate_exact_deploy_evidence(evidence_sha, bound_status(conflicting_output), conflicting_output)
+    except GateError:
+        rejected = True
+    require(rejected, "exact-deploy evidence self-test accepted a conflicting final marker")
+    rejected = False
+    try:
+        validate_exact_deploy_evidence(evidence_sha, bound_status(marker_prefix, outputCaptured=False), marker_prefix)
+    except GateError:
+        rejected = True
+    require(rejected, "exact-deploy evidence self-test accepted an uncaptured truncation fallback")
+
     artifact_hashes: dict[str, str] = {}
     for rel in GALLERY_RELS:
         path = fixture_root / rel
@@ -1079,15 +1308,55 @@ def self_test(*, full_duration: bool = False) -> int:
 
     current_head = git("rev-parse", "HEAD")
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    deployment_output = root / "exact-deploy-output.selftest.txt"
+    deployment_output.write_text(
+        f"EXACT_CHECKOUT_OK app=memoryagent sha={current_head}\n"
+        f"EXACT_APP_DEPLOY_OK app=memoryagent sha={current_head}\n"
+        f"EXACT_DEPLOY_SUCCESS memory={current_head} autopilot={current_head}\n",
+        encoding="utf-8",
+    )
+    output_snapshot = snapshot_project_file(deployment_output, "self-test deployment output")
+    deployment_status = root / "exact-deploy-status.selftest.json"
+    deployment_status.write_text(
+        json.dumps(
+            {
+                "memorySha": current_head,
+                "status": "Success",
+                "terminal": True,
+                "exitCode": 0,
+                "outputCaptured": True,
+                "projectContained": True,
+                "invocationId": "invoke-caption-video-selftest",
+                "commandId": "command-caption-video-selftest",
+                "outputSha256": output_snapshot.sha256,
+                "outputBytes": output_snapshot.size,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    status_snapshot = snapshot_project_file(deployment_status, "self-test deployment status")
     capture_review = root / "CAPTURE_REVIEW.selftest.json"
     architecture_source = project_path(ARCHITECTURE_SOURCE_REL, "architecture source", must_exist=True)
     review_payload = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "status": "passed",
         "capturedAt": now,
-        "liveBaseUrl": "https://self-test.invalid",
+        "liveBaseUrl": EXPECTED_LIVE_ORIGIN,
         "exactRuntimeSource": current_head,
         "submissionPackHeadAtCapture": current_head,
+        "deploymentEvidence": {
+            "mode": STRICT_FINAL_MARKER,
+            "producer": {
+                "invocationId": "invoke-caption-video-selftest",
+                "commandId": "command-caption-video-selftest",
+                "outputSha256": output_snapshot.sha256,
+                "outputBytes": output_snapshot.size,
+            },
+            "status": {"path": status_snapshot.relative_path, "sha256": status_snapshot.sha256, "size": status_snapshot.size},
+            "output": {"path": output_snapshot.relative_path, "sha256": output_snapshot.sha256, "size": output_snapshot.size},
+        },
         "models": {
             "embedder": EXPECTED_EMBEDDER,
             "narrator": EXPECTED_NARRATOR,
@@ -1097,6 +1366,7 @@ def self_test(*, full_duration: bool = False) -> int:
         },
         "gates": {
             **REQUIRED_BOOLEAN_GATES,
+            "exactDeploymentEvidenceMode": STRICT_FINAL_MARKER,
             "qwenVlOriginalSyntheticDryRun": {
                 "modelIdReported": EXPECTED_VISION,
                 "written": 0,
@@ -1130,20 +1400,11 @@ def self_test(*, full_duration: bool = False) -> int:
         "artifacts": artifact_hashes,
     }
     capture_review.write_text(json.dumps(review_payload, indent=2) + "\n", encoding="utf-8")
-    deployment_status = root / "exact-deploy-status.selftest.json"
-    deployment_status.write_text(
-        json.dumps({"memorySha": current_head, "status": "Success", "terminal": True, "exitCode": 0, "outputCaptured": True, "projectContained": True}, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    deployment_output = root / "exact-deploy-output.selftest.txt"
-    deployment_output.write_text(
-        f"EXACT_CHECKOUT_OK app=memoryagent sha={current_head}\n"
-        f"EXACT_APP_DEPLOY_OK app=memoryagent sha={current_head}\n"
-        f"EXACT_DEPLOY_SUCCESS memory={current_head} synthetic_selftest=true\n",
-        encoding="utf-8",
-    )
     deploy_state = root / "DEPLOY_STATE.selftest.md"
-    deploy_state.write_text(f"# Synthetic self-test only\n\n> **Status: LIVE VERIFIED — READY**\n\nExact runtime `{current_head}`.\n", encoding="utf-8")
+    deploy_state.write_text(
+        f"# Synthetic self-test only\n\n<!-- MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha={current_head} -->\n",
+        encoding="utf-8",
+    )
 
     inputs = validate_inputs(
         expected_sha=current_head,
@@ -1198,7 +1459,7 @@ def self_test(*, full_duration: bool = False) -> int:
     try:
         validate_capture_review(bad_url, fixture_root, current_head, test_beats)
     except GateError as exc:
-        require("credential-free HTTPS origin" in str(exc), "self-test unsafe-origin rejection was not explicit")
+        require("pinned credential destination" in str(exc), "self-test unsafe-origin rejection was not explicit")
     else:
         raise GateError("self-test accepted credentials/path/query in the public origin")
 

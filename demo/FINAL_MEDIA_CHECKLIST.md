@@ -115,8 +115,10 @@ English captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
 Store sensitive originals only in the ignored repo-local folder `demo/private-originals/` so every agent shares one project boundary without risking a commit. Redact there, then add only sanitized final images under `demo/gallery/`. Before staging, run `git status --ignored --short demo/` and verify no private original is tracked.
 
 - [ ] `demo/gallery/CAPTURE_REVIEW.json` is `passed`, records the exact runtime SHA,
-      measured SRT timing source, current model ids, vision/feedback/lifecycle
-      gates and SHA-256 for every final.
+      exact strict/fallback deploy-evidence mode, producer `invocationId` and
+      `commandId`, plus status/output path, length and SHA-256, measured SRT timing
+      source, current model ids, vision/feedback/lifecycle gates and SHA-256 for
+      every final.
 - [ ] [`final-media/youtube-thumbnail.png`](./final-media/youtube-thumbnail.png) is
       exactly 1280×720 and [`final-media/memoryagent-demo.en.srt`](./final-media/memoryagent-demo.en.srt)
       is regenerated from final measured windows, not the canonical fallback.

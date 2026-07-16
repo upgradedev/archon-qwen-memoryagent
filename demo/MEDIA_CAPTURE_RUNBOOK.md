@@ -12,8 +12,11 @@ The capture exits non-zero unless all of these are true:
 - the supplied 40-character MemoryAgent SHA exists locally;
 - the project-contained deployment status is terminal `Success`, exit `0`, and
   records that exact SHA;
-- the decoded deployment output contains exact-checkout, exact-app success and
-  final exact-deploy success markers for that SHA;
+- the decoded deployment output contains exactly one ordered exact-checkout marker
+  followed by exactly one exact-app success marker for that SHA. Normally one
+  final exact-deploy success marker follows and is the terminal non-empty line;
+  the provider-truncation fallback is accepted only when the app marker itself is
+  terminal and the independent deployment status is terminal `Success`/exit `0`;
 - the deployed SHA is an ancestor of current `origin/main`, and every later path is
   submission-only according to the script's explicit allowlist;
 - `/health` reports `text-embedding-v4`, `qwen-plus`, a non-Fake judge and 1,024
@@ -70,6 +73,19 @@ scratch exceeds 256 MiB.
 Keep all inputs inside this project:
 
 1. Exact deployment output and sanitized status JSON under `.artifacts/deploy/`.
+   Each must be a project-contained regular file with no symlink/reparse path
+   component and exactly one hard link. The gate reads each input once and binds
+   its relative path, byte length and SHA-256 into `CAPTURE_REVIEW.json` together
+   with the strict/fallback evidence mode. The producer status must contain safe,
+   non-empty `invocationId` and `commandId` values plus `outputSha256` and
+   `outputBytes` that exactly match the snapshotted output. Legacy status without
+   all four fields, or status/output from different attempts, fails closed.
+
+The controller marker grammar is exact: deploy uses
+`EXACT_APP_DEPLOY_OK app=memoryagent sha=<SHA>` with no suffix; reuse uses only
+`EXACT_APP_REUSE_OK app=memoryagent sha=<SHA> health=ok`; and strict completion is
+`EXACT_DEPLOY_SUCCESS memory=<SHA> autopilot=<SHA>`. Any additional same-line
+field, hidden marker, or `EXACT_DEPLOY_ERROR` token anywhere in a line is rejected.
 2. The raw Alibaba ECS overview at
    `demo/private-originals/alibaba-ecs-overview-raw.png`.
 3. The dedicated, low-privilege reviewer token in the explicitly requested ignored
@@ -110,6 +126,11 @@ ignored JSON is unavailable, use `DEMO_JUDGE_API_KEY` as the sole source; on
 PowerShell acquire it with `Read-Host -AsSecureString`, convert it only for the
 child process, and clear both the environment variable and unmanaged buffer in a
 `finally` block. Do not put the token in command history.
+
+Reviewer credentials are sent only to the byte-for-byte pinned origin
+`https://memory.43.106.13.19.sslip.io`. A trailing slash, alternate host or port,
+userinfo, path, query, fragment, cross-origin request, or HTTP redirect is rejected
+before the token is entered or an authenticated follow-up request is made.
 
 If final measured caption windows do not exist yet, the only permitted preliminary
 mode is an explicitly unmeasured draft:

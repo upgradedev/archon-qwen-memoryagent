@@ -8,7 +8,45 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { runChecks } from "../../scripts/readiness.js";
+import {
+  READINESS_LIVE_ORIGIN,
+  probePinnedLiveSemanticRoute,
+  runChecks,
+} from "../../scripts/readiness.js";
+
+test("live readiness bearer destination is code-pinned and cannot be redirected by README content", async () => {
+  const reviewerKey = "x".repeat(32);
+  let calls = 0;
+  let observedUrl = "";
+  let observedAuthorization = "";
+  let observedRedirect: "error" | "follow" | "manual" | undefined;
+  const result = await probePinnedLiveSemanticRoute(reviewerKey, async (input, init) => {
+    calls++;
+    observedUrl = input;
+    observedAuthorization = (init.headers as Record<string, string>).authorization ?? "";
+    observedRedirect = init.redirect;
+    return { status: 200 };
+  });
+
+  assert.equal(READINESS_LIVE_ORIGIN, "https://memory.43.106.13.19.sslip.io");
+  assert.equal(calls, 1);
+  assert.equal(observedUrl, `${READINESS_LIVE_ORIGIN}/consistency/semantic`);
+  assert.equal(observedAuthorization, `Bearer ${reviewerKey}`);
+  assert.equal(observedRedirect, "error", "the authenticated probe must never follow redirects");
+  assert.equal(result.ok, true);
+
+  let shortKeyCalls = 0;
+  const shortKey = await probePinnedLiveSemanticRoute("too-short", async () => {
+    shortKeyCalls++;
+    return { status: 200 };
+  });
+  assert.equal(shortKey.ok, false);
+  assert.equal(shortKeyCalls, 0, "invalid credentials must be rejected before any request is sent");
+
+  const source = readFileSync(new URL("../../scripts/readiness.ts", import.meta.url), "utf8");
+  assert.ok(!source.includes("README2.match"), "README content must never select the readiness credential destination");
+  assert.ok(!source.includes("no live host URL found in README"), "live-origin resolution must not fall back to README parsing");
+});
 
 test("readiness gate runs offline and clears the 95% automatable bar", async () => {
   delete process.env.DASHSCOPE_API_KEY; // force the offline Fakes

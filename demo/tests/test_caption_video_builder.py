@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import io
+import json
+import os
 from pathlib import Path
+import shutil
 import sys
 import unittest
+from urllib import request as urlrequest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +28,8 @@ assert CAPTURE_SPEC is not None and CAPTURE_SPEC.loader is not None
 capture = importlib.util.module_from_spec(CAPTURE_SPEC)
 sys.modules[CAPTURE_SPEC.name] = capture
 CAPTURE_SPEC.loader.exec_module(capture)
+
+from repo_paths import read_project_file_once
 
 
 class CaptionTimelineTests(unittest.TestCase):
@@ -121,6 +129,301 @@ class CaptionTimelineTests(unittest.TestCase):
         with self.assertRaises(builder.GateError):
             builder.project_path(outside, "unit-test escape")
         self.assertFalse(outside.exists())
+
+
+class ExactDeployEvidenceTests(unittest.TestCase):
+    SHA = "1" * 40
+    AUTOPILOT_SHA = "a" * 40
+
+    def setUp(self) -> None:
+        self.status_base = {
+            "memorySha": self.SHA,
+            "status": "Success",
+            "terminal": True,
+            "exitCode": 0,
+            "outputCaptured": True,
+            "projectContained": True,
+            "invocationId": "invoke-memoryagent-attempt-16",
+            "commandId": "command-exact-merged-deploy-v2",
+        }
+        self.prefix = (
+            f"EXACT_CHECKOUT_OK app=memoryagent sha={self.SHA}\n"
+            f"EXACT_APP_DEPLOY_OK app=memoryagent sha={self.SHA}\n"
+        )
+
+    def status_for(self, output: str, **overrides: object) -> dict[str, object]:
+        raw = output.encode("utf-8")
+        return {
+            **self.status_base,
+            "outputSha256": hashlib.sha256(raw).hexdigest(),
+            "outputBytes": len(raw),
+            **overrides,
+        }
+
+    def final_marker(self, memory_sha: str | None = None) -> str:
+        return f"EXACT_DEPLOY_SUCCESS memory={memory_sha or self.SHA} autopilot={self.AUTOPILOT_SHA}\n"
+
+    @staticmethod
+    def validators():
+        return (
+            ("capture", capture.validate_exact_deploy_evidence, capture.GateError),
+            ("builder", builder.validate_exact_deploy_evidence, builder.GateError),
+        )
+
+    def test_strict_final_marker_and_terminal_truncation_paths_are_both_accepted(self) -> None:
+        strict = self.prefix + self.final_marker()
+        for name, validator, _error in self.validators():
+            with self.subTest(parser=name, mode="strict"):
+                self.assertEqual(validator(self.SHA, self.status_for(strict), strict), "strict-final-marker")
+            with self.subTest(parser=name, mode="truncated-output"):
+                self.assertEqual(
+                    validator(self.SHA, self.status_for(self.prefix), self.prefix),
+                    "terminal-success-truncated-output",
+                )
+
+    def test_truncation_fallback_rejects_weak_status_missing_markers_and_conflicts(self) -> None:
+        cases = (
+            ("non-terminal", {"terminal": False}, self.prefix),
+            ("non-zero-exit", {"exitCode": 1}, self.prefix),
+            ("boolean-exit-code", {"exitCode": False}, self.prefix),
+            ("not-captured", {"outputCaptured": False}, self.prefix),
+            ("not-contained", {"projectContained": False}, self.prefix),
+            ("missing-app", {}, f"EXACT_CHECKOUT_OK app=memoryagent sha={self.SHA}\n"),
+            (
+                "conflicting-final",
+                {},
+                self.prefix + self.final_marker("2" * 40),
+            ),
+            ("error-marker", {}, self.prefix + "EXACT_DEPLOY_ERROR post-deploy failure\n"),
+        )
+        for parser_name, validator, error in self.validators():
+            for case_name, overrides, output in cases:
+                with self.subTest(parser=parser_name, case=case_name):
+                    with self.assertRaises(error):
+                        validator(self.SHA, self.status_for(output, **overrides), output)
+
+    def test_marker_stream_rejects_post_app_output_and_out_of_order_success(self) -> None:
+        cases = (
+            (
+                "post-app-failure",
+                self.prefix + "fatal: post-deploy TLS check failed\n",
+            ),
+            (
+                "reversed-strict-order",
+                self.final_marker()
+                + f"EXACT_APP_DEPLOY_OK app=memoryagent sha={self.SHA}\n"
+                + f"EXACT_CHECKOUT_OK app=memoryagent sha={self.SHA}\n",
+            ),
+        )
+        for parser_name, validator, error in self.validators():
+            for case_name, output in cases:
+                with self.subTest(parser=parser_name, case=case_name):
+                    with self.assertRaises(error):
+                        validator(self.SHA, self.status_for(output), output)
+
+    def test_status_must_bind_the_exact_output_and_producer_ids(self) -> None:
+        strict = self.prefix + self.final_marker()
+        for parser_name, validator, error in self.validators():
+            weak = {key: value for key, value in self.status_for(strict).items() if key not in {"invocationId", "commandId"}}
+            cases = (
+                ("legacy-weak-status", weak),
+                ("status-from-other-output", self.status_for(self.prefix)),
+                ("wrong-output-hash", self.status_for(strict, outputSha256="0" * 64)),
+                ("wrong-output-size", self.status_for(strict, outputBytes=len(strict.encode("utf-8")) + 1)),
+                ("unsafe-invocation-id", self.status_for(strict, invocationId="../../other attempt")),
+            )
+            for case_name, status in cases:
+                with self.subTest(parser=parser_name, case=case_name):
+                    with self.assertRaises(error):
+                        validator(self.SHA, status, strict)
+
+    def test_marker_lines_follow_the_controller_exact_schema(self) -> None:
+        valid_reuse = (
+            f"EXACT_CHECKOUT_OK app=memoryagent sha={self.SHA}\n"
+            f"EXACT_APP_REUSE_OK app=memoryagent sha={self.SHA} health=ok\n"
+        )
+        unsafe_outputs = (
+            self.prefix.rstrip("\n") + " extra=hidden\n",
+            self.prefix.rstrip("\n") + " EXACT_DEPLOY_ERROR hidden\n",
+            self.prefix + self.final_marker().rstrip("\n") + " synthetic_test=true\n",
+            self.prefix + self.final_marker().rstrip("\n") + " EXACT_DEPLOY_ERROR hidden\n",
+            f"EXACT_CHECKOUT_OK app=memoryagent sha={self.SHA}\n"
+            f"EXACT_APP_REUSE_OK app=memoryagent sha={self.SHA}\n",
+        )
+        for parser_name, validator, error in self.validators():
+            with self.subTest(parser=parser_name, case="exact-reuse"):
+                self.assertEqual(
+                    validator(self.SHA, self.status_for(valid_reuse), valid_reuse),
+                    "terminal-success-truncated-output",
+                )
+            for index, output in enumerate(unsafe_outputs):
+                with self.subTest(parser=parser_name, case=f"same-line-{index}"):
+                    with self.assertRaises(error):
+                        validator(self.SHA, self.status_for(output), output)
+
+
+class ReleaseBoundaryTests(unittest.TestCase):
+    SHA = "1" * 40
+
+    def test_capture_live_origin_is_exactly_pinned(self) -> None:
+        self.assertEqual(capture.validate_live_origin(capture.DEFAULT_BASE_URL), capture.DEFAULT_BASE_URL)
+        for unsafe in (
+            capture.DEFAULT_BASE_URL + "/",
+            capture.DEFAULT_BASE_URL + "/path",
+            capture.DEFAULT_BASE_URL + "?next=https://example.invalid",
+            "https://memory.43.106.13.19.sslip.io:444",
+            "https://user:secret@memory.43.106.13.19.sslip.io",
+            "https://example.invalid",
+        ):
+            with self.subTest(origin=unsafe):
+                with self.assertRaises(capture.GateError):
+                    capture.validate_live_origin(unsafe)
+
+    def test_capture_http_redirect_handler_refuses_to_construct_followup(self) -> None:
+        req = urlrequest.Request(
+            capture.DEFAULT_BASE_URL + "/ready/deep",
+            headers={"Authorization": "Bearer " + "x" * 32},
+        )
+        redirected = capture.NoRedirectHandler().redirect_request(
+            req,
+            io.BytesIO(),
+            302,
+            "Found",
+            {},
+            "https://example.invalid/steal",
+        )
+        self.assertIsNone(redirected)
+
+    def test_browser_network_guard_rejects_redirects_and_other_origins(self) -> None:
+        self.assertTrue(capture.is_pinned_live_request(capture.DEFAULT_BASE_URL + "/ready/deep"))
+        self.assertFalse(capture.is_pinned_live_request(capture.DEFAULT_BASE_URL, redirected=True))
+        self.assertFalse(capture.is_pinned_live_request("https://example.invalid/steal"))
+        self.assertFalse(capture.is_pinned_live_request("https://memory.43.106.13.19.sslip.io:444/steal"))
+
+    def test_deploy_state_requires_one_exact_sha_bound_machine_record(self) -> None:
+        good = (
+            "# Deployment state\n\n"
+            f"<!-- MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha={self.SHA} -->\n"
+        )
+        builder.validate_deploy_state_text(good, self.SHA)
+        for unsafe in (
+            f"**Status: NOT READY**\n{self.SHA}\n",
+            f"**Status: UNVERIFIED**\n{self.SHA}\n",
+            good.replace(self.SHA, "2" * 40),
+            good + good,
+        ):
+            with self.subTest(state=unsafe[:80]):
+                with self.assertRaises(builder.GateError):
+                    builder.validate_deploy_state_text(unsafe, self.SHA)
+
+    def test_capture_review_binds_evidence_mode_path_hash_and_size(self) -> None:
+        root = ROOT / ".artifacts" / "release-boundary-unit-test"
+        if root.exists():
+            shutil.rmtree(root)
+        root.mkdir(parents=True)
+        try:
+            status_path = root / "status.json"
+            output_path = root / "output.txt"
+            output_path.write_text("marker stream\n", encoding="utf-8")
+            output = read_project_file_once(output_path, "test output")
+            status_payload = {
+                "invocationId": "invoke-release-boundary-test",
+                "commandId": "command-release-boundary-test",
+                "outputSha256": output.sha256,
+                "outputBytes": output.size,
+            }
+            status_path.write_text(json.dumps(status_payload) + "\n", encoding="utf-8")
+            status = read_project_file_once(status_path, "test status")
+            review = {
+                "deploymentEvidence": {
+                    "mode": "strict-final-marker",
+                    "producer": status_payload,
+                    "status": {"path": status.relative_path, "sha256": status.sha256, "size": status.size},
+                    "output": {"path": output.relative_path, "sha256": output.sha256, "size": output.size},
+                }
+            }
+            builder.validate_bound_deployment_evidence(review, status, output, "strict-final-marker")
+
+            bad = {"deploymentEvidence": {**review["deploymentEvidence"], "mode": "terminal-success-truncated-output"}}
+            with self.assertRaises(builder.GateError):
+                builder.validate_bound_deployment_evidence(bad, status, output, "strict-final-marker")
+            bad = {
+                "deploymentEvidence": {
+                    **review["deploymentEvidence"],
+                    "output": {**review["deploymentEvidence"]["output"], "sha256": "0" * 64},
+                }
+            }
+            with self.assertRaises(builder.GateError):
+                builder.validate_bound_deployment_evidence(bad, status, output, "strict-final-marker")
+            bad = {
+                "deploymentEvidence": {
+                    **review["deploymentEvidence"],
+                    "producer": {**status_payload, "invocationId": "invoke-other-attempt"},
+                }
+            }
+            with self.assertRaises(builder.GateError):
+                builder.validate_bound_deployment_evidence(bad, status, output, "strict-final-marker")
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_random_exclusive_atomic_write_does_not_follow_predictable_link(self) -> None:
+        root = ROOT / ".artifacts" / "atomic-output-boundary-unit-test"
+        if root.exists():
+            shutil.rmtree(root)
+        scratch = root / "scratch"
+        scratch.mkdir(parents=True)
+        try:
+            victim = root / "victim.txt"
+            victim.write_text("do not overwrite\n", encoding="utf-8")
+            target = root / "final.txt"
+            predictable_old_temp = scratch / ".final.txt.writing"
+            os.link(victim, predictable_old_temp)
+            builder.atomic_write_text(target, "safe final\n", scratch)
+            self.assertEqual(victim.read_text(encoding="utf-8"), "do not overwrite\n")
+            self.assertEqual(target.read_text(encoding="utf-8"), "safe final\n")
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_tracked_snapshot_is_compared_directly_with_head_blob(self) -> None:
+        snapshot = read_project_file_once(ROOT / "docs" / "CLAIM_EVIDENCE_MATRIX.md", "tracked test input")
+        builder.ensure_snapshot_matches_head(snapshot, "tracked test input")
+        changed = builder.ProjectFileSnapshot(
+            path=snapshot.path,
+            relative_path=snapshot.relative_path,
+            data=snapshot.data + b"tampered",
+            sha256=hashlib.sha256(snapshot.data + b"tampered").hexdigest(),
+            size=snapshot.size + len(b"tampered"),
+        )
+        with self.assertRaises(builder.GateError):
+            builder.ensure_snapshot_matches_head(changed, "tracked test input")
+
+    def test_read_once_snapshot_rejects_hardlinks_and_symlinks(self) -> None:
+        root = ROOT / ".artifacts" / "snapshot-identity-unit-test"
+        if root.exists():
+            shutil.rmtree(root)
+        root.mkdir(parents=True)
+        try:
+            source = root / "evidence.txt"
+            source.write_bytes(b"immutable evidence\n")
+            snapshot = read_project_file_once(source, "test evidence")
+            self.assertEqual(snapshot.data, b"immutable evidence\n")
+
+            alias = root / "hardlink.txt"
+            os.link(source, alias)
+            with self.assertRaises(ValueError):
+                read_project_file_once(source, "hardlinked evidence")
+            alias.unlink()
+
+            symlink = root / "symlink.txt"
+            try:
+                symlink.symlink_to(source.name)
+            except OSError:
+                symlink = None
+            if symlink is not None:
+                with self.assertRaises(ValueError):
+                    read_project_file_once(symlink, "symlink evidence")
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
 
 if __name__ == "__main__":

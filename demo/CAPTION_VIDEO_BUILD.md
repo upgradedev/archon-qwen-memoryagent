@@ -91,8 +91,15 @@ This is a cryptographic freshness gate, not a filename check. It requires:
 - a green canonical `DEPLOY_STATE.md` naming the expected SHA;
 - the builder, deployment state, and claim/evidence matrix committed and byte-equal
   to current HEAD, so the final manifest identifies the actual gate source;
-- successful, terminal, project-contained deployment status and all three exact
-  deploy markers for that same SHA;
+- successful, terminal, project-contained deployment status plus exactly one
+  ordered checkout/app marker pair for that same SHA; strict evidence requires a
+  terminal final marker, while the recorded provider-truncation fallback requires
+  the app marker itself to be terminal;
+- immutable read-once status/output bytes whose project-relative paths, lengths,
+  SHA-256 values and strict/fallback evidence mode exactly match the passed capture
+  review;
+- producer-bound `invocationId` and `commandId` values, with status-side
+  `outputSha256` and `outputBytes` recomputed from that exact output snapshot;
 - a passed capture review whose runtime/source ancestry is compatible with current
   HEAD and whose later/dirty paths are submission-only;
 - real `text-embedding-v4`, `qwen-plus`, `qwen-vl-max`, 1,024 dimensions, a real
@@ -109,6 +116,23 @@ This is a cryptographic freshness gate, not a filename check. It requires:
 Missing media, a changed byte, stale source ancestry, a runtime-affecting working-tree
 change, a red deploy state, or an unmeasured/mismatched SRT stops the build before an
 output or scratch directory is created.
+
+The deploy-state gate recognizes only one exact machine-readable record whose SHA
+matches the requested runtime:
+
+```text
+<!-- MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha=<FINAL_RUNTIME_SHA> -->
+```
+
+Human prose such as `NOT READY` or `UNVERIFIED`, a loose SHA elsewhere in the file,
+or duplicate machine records cannot make the build green. Until a new exact
+deployment writes that single record, production mode remains blocked.
+
+The builder retains immutable snapshots of every input it validates. Its tracked
+gate sources are compared directly with their current `HEAD` blobs after Git clean
+filtering. Encoding occurs only in a newly randomized project-contained scratch
+child; frame, concat, log and final `.writing` files are created exclusively without
+following pre-seeded links.
 
 ## 4. Build and verify the canonical final
 
