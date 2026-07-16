@@ -53,7 +53,7 @@ import { MemoryAgent } from "./agents/memory-agent.js";
 import { MAX_MEMORY_BATCH } from "./memory/memory.js";
 import { UI_HTML } from "./ui.js";
 import type { PayrollEvent } from "./types.js";
-import { ingestPipeline } from "./pipeline/pipeline.js";
+import { ingestPipeline, runPipeline } from "./pipeline/pipeline.js";
 import { aggregatePnl } from "./pipeline/pnl.js";
 import { normalizePayrollEvent } from "./pipeline/payroll-integrity.js";
 import { isSupportedIso4217Currency } from "./pipeline/currency.js";
@@ -1059,19 +1059,19 @@ export async function buildServer(deps: ServerDeps = {}) {
   // Document-ingestion pipeline — the productized upstream that FEEDS memory.
   // Takes a period's raw financial documents, extracts each with Qwen (vision /
   // text), fuses the payroll triplet into one accurate event, computes the P&L,
-  // runs the R1–R4 cross-document validation, and WRITES the fused event +
-  // findings into the SAME memory via the unchanged MemoryAgent. Returns the
-  // events, per-event P&L, validation, and the ids of every memory written.
-  app.post<{ Body: { documents: RawDocument[] } }>(
+  // runs the R1–R6 cross-document validation, and, unless dryRun=true, WRITES the
+  // fused event + findings into the SAME memory via the unchanged MemoryAgent.
+  // Returns events, per-event P&L, validation, model provenance, and write ids.
+  app.post<{ Body: { documents: RawDocument[]; dryRun?: boolean } }>(
     "/ingest/documents",
     {
       schema: {
         summary: "Ingest raw documents through the extraction pipeline",
         description:
           "Runs the document-ingestion pipeline (Extractor → Classifier → EventLinker → " +
-          "Validator → P&L) over a period's raw financial documents and writes the fused " +
-          "events + validation findings into the agent's memory. The memories the " +
-          "MemoryAgent then recalls are produced here.",
+          "Validator → P&L) over a period's raw financial documents. By default it writes " +
+          "the fused events + validation findings into memory; dryRun=true executes the same " +
+          "bounded model path but stops before persistence and reports extractionModels.",
         tags: ["memory"],
         security: protectedSecurity,
         body: {
@@ -1088,6 +1088,12 @@ export async function buildServer(deps: ServerDeps = {}) {
                 "is also bounded by MAX_JSON_BODY_BYTES (10 MiB by default).",
               items: rawDocumentSchema,
             },
+            dryRun: {
+              type: "boolean",
+              description:
+                "Run the same bounded Qwen extraction/classification/link/validation path but persist no memories. " +
+                "The response reports extractionModels so a reviewer can verify image routing without leaving canary data.",
+            },
           },
         },
         response: {
@@ -1099,6 +1105,8 @@ export async function buildServer(deps: ServerDeps = {}) {
               written: { type: "integer" },
               results: { type: "array", items: looseObject },
               memoryIds: { type: "array", items: { type: "string" } },
+              dryRun: { type: "boolean" },
+              extractionModels: { type: "array", items: { type: "string" } },
             },
           },
           400: errorResponse,
@@ -1117,12 +1125,32 @@ export async function buildServer(deps: ServerDeps = {}) {
       const principal = protectedPrincipal(req);
       const workUnits = documents.length * DOCUMENT_INGEST_WORK_UNITS_PER_DOCUMENT;
       if (!(await enforceQuota(req, reply, "ingest", quotaSubject(req, principal), protectedQuotaPool(req), workUnits))) return;
+      // Dry-run is deliberately not a shortcut or a Fake-only validation path:
+      // it executes the same real Extractor → Classifier → EventLinker →
+      // Validator → P&L pipeline, then stops before the only persistence seam.
+      // Authentication, provider admission, body/document bounds and durable
+      // quota charging are identical to a write, so it cannot become a free
+      // untrusted model-spend oracle.
+      const dryRun = req.body.dryRun === true;
+      if (dryRun) {
+        const out = await runPipeline(documents);
+        return {
+          events: out.events.length,
+          written: 0,
+          results: out.events,
+          memoryIds: [],
+          dryRun: true,
+          extractionModels: [...new Set(out.documents.map((document) => document.model_id))],
+        };
+      }
       const out = await ingestPipeline(scopedAgent(principal.tenantId), documents);
       return {
         events: out.events.length,
         written: out.memoryIds.length,
         results: out.events,
         memoryIds: out.memoryIds,
+        dryRun: false,
+        extractionModels: [...new Set(out.documents.map((document) => document.model_id))],
       };
     },
   );
@@ -1360,7 +1388,7 @@ export async function buildServer(deps: ServerDeps = {}) {
       schema: {
         summary: "Recall a grounded, cited answer",
         description:
-          "Hybrid dense + lexical candidate recall, production Qwen re-ranking with bounded timeout/fallback, " +
+          "Hybrid dense + lexical candidate recall, bounded listwise Qwen re-ranking with timeout/fallback, " +
           "then a grounded Qwen-narrated answer. The response identifies the retrieval/reranker provenance.",
         tags: ["memory"],
         body: {
@@ -1373,7 +1401,7 @@ export async function buildServer(deps: ServerDeps = {}) {
             kind: kindSchema,
             limit: { type: "integer", minimum: 1, maximum: 20, description: "Optional cap on recalled memories." },
             hybrid: { type: "boolean", description: "Hybrid dense+lexical retrieval (on by default)." },
-            rerank: { type: "boolean", description: "Qwen cross-encoder re-ranking (on by default)." },
+            rerank: { type: "boolean", description: "Bounded listwise Qwen re-ranking (on by default)." },
           },
         },
         response: { 200: looseObject, 400: errorResponse, 401: errorResponse, 429: errorResponse, 503: errorResponse },

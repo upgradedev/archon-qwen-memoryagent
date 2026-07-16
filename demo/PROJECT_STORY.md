@@ -20,13 +20,13 @@ So the guiding question became: *not just how does an agent remember, but how do
 
 Every fused financial event, validation finding, and narrated insight is embedded with **Qwen `text-embedding-v4`** and written to a **pgvector** store. On any later run — a different session, process, or container — the agent **recalls the relevant prior facts by meaning** and grounds a **Qwen `qwen-plus`** answer in them, citing the exact memories it used.
 
-It exposes a small HTTP surface: public-tenant `/recall`, `/pnl`, and `/consistency`; authenticated tenant-scoped `/ingest`, `/ingest/invoice`, `/ingest/documents`, `/feedback`, `/consistency/semantic`, `/consolidate`, and `/forget`; plus `/docs` and `/ready`. Qwen-spending routes have per-subject/IP plus global daily quotas. Lifecycle calls preview by default and require `confirm=true` to change state.
+It exposes a small HTTP surface: public-tenant `/recall`, `/pnl`, and `/consistency`; authenticated tenant-scoped `/ingest`, `/ingest/invoice`, `/ingest/documents`, `/feedback`, `/consistency/semantic`, `/consolidate`, and `/forget`; plus `/docs` and `/ready`. Qwen-spending routes have per-subject/IP plus global daily quotas. Document ingestion has a protected `dryRun` that executes extraction, linking, validation, and P&L, reports the extractor models, and writes no memory. Lifecycle calls preview by default and require `confirm=true` to change state.
 
 Four ideas make the memory *strong*, not merely present:
 
-1. **Recall that respects exact tokens** — hybrid dense + lexical retrieval, refined by a cross-encoder re-ranker.
+1. **Recall that respects exact tokens** — hybrid dense + lexical retrieval, refined by one bounded listwise `qwen-plus` re-rank call.
 2. **Memory that audits itself** — a pure function that flags when two of the agent's own memories contradict, and *recommends* which to trust without ever mutating them.
-3. **Feedback and bounded lifecycle** — explicit corrections supersede bad memories; consolidation/forgetting are tenant-scoped and safe-by-default.
+3. **Feedback and bounded lifecycle** — explicit corrections supersede bad memories and remain recallable in a fresh session; this is persisted state, not model-weight learning. Consolidation/forgetting are tenant-scoped and safe-by-default.
 4. **Honest measurement** — every quality claim above is backed by a frozen, reproducible benchmark, including a pinned head-to-head against Mem0.
 
 ## System Architecture
@@ -57,7 +57,7 @@ $$
 \operatorname{RRF}(d) = \sum_{r \in \{\text{dense},\, \text{lexical}\}} \frac{1}{k + \operatorname{rank}_r(d)}
 $$
 
-Fusion makes recall *robust* (it never does worse than dense), but robustness alone doesn't win the top rank. So a **cross-encoder re-ranker** (`qwen-plus` scoring each query/memory pair jointly) refines the head of the list — and that is what lifts the ordered-retrieval metrics:
+On the committed labelled fixture, hybrid Recall@3 and Recall@5 remain at least the dense condition; CI gates that fixture relationship, not a universal guarantee. A **bounded listwise Qwen re-ranker** then sends the query and candidate list to `qwen-plus` in one call. On that same fixture, the resulting order lifts the reported MRR, nDCG and Recall@3 metrics:
 
 $$
 \operatorname{nDCG}@k = \frac{\operatorname{DCG}@k}{\operatorname{IDCG}@k}, \qquad \operatorname{DCG}@k = \sum_{i=1}^{k} \frac{2^{\text{rel}_i} - 1}{\log_2(i + 1)}
@@ -86,6 +86,8 @@ Higher importance wins; ties break on source authority; remaining ties break on 
 
 Every external dependency has an injectable seam. With no `DASHSCOPE_API_KEY`, local/CI runs use deterministic Fake providers, so the pgvector write-and-recall path and committed-fixture benchmarks run with **zero cloud credentials and zero model spend**. Production is different by design: Qwen-heavy routes fail closed with Fake providers and `/ready` requires real Qwen.
 
+The final capture gate is equally fail-closed. It sends an original synthetic payroll-register + bank-confirmation PNG pair through live `qwen-vl-max` in protected `dryRun`, requires response-reported model provenance and one fused event, and proves zero writes by both unchanged tenant count and exact-marker absence. It also stores Session-A feedback, requires a fresh Session-B recall to cite the correction, previews exactly one feedback-superseded retention candidate, deletes exactly one with an audited confirmation, verifies protected state, and scrubs the unique marker.
+
 ## Challenges we ran into
 
 - **Exact-token recall.** Getting document numbers and currency figures to survive retrieval took the full hybrid + RRF + re-rank stack, each stage earning its place against the benchmark.
@@ -98,6 +100,7 @@ Every external dependency has an injectable seam. With no `DASHSCOPE_API_KEY`, l
 ## Accomplishments that we're proud of
 
 - **A memory that audits itself — and it's measured.** Cross-session field-issue detection at **5/5 with 0 false positives** on a labelled control set, and **4/4 declared-policy conformance** for the resolution recommender. The audit stays read-only; reviewer application is a separate atomic action.
+- **Live evidence with falsifiable absence gates.** The release-bound media pipeline refuses to write finals unless qwen-vl reports its model with zero memory residue, explicit feedback survives a fresh session, and lifecycle preview/delete/protected-state/cleanup counts match exactly.
 - **A measured retrieval result on an explicit baseline.** On the frozen corpus, `reranked-hybrid` improves the single-vector cosine condition: **MRR 0.883 → 0.911**, **nDCG@5 0.903 → 0.938**, **Recall@3 90.0% → 96.7%**.
 - **Objective answer-fixture checks.** Gold-memory recall@5 **11/11**, developer-labelled gold EUR-token hit **11/11**, and complete EUR-labelled amount traceability **10/11**. These literal checks do not grade prose, truth, arithmetic, or general semantic quality.
 - **A real, bounded comparison to Mem0.** Installed and driven with the same models on the same conflict pairs; result stated narrowly (retrieval parity; no separately named method matched the disclosed pinned name probe), with Zep cited honestly and a hardened versioned runner for future attempts.

@@ -229,7 +229,7 @@ t "18.0 \$ # Every fused event, validation finding and narrated insight is embed
 t "20.0 \$ # text-embedding-v4 and written to pgvector on Alibaba — durable, not in-process."
 # --- ARCHITECTURE ---
 t "24.5 \$ # ---- ARCHITECTURE · hybrid retrieval ----"
-t "26.0 \$ # embed → pgvector → dense + PostgreSQL full-text (RRF) → cross-encoder rerank → grounded qwen-plus"
+t "26.0 \$ # embed → pgvector → dense + PostgreSQL full-text (RRF) → bounded listwise qwen-plus rerank → grounded answer"
 t "29.0 \$ # Queryable by MEANING across sessions — not string match, not an in-process cache."
 # --- LIVE DEMO · Explorer UI · SESSION A ---
 t "31.5 \$ # ---- LIVE DEMO · Explorer UI at $BASE/  ----"
@@ -281,7 +281,7 @@ t "123.5 >> Caught what the field-level audit CANNOT see · same read-only recom
 t "126.0 \$ # Every op — recall · ingest · audit · count — is also an MCP tool (audit takes semantic:true)."
 # --- MEASURED (retrieval) ---
 t "129.0 \$ # ---- MEASURED · labelled datasets (npm run bench) ----"
-t "131.0   Retrieval: reranked-hybrid beats dense — Recall@3 90.0% → 96.7% · MRR 0.883 → 0.911"
+t "131.0   Frozen fixture: reranked-hybrid beats dense — Recall@3 90.0% → 96.7% · MRR 0.883 → 0.911"
 t "135.0   Number checks: gold-figure hit 11/11 · complete euro traceability 10/11"
 # --- CLOSE · deployment ---
 t "138.5 \$ # ---- LIVE · Alibaba Cloud ----"

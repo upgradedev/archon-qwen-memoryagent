@@ -112,7 +112,7 @@ async function main() {
 
   const { corpus, queryVecs, model } = await buildInputs(useFake);
 
-  // Optional cross-encoder re-rank condition — added only when the real qwen-plus
+  // Optional bounded listwise Qwen re-rank condition — added only when the real qwen-plus
   // score fixture is committed (bench:rerank). It re-orders the hybrid pool by
   // cached joint relevance scores. Never runs on --fake (that would be a lexical
   // proxy, not the semantic claim).
@@ -133,7 +133,7 @@ async function main() {
 
   console.log(`\nArchon MemoryAgent — retrieval benchmark`);
   console.log(`Embeddings: ${model}${useFake ? "  (OFFLINE harness check — not a semantic claim)" : "  (real, from fixture)"}`);
-  if (rerankFx) console.log(`Re-ranker:  ${rerankFx.model}  (real cross-encoder scores, from fixture)`);
+  if (rerankFx) console.log(`Re-ranker:  ${rerankFx.model}  (real listwise Qwen scores, from fixture)`);
   console.log(`Corpus: ${corpus.length} memories · Queries: ${QUERIES.length} · k=${K}\n`);
 
   const results = new Map<string, MetricRow>();
@@ -156,7 +156,7 @@ async function main() {
   }
 
   // Honest top-rank comparison for the re-ranker (report, do NOT gate — a
-  // cross-encoder win over a strong dense embedder is plausible but not
+  // listwise reranker win over a strong dense embedder is plausible but not
   // guaranteed, and gating on it would be brittle).
   if (rerankFx) {
     const naive = results.get("naive-vector")!;
@@ -197,7 +197,8 @@ async function main() {
     }
     // Honest gate, aligned to what is actually true on a clean, diverse corpus
     // with a strong dense embedder (see BENCHMARK.md, "What changed and why"):
-    //   (1) REGRESSION GUARD — hybrid must never recall WORSE than naive dense.
+    //   (1) FIXTURE REGRESSION GUARD — hybrid Recall@3/@5 must remain >= dense
+    //       on this committed labelled corpus; this is not a universal guarantee.
     //       On this corpus dense saturates Recall@5, so hybrid ties/matches it;
     //       hybrid also improves Recall@3 coverage.
     //   (2) FUSION VALUE — hybrid must strictly beat lexical-only on top-rank

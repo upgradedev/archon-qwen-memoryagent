@@ -222,7 +222,7 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
     {
       id: "T4-rerank",
       criterion: "Technical",
-      title: "Cross-encoder re-rank stage re-orders the candidate pool",
+      title: "Bounded listwise Qwen re-rank stage re-orders the candidate pool",
       weight: 7.5,
       cls: "automatable",
       async run() {

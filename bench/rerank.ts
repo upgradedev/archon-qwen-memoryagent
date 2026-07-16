@@ -1,4 +1,4 @@
-// One-time cross-encoder re-rank pass — builds the fixture the benchmark replays.
+// One-time bounded listwise Qwen re-rank pass — builds the fixture the benchmark replays.
 //
 //   npm run bench:rerank        # needs DASHSCOPE_API_KEY (real qwen-plus)
 //
@@ -21,7 +21,7 @@ async function main() {
   if (reranker.modelId.startsWith("fake")) {
     console.error(
       "Refusing to build the re-rank fixture with the FakeReranker — the top-rank\n" +
-        "claim must use the real cross-encoder. Set DASHSCOPE_API_KEY and re-run."
+        "claim must use the real listwise Qwen scorer. Set DASHSCOPE_API_KEY and re-run."
     );
     process.exit(1);
   }

@@ -19,10 +19,13 @@ publication.
 > forgetting under explicit human control.
 >
 > The demo shows one verified Alibaba Cloud ECS deployment using real Qwen models:
-> text-embedding-v4 for 1,024-dimensional memory embeddings and qwen-plus for
-> grounded narration and the bounded semantic judge. PostgreSQL + pgvector stores
-> the durable memory. `/health` and `/ready` prove models and readiness independently;
-> the exact runtime source is attested by the release record shown in the video.
+> text-embedding-v4 for 1,024-dimensional memory embeddings, qwen-plus for grounded
+> narration and one bounded listwise rerank, a separately health-visible configured
+> Qwen semantic judge, and qwen-vl-max for protected document vision. PostgreSQL +
+> pgvector stores durable memory. `/health` and `/ready` prove models and readiness
+> independently; the exact runtime source is attested by the release record shown
+> in the video. The vision canary is an original synthetic dry-run with zero writes;
+> explicit feedback is persisted state, not model-weight learning.
 >
 > Live app: https://memory.43.106.13.19.sslip.io
 >
@@ -61,14 +64,15 @@ least ten seconds.
 
 ```text
 00:00 Why persistent memory must challenge itself
-[MEASURED_TIME_02] Exact runtime, Qwen and readiness proof
+[MEASURED_TIME_02] Exact runtime, Qwen readiness and vision canary
 [MEASURED_TIME_03] Architecture and trust boundaries
 [MEASURED_TIME_04] Fresh-session cited recall
-[MEASURED_TIME_05] Read-only field contradiction
-[MEASURED_TIME_06] Qwen meaning-level self-audit
-[MEASURED_TIME_07] Human resolution and safe forgetting
-[MEASURED_TIME_08] Reproducible evaluation evidence
-[MEASURED_TIME_09] Alibaba ECS, public MIT source and close
+[MEASURED_TIME_05] Read-only field contradiction and Defer boundary
+[MEASURED_TIME_06] Feedback persists into a fresh session
+[MEASURED_TIME_07] Qwen meaning-level self-audit and MCP
+[MEASURED_TIME_08] One-row safe forgetting
+[MEASURED_TIME_09] Reproducible evaluation evidence
+[MEASURED_TIME_10] Alibaba ECS, public MIT source and close
 ```
 
 Measure against the final muxed file, not the edit timeline or narration estimate.

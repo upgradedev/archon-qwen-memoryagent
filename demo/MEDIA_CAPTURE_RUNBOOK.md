@@ -21,13 +21,19 @@ The capture exits non-zero unless all of these are true:
 - `/ready` proves database, Qwen configuration and reviewer authentication ready;
 - authenticated `/ready/deep` proves the embedder operational and grounded
   narration passed;
+- one original synthetic two-PNG payroll evidence pair traverses the protected real document path in
+  `dryRun` mode, reports `qwen-vl-max`, writes zero memories, leaves the reviewer
+  count unchanged and has zero exact-prefix residue;
 - the final OpenAPI routes exist, public seed retry is idempotent, and selected-
   company Northwind P&L returns the canonical one-currency totals;
 - the live Explorer produces cited recall, the `INV-5521` 8,400/8,900 field
   contradiction, the complete Qwen meaning-level contradiction and the human
   control boundary;
-- safe-default forgetting previews first and then records a confirmed audited
-  no-op without deleting active memory;
+- explicit Session-A feedback persists one correction; a fresh Session-B request
+  recalls and cites it as stored state, explicitly not model-weight learning;
+- forgetting previews exactly one feedback-superseded synthetic candidate, then
+  confirms exactly one audited deletion while the protected seed/correction stay
+  unchanged; mandatory cleanup leaves zero exact-prefix residue;
 - GitHub's unauthenticated API reports the repository public, default branch
   `main`, and SPDX license `MIT`;
 - the Alibaba raw screenshot exactly matches its human-reviewed SHA-256/redaction
@@ -125,14 +131,16 @@ Devpost finals are 1500×1000 (3:2). Each is generated from a no-crop, center-sa
 | Devpost final | 16:9 video mapping |
 |---|---|
 | `gallery/01-grounded-cross-session-recall.png` | `proof-frames/01-grounded-cross-session-recall-16x9.png` |
-| `gallery/02-read-only-field-self-audit.png` | `proof-frames/02-read-only-field-self-audit-16x9.png` |
-| `gallery/03-qwen-semantic-self-audit.png` | `proof-frames/03-qwen-semantic-self-audit-16x9.png` |
-| `gallery/04-human-resolution-control.png` | `proof-frames/04-human-resolution-control-16x9.png` |
-| `gallery/05-safe-memory-lifecycle.png` | `proof-frames/05-safe-memory-lifecycle-16x9.png` |
-| `gallery/06-qwen-memoryagent-architecture.png` | `proof-frames/06-qwen-memoryagent-architecture-16x9.png` |
-| `gallery/07-live-health-readiness.png` | `proof-frames/07-live-health-readiness-16x9.png` |
-| `gallery/08-alibaba-runtime-proof.png` | `proof-frames/08-alibaba-runtime-proof-16x9.png` |
-| `gallery/09-public-repository-license.png` | `proof-frames/09-public-repository-license-16x9.png` |
+| `gallery/02-session-feedback-persistence.png` | `proof-frames/02-session-feedback-persistence-16x9.png` |
+| `gallery/03-read-only-field-self-audit.png` | `proof-frames/03-read-only-field-self-audit-16x9.png` |
+| `gallery/04-qwen-semantic-self-audit.png` | `proof-frames/04-qwen-semantic-self-audit-16x9.png` |
+| `gallery/05-human-resolution-control.png` | `proof-frames/05-human-resolution-control-16x9.png` |
+| `gallery/06-safe-memory-lifecycle.png` | `proof-frames/06-safe-memory-lifecycle-16x9.png` |
+| `gallery/07-qwen-memoryagent-architecture.png` | `proof-frames/07-qwen-memoryagent-architecture-16x9.png` |
+| `gallery/08-qwen-vl-document-canary.png` | `proof-frames/08-qwen-vl-document-canary-16x9.png` |
+| `gallery/09-live-health-readiness.png` | `proof-frames/09-live-health-readiness-16x9.png` |
+| `gallery/10-alibaba-runtime-proof.png` | `proof-frames/10-alibaba-runtime-proof-16x9.png` |
+| `gallery/11-public-repository-license.png` | `proof-frames/11-public-repository-license-16x9.png` |
 
 Additional outputs:
 
@@ -140,8 +148,9 @@ Additional outputs:
 - `demo/final-media/memoryagent-demo.en.srt` — English subtitles from measured
   windows, with the separately measured browser beat when its manifest/narration
   are supplied;
-- `demo/gallery/CAPTURE_REVIEW.json` — exact runtime/source split, model ids, gate
-  outcomes and SHA-256 for every reviewed deliverable;
+- `demo/gallery/CAPTURE_REVIEW.json` — exact runtime/source split, all four model
+  ids, vision dry-run/absence, feedback persistence, one-row lifecycle/cleanup
+  gates and SHA-256 for every reviewed deliverable;
 - ignored response JSON, raw browser screenshots and the sanitized Alibaba
   intermediate under `demo/private-originals/`.
 

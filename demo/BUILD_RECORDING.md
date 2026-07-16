@@ -8,7 +8,7 @@ candidate, and runs the permanent A/V/caption/order gate. A successful job produ
 a **candidate**, never an automatically publishable video.
 
 The workflow's assembled MP4 does not contain every editorial proof card in the
-canonical nine-beat [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md). Use its real terminal/UI
+canonical ten-beat [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md). Use its real terminal/UI
 captures, transcript, and intermediate segments as source footage, then add the
 sanitized exact-SHA, architecture, evidence, and Alibaba frames in the final edit.
 Do not promote the unedited workflow output merely because the job is green.

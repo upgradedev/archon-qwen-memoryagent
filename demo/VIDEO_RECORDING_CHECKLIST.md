@@ -36,14 +36,23 @@ video-specific; the screenshots, posts, and Devpost fields remain in
 - [ ] Project/Track 1 hook and live HTTPS hostname.
 - [ ] Exact deployed runtime SHA proof, followed by `/health` and `/ready`; keep
       commit attestation and endpoint readiness as two distinct claims.
+- [ ] Release-bound qwen-vl proof: original synthetic payroll-register +
+      bank-confirmation PNG pair, response-reported `qwen-vl-max`, one fused event,
+      zero writes, unchanged reviewer count, and zero exact-marker residue.
 - [ ] Canonical 16:9 architecture held long enough to read.
 - [ ] Session A write and fresh Session B grounded/cited recall.
 - [ ] Field contradiction with both values, provenance, recommendation, and
       read-only/no-mutation boundary.
+- [ ] Human-control frame exercises Defer only and visibly says zero API call/write;
+      Accept/Override remain labelled unexercised rather than implied live.
+- [ ] Session-A feedback stores a correction; a separately authenticated fresh
+      Session-B request recalls and cites it. Label persisted state, never training
+      or model-weight learning.
 - [ ] Meaning-level contradiction via the configured Qwen judge with the token hidden.
 - [ ] Four typed MCP operations and the authenticated HTTP/trusted-local distinction.
-- [ ] Timely forgetting/lifecycle proof: tenant-scoped preview first, then explicit
-      reason + confirmation and an auditable result; never stage a surprise deletion.
+- [ ] Timely forgetting/lifecycle proof: preview exactly one feedback-superseded
+      retention candidate, confirm exactly one audited deletion, prove protected
+      seed/correction unchanged, and finish at zero exact-marker residue.
 - [ ] One honest evidence card with fixture labels and caveats.
 - [ ] MemoryAgent-only Alibaba runtime proof; no reused footage from another entry.
 - [ ] End card: project name, Track 1, live URL, public repository, MIT, Qwen/Alibaba.

@@ -72,7 +72,7 @@ test("judge-facing handoff uses the canonical 16:9 architecture hero", () => {
   const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf8");
   const story = readFileSync(new URL("../../demo/PROJECT_STORY.md", import.meta.url), "utf8");
 
-  assert.match(checklist, /0:29–0:53[^\n]+demo\/final-media\/judge-architecture\.jpg/);
+  assert.match(checklist, /0:32–0:51[^\n]+demo\/final-media\/judge-architecture\.jpg/);
   assert.match(checklist, /Architecture: use the canonical 16:9[^\n]+final-media\/judge-architecture\.jpg/i);
   assert.match(checklist, /Architecture: upload the canonical 16:9[^\n]+final-media\/judge-architecture\.jpg/i);
   assert.doesNotMatch(checklist, /Architecture: (?:export\/use|upload)[^\n]+docs\/architecture\.png/i);

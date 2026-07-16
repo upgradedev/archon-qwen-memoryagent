@@ -23,14 +23,15 @@ This is a claim audit for **Track 1: MemoryAgent** only. The Autopilot entry has
 
 - The rule audit detects conflicting cross-session memories and recommends a value without mutation: **5/5 injected problems, 0 false positives; 4/4 declared-policy conformance**. Authenticated human application is a separate atomic action.
 - The additive semantic audit detects opposition without a shared field and is measured offline at **90% recall, 100% precision, 0 false positives**. A historical frozen 48-pair developer-labelled synthetic run reports **97.92% accuracy, 100% precision, 95.83% recall** per stability repetition, retaining one embedding timeout as an inconclusive false negative; its dirty-tree metadata is not final release provenance.
-- Qwen is used across `text-embedding-v4`, `qwen-plus` narration/reranking/function calling, the health-visible configured semantic judge (`qwen-plus` rollback baseline; candidate only after promotion), and `qwen-vl-max` document extraction. Four typed MCP/custom skills share one dispatcher and accept six validated memory kinds.
+- Qwen is used across `text-embedding-v4`, `qwen-plus` narration/one-call bounded listwise reranking/function calling, the health-visible configured semantic judge (`qwen-plus` rollback baseline; candidate only after promotion), and `qwen-vl-max` document extraction. The final release-bound gate requires response-reported qwen-vl provenance on an original synthetic two-PNG dry-run plus zero writes/count delta/marker residue. Four typed MCP/custom skills share one dispatcher and accept six validated memory kinds.
+- Feedback evidence is cross-session and falsifiable: Session A stores a correction; a separately authenticated fresh Session B must recall, cite and apply it. This is durable state, not autonomous training or model-weight learning.
 
 ### Technical depth (30%)
 
-- Persistent pgvector memory, hybrid dense + lexical RRF, bounded reranking/fallback, provenance, and cross-session teardown/restart tests.
+- Persistent pgvector memory, hybrid dense + lexical RRF, one bounded listwise Qwen rerank/fallback, provenance, and cross-session teardown/restart tests. Retrieval gains and hybrid≥dense gates are explicitly limited to the disclosed fixture.
 - Server-owned tenant mapping, protected mutations/heavy semantic audit, durable two-tier quotas, exact invoice idempotency, dry-run/confirm lifecycle, and HTTP MCP fail-closed authentication.
 - Currency-safe P&L never combines mixed currencies; unknown/partial/refund cash states remain explicit.
-- Exact suite and coverage values come from the final immutable CI artifact; real-DB skips are explicit.
+- Exact suite and coverage values come from the final immutable CI artifact; real-DB skips are explicit. A real-PostgreSQL integration slice verifies document `dryRun` executes the pipeline while adding zero rows.
 
 ### Value (25%)
 
@@ -49,6 +50,10 @@ The README leads with the differentiator, the judge guide separates public and a
 5. Current-source deployment claims are invalid until `aee7897…` passes exact
    checkout/build/deploy, `/ready`, real-model `/health`, OpenAPI, public/protected
    journeys and the selected-company P&L smoke. Endpoint health alone does not attest a commit.
+6. The human-control gallery frame intentionally proves **Defer only** with zero API
+   call and zero mutation. Accept/Override are protected product actions with separate
+   tests, not live actions claimed by that frame. The lifecycle row is
+   feedback-superseded/retention-eligible, not age-expired.
 
 ## Final verdict
 

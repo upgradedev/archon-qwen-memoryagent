@@ -190,6 +190,45 @@ describe("AuthZ: production mutations are authenticated and tenant-derived", () 
     }
   });
 
+  test("document dryRun keeps write-route auth, charges the bounded path, reports model provenance, and persists zero rows", async () => {
+    const store = new InMemoryStore();
+    const app = await buildServer({
+      store,
+      embedder: new FakeEmbedder(),
+      narrator: new FakeNarrator(),
+      judge: new FakeJudge(),
+      auth: { required: true, apiKeys: { "tenant-a": JUDGE_KEY } },
+      quotaPolicy: TEST_QUOTA_POLICY,
+    });
+    await app.ready();
+    try {
+      const denied = await app.inject({
+        method: "POST", url: "/ingest/documents", payload: { documents: minimalDocs, dryRun: true },
+      });
+      assert.equal(denied.statusCode, 401, "dryRun must not weaken protected-route authentication");
+
+      const before = await store.count(undefined, "tenant-a");
+      const allowed = await app.inject({
+        method: "POST",
+        url: "/ingest/documents",
+        headers: { authorization: `Bearer ${JUDGE_KEY}` },
+        payload: { documents: minimalDocs, dryRun: true },
+      });
+      const after = await store.count(undefined, "tenant-a");
+      assert.equal(allowed.statusCode, 200);
+      assert.deepEqual(allowed.json().extractionModels, ["fake-text-extractor"]);
+      assert.equal(allowed.json().dryRun, true);
+      assert.equal(allowed.json().events, 1);
+      assert.equal(allowed.json().written, 0);
+      assert.deepEqual(allowed.json().memoryIds, []);
+      assert.equal(after, before, "a successful full-pipeline dryRun must persist no memories");
+      assert.equal(await store.count(), 0, "dryRun must not leak into the public tenant");
+      assert.equal(allowed.headers["x-ratelimit-pool"], "judge", "dryRun uses the authenticated durable quota pool");
+    } finally {
+      await app.close();
+    }
+  });
+
   test("protected lifecycle routes reject anonymous calls and default to a non-mutating preview", async () => {
     const store = new InMemoryStore();
     for (const suffix of ["a", "b"]) {

@@ -1,18 +1,17 @@
-// Cross-encoder re-ranking stage — the optional top-rank refinement.
+// Bounded listwise Qwen re-ranking stage — the optional top-rank refinement.
 //
-// Bi-encoder recall (dense vectors) and RRF hybrid rank memories by a SIMILARITY
-// computed independently for the query and each memory. A cross-encoder instead
-// reads the (query, memory) PAIR together and scores their relevance jointly,
-// which is strictly more expressive and the standard way to squeeze extra
-// top-rank quality out of a retrieval stack. We add it as a re-rank stage over
-// the hybrid candidate POOL (recall is already fixed by hybrid; the re-ranker only
-// re-orders), so it can lift MRR/nDCG without hurting recall.
+// Bi-encoder recall (dense vectors) and RRF hybrid rank memories before this
+// stage. Qwen receives the query and the complete bounded candidate list in one
+// prompt and returns one relevance score per candidate. This is a listwise LLM
+// scorer, not a dedicated pairwise reranking architecture. It only re-orders the
+// candidate pool; any quality delta is corpus/top-k dependent and therefore must
+// be reported from the pinned fixture rather than asserted universally.
 //
 // Provider note (honest): the intended model was Alibaba's `gte-rerank`, but that
 // service returned AccessDenied on the hackathon account (not activated). So the
-// real `Reranker` here is an LLM cross-encoder using `qwen-plus` (the same Model
-// Studio chat model the narrator uses, which IS accessible) — it reads each
-// query/memory pair and returns a joint relevance score. The seam is identical;
+// real `Reranker` here is a bounded listwise `qwen-plus` scorer (the same Model
+// Studio chat model the narrator uses, which IS accessible) — one prompt contains
+// the query plus all candidates and returns a complete score map. The seam is identical;
 // swap `LlmReranker` for a `GteReranker` once the rerank API is enabled.
 //
 // Everything stays offline-safe: `FakeReranker` (deterministic, key-free) drives
@@ -43,8 +42,9 @@ export interface Reranker {
 }
 
 // Re-order a candidate id pool by a relevance score map, highest first. Ties and
-// unscored ids keep their incoming (hybrid) order — a STABLE re-rank, so the
-// re-ranker can only improve on hybrid, never scramble it. Returns the top-k ids.
+// unscored ids keep their incoming (hybrid) order. A complete non-tied score map
+// may still improve or worsen a particular top-k metric; the committed fixture
+// measures that outcome. Returns the top-k ids.
 export function applyRerank(poolIds: string[], scoreById: Map<string, number>, k: number): string[] {
   const withIdx = poolIds.map((id, i) => ({ id, i, score: scoreById.get(id) }));
   withIdx.sort((a, b) => {
@@ -58,9 +58,8 @@ export function applyRerank(poolIds: string[], scoreById: Map<string, number>, k
 
 const DEFAULT_RERANK_MODEL = process.env.QWEN_RERANK_MODEL || "qwen-plus";
 
-// LLM cross-encoder: send the query + every candidate memory to a Qwen chat model
-// and get back a joint relevance score per candidate. Listwise (one call scores
-// the whole pool) to keep it cheap. Injectable client → unit-testable, and the
+// Bounded listwise LLM scorer: send the query + every candidate memory to one
+// Qwen chat call and get back one relevance score per candidate. Injectable client → unit-testable, and the
 // benchmark caches its output so replay needs no key.
 export class LlmReranker implements Reranker {
   readonly modelId: string;
@@ -138,7 +137,7 @@ function parseScoreMap(raw: string, expected: number): Map<number, number> {
 // Deterministic, key-free re-ranker for CI + unit tests. Scores by BM25 lexical
 // overlap between query and candidate — enough to prove the re-rank plumbing
 // (pool → score → re-order) end-to-end offline. NOT the semantic claim: the real
-// top-rank numbers come from the LLM cross-encoder, replayed from the fixture.
+// top-rank numbers come from the listwise Qwen scorer, replayed from the fixture.
 export class FakeReranker implements Reranker {
   readonly modelId = "fake-reranker-bm25";
   async rerank(query: string, docs: RerankDoc[]): Promise<RerankScore[]> {
@@ -149,7 +148,7 @@ export class FakeReranker implements Reranker {
   }
 }
 
-// Pick the re-ranker by environment: real Qwen LLM cross-encoder when a key is
+// Pick the re-ranker by environment: real bounded listwise Qwen scorer when a key is
 // present, the deterministic fake otherwise. Same contract either way.
 export function defaultReranker(): Reranker {
   return hasQwenCreds() ? new LlmReranker() : new FakeReranker();

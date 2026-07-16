@@ -39,6 +39,7 @@ values must remain readable on a small project card.
 | Try it out | <https://memory.43.106.13.19.sslip.io> |
 | Video demo | `[PUBLIC_YOUTUBE_VIMEO_OR_YOUKU_URL]` — public, no login, strictly under 3:00 |
 | Image gallery | Upload the approved 1500×1000 files in the order and with the captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md). Do not substitute the 16:9 video proof frames. |
+| Gallery evidence gate | Require `gallery/CAPTURE_REVIEW.json` status `passed` for the exact deployed SHA, including qwen-vl dry-run/absence, fresh-session feedback, one-row lifecycle/cleanup, human Defer-only and artifact-hash gates. |
 | Public source | <https://github.com/upgradedev/archon-qwen-memoryagent> |
 | License | **MIT**; confirm GitHub shows it on the repository landing page. |
 | Track/category | **Track 1 — MemoryAgent** |
@@ -55,8 +56,9 @@ hackathon:
 > Archon carries forward an existing product name and financial-analysis context.
 > During the competition window we built this standalone Qwen/Alibaba persistent
 > MemoryAgent: the pgvector memory store; bounded hybrid retrieval and Qwen
-> reranking; field-level and meaning-level self-audits; explicit human conflict
-> resolution; feedback, consolidation and forgetting; tenant-scoped REST and MCP
+> listwise reranking; field-level and meaning-level self-audits; explicit human conflict
+> resolution; persisted cross-session feedback, protected document dry-runs,
+> consolidation and forgetting; tenant-scoped REST and MCP
 > boundaries; reproducible evaluations; and the Alibaba Cloud deployment and judge
 > experience. Upstream extraction/analysis patterns were ported where useful and
 > are disclosed; they are not presented as newly created evidence.
@@ -112,7 +114,7 @@ not guess or retain them.
 | Code repository | <https://github.com/upgradedev/archon-qwen-memoryagent> |
 | Alibaba/Qwen code file | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts> |
 | Architecture Diagram upload | [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg) |
-| Alibaba Deployment Screenshot upload | [`gallery/08-alibaba-runtime-proof.png`](./gallery/08-alibaba-runtime-proof.png), only after `CAPTURE_REVIEW.json` passes for the exact deployment. |
+| Alibaba Deployment Screenshot upload | [`gallery/10-alibaba-runtime-proof.png`](./gallery/10-alibaba-runtime-proof.png), only after `CAPTURE_REVIEW.json` passes for the exact deployment. |
 | Published Blog or Social Post | `[PUBLIC_BLOG_OR_SOCIAL_URL]`, only after signed-out verification. |
 | AI tools leveraged | **Qwen Cloud models (qwen-plus, qwen-vl-max, text-embedding-v4), OpenAI Codex, and Anthropic Claude.** |
 | Learning level | **Significant** |
@@ -137,6 +139,8 @@ the final page is open, but **Submit project has not been clicked**.
 - [ ] Public video URL added and tested logged out.
 - [ ] Sanitized gallery uploaded in manifest order.
 - [ ] Alibaba/Qwen code-proof link added.
+- [ ] `gallery/CAPTURE_REVIEW.json` is `passed` for the exact deployed SHA and its
+      artifact hashes match every uploaded frame; do not upload a self-test fixture.
 - [ ] Testing instructions added safely; no credential is publicly visible.
 - [ ] Optional published blog/social link added.
 - [ ] All custom questions complete.

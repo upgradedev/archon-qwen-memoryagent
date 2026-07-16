@@ -7,20 +7,24 @@ paths, drives the real Explorer, keeps raw material under the ignored
 ``demo/private-originals`` directory, and only then writes reviewed composites to
 ``demo/gallery``.
 
-The reviewer credential is accepted only through ``DEMO_JUDGE_API_KEY``.  It is
-never accepted on the command line, printed, serialized, included in a screenshot,
-or placed in a tracked file.
+The reviewer credential is accepted through ``DEMO_JUDGE_API_KEY`` or an explicitly
+ignored, project-local JSON file.  The credential value is never accepted as a
+command-line literal, printed, serialized into an artifact, included in a
+screenshot, or placed in a tracked file.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -46,22 +50,25 @@ DEFAULT_BASE_URL = "https://memory.43.106.13.19.sslip.io"
 DEFAULT_REPO_URL = "https://github.com/upgradedev/archon-qwen-memoryagent"
 EXPECTED_EMBEDDER = "text-embedding-v4"
 EXPECTED_NARRATOR = "qwen-plus"
+EXPECTED_VISION = "qwen-vl-max"
 EXPECTED_DIMENSION = 1024
 CANVAS = (1920, 1080)
 GALLERY_CANVAS = (1500, 1000)
 
 PRIMARY_OUTPUTS = (
     "01-grounded-cross-session-recall.png",
-    "02-read-only-field-self-audit.png",
-    "03-qwen-semantic-self-audit.png",
-    "04-human-resolution-control.png",
-    "05-safe-memory-lifecycle.png",
-    "06-qwen-memoryagent-architecture.png",
+    "02-session-feedback-persistence.png",
+    "03-read-only-field-self-audit.png",
+    "04-qwen-semantic-self-audit.png",
+    "05-human-resolution-control.png",
+    "06-safe-memory-lifecycle.png",
+    "07-qwen-memoryagent-architecture.png",
 )
 SECONDARY_OUTPUTS = (
-    "07-live-health-readiness.png",
-    "08-alibaba-runtime-proof.png",
-    "09-public-repository-license.png",
+    "08-qwen-vl-document-canary.png",
+    "09-live-health-readiness.png",
+    "10-alibaba-runtime-proof.png",
+    "11-public-repository-license.png",
 )
 
 SAFE_POST_DEPLOY_PATHS = (
@@ -342,15 +349,187 @@ def public_release_probes(base_url: str, reviewer_token: str) -> dict[str, Any]:
     require(pnl.get("employer_cost_total") == 14600, "selected-company P&L employer cost is not 14,600")
     require(pnl.get("revenue_total") == 42700 and pnl.get("net_profit") == 28100, "selected-company P&L totals are stale")
 
+    # Seed the same fixed original-synthetic demo in the isolated reviewer tenant.
+    # This makes the later semantic/human-control frame deterministic even when a
+    # prior evidence run left an unrelated cleanup placeholder in that tenant.
+    request_json("POST", base_url, "/demo/seed", body={}, reviewer_token=reviewer_token)
+    reviewer_seeded, _ = request_json("POST", base_url, "/demo/seed", body={}, reviewer_token=reviewer_token)
+    require(
+        isinstance(reviewer_seeded, dict)
+        and reviewer_seeded.get("alreadySeeded") is True
+        and reviewer_seeded.get("reconciled") is False
+        and reviewer_seeded.get("events") == 0,
+        "reviewer-tenant fixed seed is not idempotent",
+    )
+    reviewer_pnl, _ = request_json("GET", base_url, pnl_path, reviewer_token=reviewer_token)
+    require(isinstance(reviewer_pnl, dict), "reviewer-tenant P&L response is not an object")
+    for key in ("currency", "employer_cost_total", "revenue_total", "net_profit", "unknown_currency_records"):
+        require(reviewer_pnl.get(key) == pnl.get(key), f"reviewer-tenant fixed seed differs at {key}")
+
     for name, value in {
         "health.json": health,
         "ready.json": ready,
         "ready-deep.json": deep,
         "seed-idempotent.json": seeded,
         "northwind-pnl.json": pnl,
+        "reviewer-seed-idempotent.json": reviewer_seeded,
+        "reviewer-northwind-pnl.json": reviewer_pnl,
     }.items():
         write_private_json(name, value)
-    return {"health": health, "ready": ready, "deep": deep, "pnl": pnl}
+    return {
+        "health": health,
+        "ready": ready,
+        "deep": deep,
+        "pnl": pnl,
+        "reviewerPnl": reviewer_pnl,
+    }
+
+
+def reviewer_memory_count(base_url: str, reviewer_token: str) -> int:
+    payload, _ = request_json("GET", base_url, "/memory/count", reviewer_token=reviewer_token)
+    count = payload.get("count") if isinstance(payload, dict) else None
+    require(isinstance(count, int) and count >= 0, "reviewer memory count returned the wrong shape")
+    return count
+
+
+def reviewer_company_list(base_url: str, reviewer_token: str, company: str) -> dict[str, Any]:
+    path = "/memory/list?" + urlparse.urlencode({"company": company, "limit": "100"})
+    payload, _ = request_json("GET", base_url, path, reviewer_token=reviewer_token)
+    require(isinstance(payload, dict) and isinstance(payload.get("items"), list), "reviewer memory list returned the wrong shape")
+    require(payload.get("count") == len(payload["items"]), "reviewer memory list count is inconsistent")
+    return payload
+
+
+def synthetic_vision_document(marker: str, doc_type: str) -> str:
+    """Build one page of an original synthetic payroll evidence pair in memory."""
+    require(doc_type in {"payroll_register", "bank_confirmation"}, "unsupported synthetic vision document type")
+    image = Image.new("RGB", (1600, 1000), "#fbfcfa")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((45, 45, 1555, 955), outline="#183b30", width=5)
+    title = "PAYROLL REGISTER" if doc_type == "payroll_register" else "BANK CONFIRMATION"
+    draw.text((105, 90), f"ORIGINAL SYNTHETIC {title}", font=font(50, bold=True), fill="#092019")
+    draw.text((108, 178), "Submission evidence only · no real person or business", font=font(30), fill="#31584a")
+    common = (
+        ("Company", marker),
+        ("Period", "2026-06"),
+        ("Payroll run", f"RUN-{marker}"),
+        ("Currency", "EUR"),
+    )
+    financial = (
+        (
+            ("Document type", "payroll_register"),
+            ("Gross pay total", "EUR 1,000.00"),
+            ("Employer social security", "EUR 200.00"),
+            ("True employer cost", "EUR 1,200.00"),
+        )
+        if doc_type == "payroll_register"
+        else (
+            ("Document type", "bank_confirmation"),
+            ("Net pay total", "EUR 800.00"),
+            ("Employee count", "1"),
+            ("Payment date", "2026-06-30"),
+        )
+    )
+    rows = (*common, *financial)
+    y = 285
+    for label, value in rows:
+        draw.text((130, y), label.upper(), font=font(24, bold=True), fill="#597268")
+        draw.text((610, y - 8), value, font=font(38, bold=True), fill="#10271f")
+        draw.line((125, y + 52, 1470, y + 52), fill="#d5dfdb", width=2)
+        y += 77
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    require(len(encoded) < 8_000_000, "synthetic vision canary page unexpectedly exceeds the route cap")
+    return f"data:image/png;base64,{encoded}"
+
+
+def vision_document_canary(
+    base_url: str,
+    reviewer_token: str,
+    expected_sha: str,
+) -> dict[str, Any]:
+    """Exercise real qwen-vl-max through the protected path with zero persistence."""
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S")
+    marker = f"MVL{expected_sha[:6].upper()}{stamp}{secrets.token_hex(3).upper()}"
+    before_count = reviewer_memory_count(base_url, reviewer_token)
+    before_list = reviewer_company_list(base_url, reviewer_token, marker)
+    require(before_list["count"] == 0, "vision canary marker already exists in reviewer memory")
+
+    response, _ = request_json(
+        "POST",
+        base_url,
+        "/ingest/documents",
+        body={
+            "dryRun": True,
+            "documents": [
+                {
+                    "doc_id": f"register-{marker}",
+                    "event_ref": f"RUN-{marker}",
+                    "filename": f"original-synthetic-register-{marker}.png",
+                    "source_kind": "image",
+                    "content": synthetic_vision_document(marker, "payroll_register"),
+                    "company": marker,
+                    "period": "2026-06",
+                    "currency": "EUR",
+                    "declared_type": "payroll_register",
+                },
+                {
+                    "doc_id": f"bank-{marker}",
+                    "event_ref": f"RUN-{marker}",
+                    "filename": f"original-synthetic-bank-{marker}.png",
+                    "source_kind": "image",
+                    "content": synthetic_vision_document(marker, "bank_confirmation"),
+                    "company": marker,
+                    "period": "2026-06",
+                    "currency": "EUR",
+                    "declared_type": "bank_confirmation",
+                },
+            ],
+        },
+        reviewer_token=reviewer_token,
+        timeout=180,
+    )
+    require(isinstance(response, dict) and response.get("dryRun") is True, "vision canary did not remain a dry run")
+    require(response.get("written") == 0 and response.get("memoryIds") == [], "vision canary reported a persistent write")
+    require(response.get("extractionModels") == [EXPECTED_VISION], "vision canary did not report qwen-vl-max")
+    require(response.get("events") == 1, "vision canary did not produce exactly one bounded event")
+    results = response.get("results")
+    event = results[0].get("event") if isinstance(results, list) and len(results) == 1 and isinstance(results[0], dict) else None
+    require(isinstance(event, dict) and event.get("company") == marker, "vision canary did not preserve its unique synthetic identity")
+    require(
+        event.get("currency") == "EUR"
+        and event.get("employer_cost_total") == 1200
+        and event.get("bank_net_total") == 800,
+        "vision canary extracted stale totals",
+    )
+
+    # A second independently authenticated read catches accidental delayed writes,
+    # while the exact unique marker makes absence stronger than a global count alone.
+    time.sleep(0.25)
+    after_count = reviewer_memory_count(base_url, reviewer_token)
+    after_list = reviewer_company_list(base_url, reviewer_token, marker)
+    require(after_count == before_count, "vision dry run changed the reviewer memory count")
+    require(after_list["count"] == 0, "vision dry run left unique-prefix memory residue")
+    require(marker not in json.dumps(after_list, sort_keys=True), "vision marker remains in active reviewer memory")
+
+    safe = {
+        "status": "passed",
+        "source": "original-synthetic-png-pair",
+        "documents": 2,
+        "route": "POST /ingest/documents",
+        "modelId": EXPECTED_VISION,
+        "dryRun": True,
+        "events": 1,
+        "written": 0,
+        "reviewerCountBefore": before_count,
+        "reviewerCountAfter": after_count,
+        "uniquePrefixResidue": 0,
+        "extracted": {"currency": "EUR", "employerCost": 1200, "bankNet": 800},
+    }
+    write_private_json("08-qwen-vl-document-canary-response.json", response)
+    write_private_json("08-qwen-vl-document-canary-proof.json", safe)
+    return safe
 
 
 def font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -543,10 +722,93 @@ def render_health_card(
     save_dual_submission_frame(canvas, output)
 
 
+def render_vision_canary_card(
+    output: Path,
+    proof: dict[str, Any],
+    *,
+    base_url: str,
+    expected_sha: str,
+    observed_at: str,
+) -> None:
+    canvas = Image.new("RGB", CANVAS, "#06110e")
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle((0, 0, 1920, 10), fill="#60a5fa")
+    draw.text((80, 60), "REAL DOCUMENT-VISION CANARY", font=font(24, bold=True), fill="#60a5fa")
+    draw.text((80, 108), "qwen-vl-max reads it. Dry-run retains nothing.", font=font(56, bold=True), fill="#f3fff9")
+    draw.text((82, 185), "An original synthetic two-page evidence pair traverses the protected live path; exact-prefix absence is checked after completion.", font=font(26), fill="#a3b8b0")
+
+    steps = (
+        ("1", "ORIGINAL INPUT", "2 synthetic PNG pages", "Payroll register + bank confirmation"),
+        ("2", "LIVE MODEL PATH", str(proof["modelId"]), "POST /ingest/documents · bounded"),
+        ("3", "EXTRACTED", "EUR 1,200 cost · 800 cash", f"{proof['events']} fused event · model id reported"),
+        ("4", "ABSENCE GATE", "0 writes · 0 prefix residue", f"reviewer count {proof['reviewerCountBefore']} → {proof['reviewerCountAfter']}"),
+    )
+    for index, (number, heading, value, detail) in enumerate(steps):
+        x0 = 70 + index * 455
+        x1 = x0 + 420
+        rounded(draw, (x0, 300, x1, 840), "#0b1b17", radius=30, outline="#284d42", width=2)
+        rounded(draw, (x0 + 28, 330, x0 + 88, 390), "#60a5fa", radius=30)
+        draw.text((x0 + 58, 360), number, anchor="mm", font=font(28, bold=True), fill="#06110e")
+        draw.text((x0 + 30, 430), heading, font=font(22, bold=True), fill="#8dbef7")
+        y = 490
+        for line in wrap(draw, value, font(34, bold=True), 360)[:3]:
+            draw.text((x0 + 30, y), line, font=font(34, bold=True), fill="#effff8")
+            y += 44
+        y += 24
+        for line in wrap(draw, detail, font(23), 360)[:3]:
+            draw.text((x0 + 30, y), line, font=font(23), fill="#9db5ab")
+            y += 32
+    draw.text((80, 915), "Evidence boundary", font=font(19, bold=True), fill="#759087")
+    draw.text((270, 910), "Model execution is live; the displayed record is original synthetic and the route is explicitly non-persisting.", font=font(23), fill="#d5eee4")
+    draw.text((80, 970), f"{base_url} · exact runtime {expected_sha[:12]} · {observed_at}", font=font(21), fill="#87a096")
+    save_dual_submission_frame(canvas, output)
+
+
+def render_feedback_persistence_card(
+    output: Path,
+    proof: dict[str, Any],
+    *,
+    base_url: str,
+    expected_sha: str,
+    observed_at: str,
+) -> None:
+    session_b = proof["sessionB"]
+    canvas = Image.new("RGB", CANVAS, "#06110e")
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle((0, 0, 1920, 10), fill="#a78bfa")
+    draw.text((80, 60), "EXPLICIT FEEDBACK · FRESH SESSION", font=font(24, bold=True), fill="#a78bfa")
+    draw.text((80, 108), "Session A stores feedback. Session B applies it.", font=font(56, bold=True), fill="#f4f0ff")
+    draw.text((82, 185), "The correction is a durable, cited memory record—not autonomous training and not a model-weight update.", font=font(27), fill="#b9aecf")
+
+    panels = (
+        (80, "SESSION A · REVIEWER FEEDBACK", "Persisted correction", proof["preferenceDisplay"], "Original synthetic fact superseded · correction provenance retained"),
+        (980, "SESSION B · NEW CLIENT", "Grounded application", str(session_b["answer"]), f"{session_b['citationCount']} citation(s) · {session_b['modelId']} · corrected memory recalled"),
+    )
+    for x0, eyebrow, heading, body, detail in panels:
+        x1 = x0 + 850
+        rounded(draw, (x0, 300, x1, 870), "#0d1a17", radius=30, outline="#514574", width=2)
+        draw.text((x0 + 38, 340), eyebrow, font=font(21, bold=True), fill="#aa93ef")
+        draw.text((x0 + 38, 392), heading, font=font(38, bold=True), fill="#f6f2ff")
+        y = 470
+        for line in wrap(draw, body, font(29), 760)[:5]:
+            draw.text((x0 + 38, y), line, font=font(29), fill="#d8eee5")
+            y += 39
+        draw.line((x0 + 38, 720, x1 - 38, 720), fill="#3e3754", width=2)
+        y = 752
+        for line in wrap(draw, detail, font(22), 760)[:3]:
+            draw.text((x0 + 38, y), line, font=font(22), fill="#9eb4aa")
+            y += 31
+    draw.text((80, 925), "Persistence proof", font=font(19, bold=True), fill="#817799")
+    draw.text((270, 920), "Separate authenticated calls; state survives into Session B, then the unique synthetic marker is scrubbed after proof.", font=font(23), fill="#d9d1ec")
+    draw.text((80, 970), f"{base_url} · exact runtime {expected_sha[:12]} · {observed_at}", font=font(21), fill="#91879f")
+    save_dual_submission_frame(canvas, output)
+
+
 def render_lifecycle_card(
     output: Path,
     preview: dict[str, Any],
     confirmed: dict[str, Any],
+    evidence: dict[str, Any],
     *,
     base_url: str,
     expected_sha: str,
@@ -557,11 +819,11 @@ def render_lifecycle_card(
     draw.rectangle((0, 0, 1920, 10), fill="#6ee7b7")
     draw.text((80, 62), "AUTHENTICATED MEMORY LIFECYCLE", font=font(24, bold=True), fill="#6ee7b7")
     draw.text((80, 110), "Preview first. Confirm explicitly.", font=font(58, bold=True), fill="#f3fff9")
-    draw.text((82, 190), "A tenant-scoped safe-default retention policy proves the control path without deleting active memory.", font=font(27), fill="#9db4ab")
+    draw.text((82, 190), "During the one-row operation, protected seed/correction stay unchanged; post-proof cleanup then scrubs the marker.", font=font(27), fill="#9db4ab")
 
     cards = [
-        ("1", "PREVIEW", preview, "No state mutation"),
-        ("2", "CONFIRMED", confirmed, "Audited safe no-op"),
+        ("1", "PREVIEW", preview, "Exactly one candidate · no mutation"),
+        ("2", "CONFIRMED", confirmed, "Exactly one deletion · audit persisted"),
     ]
     for index, (number, heading, payload, outcome) in enumerate(cards):
         x0 = 80 + index * 900
@@ -588,7 +850,12 @@ def render_lifecycle_card(
     reason = str(audit.get("reason") or "")
     draw.text((80, 910), "Reason", font=font(19, bold=True), fill="#779388")
     draw.text((170, 906), reason, font=font(23), fill="#d5eee4")
-    draw.text((80, 970), f"{base_url} · exact runtime {expected_sha[:12]} · {observed_at}", font=font(21), fill="#87a096")
+    proof_line = (
+        f"Protected during evidenced deletion · post-proof cleanup applied · exact-prefix residue "
+        f"{evidence.get('uniquePrefixResidue')}"
+    )
+    draw.text((80, 950), proof_line, font=font(21, bold=True), fill="#6ee7b7")
+    draw.text((80, 995), f"{base_url} · exact runtime {expected_sha[:12]} · {observed_at}", font=font(20), fill="#87a096")
     save_dual_submission_frame(canvas, output)
 
 
@@ -749,7 +1016,7 @@ def browser_capture(
         require(isinstance(recall.get("answer"), str) and recall["answer"].strip(), "Explorer recall returned no answer")
         require(isinstance(recall.get("citations"), list) and len(recall["citations"]) >= 1, "Explorer recall returned no citations")
         page.locator("#result .cite").first.wait_for()
-        raw_recall = PRIVATE / "01-grounded-recall-raw.png"
+        raw_recall = PRIVATE / "01-grounded-cross-session-recall-raw.png"
         page.locator("#result").screenshot(path=str(raw_recall), animations="disabled")
         composite_live_capture(
             raw_recall,
@@ -762,10 +1029,10 @@ def browser_capture(
             expected_sha=expected_sha,
             observed_at=observed_at,
         )
-        write_private_json("01-grounded-recall-response.json", recall)
+        write_private_json("01-grounded-cross-session-recall-response.json", recall)
         results["recall"] = recall
 
-        # 02 · public read-only field audit.
+        # 03 · public read-only field audit.
         with page.expect_response(lambda response: response.url.endswith("/consistency") and response.request.method == "POST") as pending:
             page.locator("#auditBtn").click()
         field_audit = pending.value.json()
@@ -779,11 +1046,11 @@ def browser_capture(
         require(isinstance(resolution, dict) and resolution.get("recommendedValue") == 8900, "field audit recency recommendation is stale")
         target_locator = page.locator(".audit-flag").filter(has_text="INV-5521").first
         target_locator.wait_for()
-        raw_field = PRIVATE / "02-field-audit-raw.png"
+        raw_field = PRIVATE / "03-field-audit-raw.png"
         target_locator.screenshot(path=str(raw_field), animations="disabled")
         composite_live_capture(
             raw_field,
-            GALLERY / PRIMARY_OUTPUTS[1],
+            GALLERY / PRIMARY_OUTPUTS[2],
             eyebrow="Read-only self-audit",
             title="Both values stay visible. Policy recommends — never rewrites.",
             subtitle="Original synthetic INV-5521 preserves both sessions' provenance, then recommends the later 8,900 value under the declared recency rule.",
@@ -792,10 +1059,10 @@ def browser_capture(
             expected_sha=expected_sha,
             observed_at=observed_at,
         )
-        write_private_json("02-field-audit-response.json", field_audit)
+        write_private_json("03-field-audit-response.json", field_audit)
         results["fieldAudit"] = field_audit
 
-        # 03 · protected meaning-level Qwen audit.  The token exists in the input
+        # 04 · protected meaning-level Qwen audit.  The token exists in the input
         # only while the request is in flight, then both field and sessionStorage
         # are cleared before any screenshot is taken.
         page.locator("#judgeToken").fill(reviewer_token)
@@ -823,23 +1090,23 @@ def browser_capture(
         require(page.locator("#judgeToken").input_value() == "", "reviewer token remained in the page before capture")
         semantic_locator = page.locator(".audit-flag").filter(has_text="chronically late").first
         semantic_locator.wait_for()
-        raw_semantic = PRIVATE / "03-semantic-audit-raw.png"
+        raw_semantic = PRIVATE / "04-semantic-audit-raw.png"
         semantic_locator.screenshot(path=str(raw_semantic), animations="disabled")
         composite_live_capture(
             raw_semantic,
-            GALLERY / PRIMARY_OUTPUTS[2],
+            GALLERY / PRIMARY_OUTPUTS[3],
             eyebrow="Meaning-level self-audit",
             title="Qwen catches the contradiction metadata rules cannot see",
-            subtitle="Original synthetic vendor claims share no numeric field. A bounded qwen-plus judge detects their opposed meaning and returns a read-only recommendation.",
+            subtitle="Original synthetic vendor claims share no numeric field. The configured Qwen judge detects their opposed meaning and returns a read-only recommendation.",
             badges=(str(judge["model"]), f"{semantic.get('compared')} pair compared", "credential absent"),
             base_url=base_url,
             expected_sha=expected_sha,
             observed_at=observed_at,
         )
-        write_private_json("03-semantic-audit-response.json", semantic)
+        write_private_json("04-semantic-audit-response.json", semantic)
         results["semanticAudit"] = semantic
 
-        # 04 · render the real reviewer-tenant decision controls, then exercise
+        # 05 · render the real reviewer-tenant decision controls, then exercise
         # the local Defer path (zero API call, zero mutation) after clearing the
         # credential.  Accept/Override remain visibly separated protected actions.
         page.locator("#judgeToken").fill(reviewer_token)
@@ -851,28 +1118,28 @@ def browser_capture(
         control.locator("button", has_text="Defer — no write").click()
         control.locator(".decision-result").filter(has_text="Zero API call").wait_for()
         require(page.locator("#judgeToken").input_value() == "", "reviewer token remained before control capture")
-        raw_control = PRIVATE / "04-human-control-raw.png"
+        raw_control = PRIVATE / "05-human-control-raw.png"
         control.screenshot(path=str(raw_control), animations="disabled")
         composite_live_capture(
             raw_control,
-            GALLERY / PRIMARY_OUTPUTS[3],
+            GALLERY / PRIMARY_OUTPUTS[4],
             eyebrow="Structural human gate",
             title="Accept. Override. Or defer with zero write.",
-            subtitle="The model recommends; a distinct reviewer action supplies a reason and chooses the outcome. This capture exercises Defer, proving the no-mutation path.",
-            badges=("human decision", "idempotent protected actions", "deferred · no write"),
+            subtitle="This capture exercises only Defer: zero API call and zero mutation. Accept/Override remain separately tested protected actions, not a live claim in this frame.",
+            badges=("live: Defer only", "zero API call", "Accept/Override not exercised"),
             base_url=base_url,
             expected_sha=expected_sha,
             observed_at=observed_at,
         )
 
-        # 08 · public repository landing page.  API facts are validated below;
+        # 11 · public repository landing page.  API facts are validated below;
         # the browser capture is the judge-readable visual context.
         repo_page = context.new_page()
         repo_page.set_default_timeout(90_000)
         repo_page.goto(repo_url, wait_until="domcontentloaded")
         repo_page.locator("body").wait_for()
         require("archon-qwen-memoryagent" in repo_page.title().lower(), "public repository landing page did not load")
-        raw_repo = PRIVATE / "09-public-repository-raw.png"
+        raw_repo = PRIVATE / "11-public-repository-raw.png"
         repo_page.screenshot(path=str(raw_repo), animations="disabled")
         results["repoRaw"] = raw_repo
         repo_page.close()
@@ -939,31 +1206,239 @@ def github_public_probe(repo_url: str) -> dict[str, Any]:
         "license": {"spdx_id": license_info.get("spdx_id")},
         "pushed_at": data.get("pushed_at"),
     }
-    write_private_json("09-github-public-probe.json", safe)
+    write_private_json("11-github-public-probe.json", safe)
     return safe
 
 
-def lifecycle_proof(base_url: str, reviewer_token: str, expected_sha: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    operation_id = f"media-safe-forget-{expected_sha[:12]}-{run_stamp}"
-    reason = "Submission gallery: confirm safe-default reviewer-tenant retention proof"
-    payload = {"operationId": operation_id, "reason": reason}
-    preview, _ = request_json("POST", base_url, "/forget", body=payload, reviewer_token=reviewer_token)
-    require(isinstance(preview, dict) and preview.get("dryRun") is True, "lifecycle preview did not remain a dry run")
-    require(preview.get("candidates") == 0 and preview.get("forgotten") == 0, "safe-default lifecycle preview selected memory")
-    require(isinstance(preview.get("audit"), dict) and preview["audit"].get("persisted") is False, "preview unexpectedly persisted an operation")
+def feedback_persistence_and_lifecycle_proof(
+    base_url: str,
+    reviewer_token: str,
+    probes: dict[str, Any],
+) -> dict[str, Any]:
+    """Create, recall, retire and scrub one synthetic feedback marker.
 
-    confirmed, _ = request_json(
-        "POST", base_url, "/forget", body={**payload, "confirm": True}, reviewer_token=reviewer_token
+    Existing protected contracts are used throughout: strict invoice ingestion,
+    explicit feedback, authenticated fresh recall and preview/confirm forgetting.
+    The inevitable final correction is a prefix-free cleanup placeholder in a
+    unique sandbox company; repeated or concurrent runs therefore cannot select
+    each other's rows and leave no evidence marker or superseded candidate. No
+    baseline demo row is selected or mutated.
+    """
+    run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S")
+    run_slug = f"{run_stamp.lower()}-{secrets.token_hex(4)}"
+    marker = f"MFP-{run_stamp}-{secrets.token_hex(3).upper()}"
+    company = f"Submission Evidence Sandbox {run_slug}"
+    preference_display = "Present true employer cost before net cash, and cite the stored source."
+    preference_fact = f"{marker}: Reviewer preference — {preference_display}"
+    cleanup_fact = "Submission evidence cleanup placeholder; no business claim and no run marker."
+    original_id: str | None = None
+    corrected_id: str | None = None
+    proof: dict[str, Any] = {}
+    primary_error: Exception | None = None
+    cleanup_error: Exception | None = None
+
+    # Refuse to contaminate the one-candidate lifecycle proof with residue from a
+    # prior interrupted attempt. Dry-run does not claim or persist an operation.
+    preflight, _ = request_json(
+        "POST", base_url, "/forget",
+        body={
+            "company": company,
+            "deleteSuperseded": True,
+            "operationId": f"media-preflight-{run_slug}",
+            "reason": "Submission evidence preflight: sandbox has no superseded retention candidates",
+        },
+        reviewer_token=reviewer_token,
     )
-    require(isinstance(confirmed, dict) and confirmed.get("dryRun") is False, "confirmed lifecycle operation remained a preview")
-    require(confirmed.get("candidates") == 0 and confirmed.get("forgotten") == 0, "safe-default confirmation deleted memory")
-    audit = confirmed.get("audit")
-    require(isinstance(audit, dict) and audit.get("persisted") is True, "confirmed lifecycle operation was not audited")
-    require(audit.get("operationId") == operation_id and audit.get("reason") == reason, "lifecycle provenance is incomplete")
-    write_private_json("05-lifecycle-preview.json", preview)
-    write_private_json("05-lifecycle-confirmed.json", confirmed)
-    return preview, confirmed
+    require(preflight.get("dryRun") is True and preflight.get("candidates") == 0, "sandbox contains prior superseded evidence residue")
+    before_list = reviewer_company_list(base_url, reviewer_token, company)
+    require(marker not in json.dumps(before_list, sort_keys=True), "feedback marker already exists before Session A")
+
+    try:
+        ingested, _ = request_json(
+            "POST", base_url, "/ingest/invoice",
+            body={
+                "invoice": {
+                    "type": "purchase",
+                    "company": company,
+                    "period": "2026-06",
+                    "date": "2026-06-30",
+                    "currency": "EUR",
+                    "total": 8400,
+                    "invoice_ref": marker,
+                    "vendor": "Original Synthetic Vendor",
+                    "status": "unpaid",
+                },
+            },
+            reviewer_token=reviewer_token,
+            timeout=120,
+        )
+        require(isinstance(ingested, dict) and ingested.get("written") == 1, "Session A synthetic invoice was not written exactly once")
+        original_id = ingested.get("id")
+        require(isinstance(original_id, str) and original_id, "Session A response omitted its memory id")
+
+        feedback, _ = request_json(
+            "POST", base_url, "/feedback",
+            body={
+                "memoryId": original_id,
+                "outcome": "incorrect",
+                "correctedFact": preference_fact,
+                "feedbackId": f"media-feedback-{run_slug}",
+            },
+            reviewer_token=reviewer_token,
+            timeout=120,
+        )
+        corrected_id = feedback.get("correctedMemoryId") if isinstance(feedback, dict) else None
+        require(isinstance(corrected_id, str) and corrected_id, "Session A feedback produced no durable correction")
+        require(feedback.get("memoryId") == original_id and feedback.get("outcome") == "incorrect", "Session A feedback provenance is incomplete")
+        require((feedback.get("after") or {}).get("supersededBy") == corrected_id, "Session A did not supersede the original fact atomically")
+
+        # request_json constructs a new request with no client-side session state.
+        # Only the reviewer credential and question cross this Session-B boundary.
+        recall, _ = request_json(
+            "POST", base_url, "/recall",
+            body={
+                "question": f"{marker}: apply the stored reviewer preference. Which workforce-cost figure should appear first?",
+                "company": company,
+                "limit": 5,
+                "hybrid": True,
+                "rerank": True,
+            },
+            reviewer_token=reviewer_token,
+            timeout=150,
+        )
+        hits = recall.get("hits") if isinstance(recall, dict) else None
+        require(isinstance(hits, list) and any(hit.get("id") == corrected_id for hit in hits if isinstance(hit, dict)), "fresh Session B did not recall the persisted correction")
+        citations = recall.get("citations")
+        require(isinstance(citations, list) and any(marker in str(citation.get("content", "")) for citation in citations if isinstance(citation, dict)), "fresh Session B answer did not cite the persisted preference")
+        answer = recall.get("answer")
+        require(recall.get("modelId") == EXPECTED_NARRATOR and isinstance(answer, str), "fresh Session B did not return a qwen-plus answer")
+        normalized_answer = answer.casefold()
+        require(
+            "employer" in normalized_answer and "cost" in normalized_answer,
+            "fresh Session B cited the correction but did not identify employer cost as the requested first figure",
+        )
+
+        protected, _ = request_json(
+            "POST", base_url, "/feedback",
+            body={
+                "memoryId": corrected_id,
+                "outcome": "correct",
+                "feedbackId": f"media-protect-{run_slug}",
+            },
+            reviewer_token=reviewer_token,
+        )
+        require(protected.get("outcome") == "correct" and protected.get("correctedMemoryId") is None, "protected correction proof returned the wrong result")
+
+        operation_id = f"media-lifecycle-{run_slug}"
+        reason = "Submission proof: delete one feedback-superseded original synthetic fact"
+        lifecycle_payload = {
+            "company": company,
+            "deleteSuperseded": True,
+            "operationId": operation_id,
+            "reason": reason,
+        }
+        preview, _ = request_json("POST", base_url, "/forget", body=lifecycle_payload, reviewer_token=reviewer_token)
+        require(preview.get("dryRun") is True and preview.get("candidates") == 1 and preview.get("forgotten") == 0, "lifecycle preview did not select exactly one superseded synthetic row")
+        require(isinstance(preview.get("audit"), dict) and preview["audit"].get("persisted") is False, "lifecycle preview unexpectedly persisted an operation")
+
+        confirmed, _ = request_json(
+            "POST", base_url, "/forget", body={**lifecycle_payload, "confirm": True}, reviewer_token=reviewer_token
+        )
+        require(confirmed.get("dryRun") is False and confirmed.get("candidates") == 1 and confirmed.get("forgotten") == 1, "lifecycle confirmation did not delete exactly one row")
+        audit = confirmed.get("audit")
+        require(isinstance(audit, dict) and audit.get("persisted") is True, "confirmed lifecycle operation was not audited")
+        require(audit.get("operationId") == operation_id and audit.get("reason") == reason, "lifecycle provenance is incomplete")
+
+        still_active = reviewer_company_list(base_url, reviewer_token, company)
+        require(any(item.get("id") == corrected_id for item in still_active["items"] if isinstance(item, dict)), "protected correction changed during lifecycle deletion")
+        pnl_path = "/pnl?" + urlparse.urlencode({"company": "Northwind Trading"})
+        seed_after, _ = request_json("GET", base_url, pnl_path, reviewer_token=reviewer_token)
+        for key in ("currency", "employer_cost_total", "revenue_total", "net_profit", "unknown_currency_records"):
+            require(seed_after.get(key) == probes["reviewerPnl"].get(key), f"protected reviewer seed changed at {key}")
+
+        proof = {
+            "status": "passed",
+            "preferenceDisplay": preference_display,
+            "sessionA": {
+                "feedbackPersisted": True,
+                "originalSuperseded": True,
+                "correctedMemoryId": corrected_id,
+            },
+            "sessionB": {
+                "freshRequest": True,
+                "correctedMemoryRecalled": True,
+                "preferenceApplied": True,
+                "answer": recall["answer"],
+                "citationCount": len(citations),
+                "modelId": recall["modelId"],
+            },
+            "learningBoundary": "explicit persisted feedback; no model-weight update",
+            "lifecycle": {
+                "retentionBasis": "feedback-superseded original synthetic fact",
+                "preview": preview,
+                "confirmed": confirmed,
+                "protectedSeedUnchanged": True,
+                "protectedCorrectionUnchanged": True,
+            },
+        }
+        write_private_json("02-session-a-ingest-response.json", ingested)
+        write_private_json("02-session-a-feedback-response.json", feedback)
+        write_private_json("02-session-b-recall-response.json", recall)
+        write_private_json("06-lifecycle-preview.json", preview)
+        write_private_json("06-lifecycle-confirmed.json", confirmed)
+    except Exception as exc:  # cleanup below is mandatory even on a failed proof
+        primary_error = exc
+    finally:
+        try:
+            active_id = corrected_id or original_id
+            if active_id is not None:
+                cleanup_feedback, _ = request_json(
+                    "POST", base_url, "/feedback",
+                    body={
+                        "memoryId": active_id,
+                        "outcome": "incorrect",
+                        "correctedFact": cleanup_fact,
+                        "feedbackId": f"media-clean-feedback-{run_slug}",
+                    },
+                    reviewer_token=reviewer_token,
+                    timeout=120,
+                )
+                require(isinstance(cleanup_feedback.get("correctedMemoryId"), str), "cleanup feedback did not create its prefix-free placeholder")
+                cleanup_payload = {
+                    "company": company,
+                    "deleteSuperseded": True,
+                    "operationId": f"media-clean-forget-{run_slug}",
+                    "reason": "Submission evidence cleanup: remove all superseded run-marked rows",
+                }
+                cleanup_preview, _ = request_json("POST", base_url, "/forget", body=cleanup_payload, reviewer_token=reviewer_token)
+                cleanup_candidates = cleanup_preview.get("candidates")
+                require(isinstance(cleanup_candidates, int) and cleanup_candidates >= 1, "cleanup preview found no superseded evidence rows")
+                cleanup_confirmed, _ = request_json(
+                    "POST", base_url, "/forget", body={**cleanup_payload, "confirm": True}, reviewer_token=reviewer_token
+                )
+                require(cleanup_confirmed.get("forgotten") == cleanup_candidates, "cleanup did not delete every superseded evidence row")
+            after_list = reviewer_company_list(base_url, reviewer_token, company)
+            require(marker not in json.dumps(after_list, sort_keys=True), "feedback/lifecycle marker remains in active reviewer memory")
+            if proof:
+                proof["lifecycle"]["uniquePrefixResidue"] = 0
+                proof["lifecycle"]["postProofCleanupApplied"] = True
+                proof["cleanup"] = {
+                    "status": "passed",
+                    "uniquePrefixResidue": 0,
+                    "prefixFreePlaceholder": active_id is not None,
+                }
+        except Exception as exc:
+            cleanup_error = exc
+
+    if primary_error is not None:
+        if cleanup_error is not None:
+            raise GateError("feedback proof failed and mandatory exact-prefix cleanup also failed") from primary_error
+        raise primary_error
+    if cleanup_error is not None:
+        raise GateError("feedback proof passed but mandatory exact-prefix cleanup failed") from cleanup_error
+    require(bool(proof), "feedback persistence proof produced no evidence")
+    write_private_json("02-feedback-persistence-lifecycle-proof.json", proof)
+    return proof
 
 
 def format_srt_time(seconds: float) -> str:
@@ -1117,11 +1592,13 @@ def write_review_manifest(
     base_url: str,
     observed_at: str,
     probes: dict[str, Any],
+    feedback_proof: dict[str, Any],
+    vision_canary: dict[str, Any],
     hashes: dict[str, str],
     srt_source: str,
 ) -> None:
     manifest = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "status": "passed",
         "capturedAt": observed_at,
         "liveBaseUrl": base_url,
@@ -1131,6 +1608,7 @@ def write_review_manifest(
             "embedder": probes["health"]["embedder"],
             "narrator": probes["health"]["narrator"],
             "judge": probes["health"]["judge"],
+            "vision": vision_canary["modelId"],
             "embedDim": probes["health"]["embedDim"],
         },
         "gates": {
@@ -1139,11 +1617,39 @@ def write_review_manifest(
             "authenticatedDeepReadiness": True,
             "publicSeedIdempotent": True,
             "selectedCompanyPnl": True,
+            "qwenVlOriginalSyntheticDryRun": {
+                "modelIdReported": vision_canary["modelId"],
+                "written": vision_canary["written"],
+                "reviewerCountUnchanged": vision_canary["reviewerCountBefore"] == vision_canary["reviewerCountAfter"],
+                "uniquePrefixResidue": vision_canary["uniquePrefixResidue"],
+            },
+            "feedbackPersistence": {
+                "sessionAStoredCorrection": feedback_proof["sessionA"]["feedbackPersisted"],
+                "freshSessionBRecalledCorrection": feedback_proof["sessionB"]["correctedMemoryRecalled"],
+                "freshSessionBAppliedPreference": feedback_proof["sessionB"]["preferenceApplied"],
+                "boundary": feedback_proof["learningBoundary"],
+            },
+            "lifecycleOneRow": {
+                "retentionBasis": feedback_proof["lifecycle"]["retentionBasis"],
+                "previewCandidates": feedback_proof["lifecycle"]["preview"]["candidates"],
+                "confirmedForgotten": feedback_proof["lifecycle"]["confirmed"]["forgotten"],
+                "protectedSeedUnchanged": feedback_proof["lifecycle"]["protectedSeedUnchanged"],
+                "protectedCorrectionUnchanged": feedback_proof["lifecycle"]["protectedCorrectionUnchanged"],
+                "postProofCleanupApplied": feedback_proof["lifecycle"]["postProofCleanupApplied"],
+                "uniquePrefixResidue": feedback_proof["lifecycle"]["uniquePrefixResidue"],
+            },
+            "humanControlCapture": "Defer-only live proof; Accept/Override are not claimed by this frame",
             "reviewerCredentialRendered": False,
             "rawCapturesTracked": False,
             "alibabaProfileShaBound": True,
         },
         "subtitleTimingSource": srt_source,
+        "architecture": {
+            "sourcePath": "docs/judge-architecture.svg",
+            "sourceSha256": sha256_file(REPO / "docs" / "judge-architecture.svg"),
+            "rasterPath": "demo/final-media/judge-architecture.jpg",
+            "rasterSha256": hashes["demo/final-media/judge-architecture.jpg"],
+        },
         "artifacts": hashes,
     }
     path = GALLERY / "CAPTURE_REVIEW.json"
@@ -1202,20 +1708,50 @@ def self_test() -> int:
     )
     lifecycle_fixture = root / "lifecycle-3x2.png"
     audit_preview = {
-        "dryRun": True, "scanned": 4, "candidates": 0, "forgotten": 0,
+        "dryRun": True, "scanned": 4, "candidates": 1, "forgotten": 0,
         "audit": {"persisted": False, "reason": "synthetic self-test"},
     }
     audit_confirmed = {
-        "dryRun": False, "scanned": 4, "candidates": 0, "forgotten": 0,
+        "dryRun": False, "scanned": 4, "candidates": 1, "forgotten": 1,
         "audit": {"persisted": True, "reason": "synthetic self-test"},
     }
     render_lifecycle_card(
         lifecycle_fixture, audit_preview, audit_confirmed,
+        {"uniquePrefixResidue": 0},
         base_url=DEFAULT_BASE_URL, expected_sha="0" * 40, observed_at="2000-01-01T00:00:00Z",
     )
+    vision_fixture = root / "vision-3x2.png"
+    vision_proof = {
+        "modelId": EXPECTED_VISION, "events": 1, "written": 0,
+        "reviewerCountBefore": 7, "reviewerCountAfter": 7,
+    }
+    render_vision_canary_card(
+        vision_fixture, vision_proof,
+        base_url=DEFAULT_BASE_URL, expected_sha="0" * 40, observed_at="2000-01-01T00:00:00Z",
+    )
+    feedback_fixture = root / "feedback-3x2.png"
+    render_feedback_persistence_card(
+        feedback_fixture,
+        {
+            "preferenceDisplay": "Present employer cost before net cash and cite the stored source.",
+            "sessionB": {
+                "answer": "The stored reviewer preference says employer cost should appear first [1].",
+                "citationCount": 1,
+                "modelId": EXPECTED_NARRATOR,
+            },
+        },
+        base_url=DEFAULT_BASE_URL, expected_sha="0" * 40, observed_at="2000-01-01T00:00:00Z",
+    )
+    canary_pages = [
+        synthetic_vision_document("MVLSELFTEST", "payroll_register"),
+        synthetic_vision_document("MVLSELFTEST", "bank_confirmation"),
+    ]
+    require(all(page.startswith("data:image/png;base64,") for page in canary_pages), "synthetic vision document self-test failed")
     render_youtube_thumbnail(gallery_fixture, root / "youtube-thumbnail.png")
     require(Image.open(health_fixture).size == GALLERY_CANVAS, "health-card self-test failed")
     require(Image.open(lifecycle_fixture).size == GALLERY_CANVAS, "lifecycle-card self-test failed")
+    require(Image.open(vision_fixture).size == GALLERY_CANVAS, "vision-card self-test failed")
+    require(Image.open(feedback_fixture).size == GALLERY_CANVAS, "feedback-card self-test failed")
     require(Image.open(root / "youtube-thumbnail.png").size == (1280, 720), "YouTube thumbnail self-test failed")
     print("media pipeline self-test: PASS (ignored project-contained fixtures only)")
     return 0
@@ -1287,47 +1823,63 @@ def main(argv: Sequence[str] | None = None) -> int:
             private_alibaba = raw_alibaba_source
         enforce_private_scratch_budget()
 
-        print("[1/8] exact release + post-deploy source allowlist")
+        print("[1/10] exact release + post-deploy source allowlist")
         remote_main = verify_exact_release(expected_sha, deployment_output, deployment_status)
         observed_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
-        print("[2/8] public health/readiness, authenticated deep readiness, seed and selected-company P&L")
+        print("[2/10] public health/readiness, authenticated deep readiness, seed and selected-company P&L")
         probes = public_release_probes(args.base_url, reviewer_token)
 
-        print("[3/8] canonical Explorer recall, field audit, semantic audit and human-control captures")
+        print("[3/10] original-synthetic qwen-vl-max dry-run canary + exact absence gate")
+        vision_canary = vision_document_canary(args.base_url, reviewer_token, expected_sha)
+        probes["visionCanary"] = vision_canary
+
+        print("[4/10] Session-A feedback, fresh Session-B application, one-row lifecycle + cleanup")
+        feedback_proof = feedback_persistence_and_lifecycle_proof(args.base_url, reviewer_token, probes)
+
+        print("[5/10] canonical Explorer recall, field audit, semantic audit and honest Defer-only capture")
         captured = contained_browser_capture(
             args.base_url, args.repo_url, reviewer_token, expected_sha, observed_at, probes
         )
         enforce_private_scratch_budget()
 
-        print("[4/8] authenticated lifecycle preview + confirmed safe-default audit")
-        preview, confirmed = lifecycle_proof(args.base_url, reviewer_token, expected_sha)
+        print("[6/10] feedback-persistence and one-deletion lifecycle proof cards")
+        render_feedback_persistence_card(
+            GALLERY / PRIMARY_OUTPUTS[1], feedback_proof,
+            base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
+        )
+        preview = feedback_proof["lifecycle"]["preview"]
+        confirmed = feedback_proof["lifecycle"]["confirmed"]
         render_lifecycle_card(
-            GALLERY / PRIMARY_OUTPUTS[4], preview, confirmed,
+            GALLERY / PRIMARY_OUTPUTS[5], preview, confirmed, feedback_proof["lifecycle"],
             base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
         )
 
-        print("[5/8] health/readiness and SHA-bound Alibaba proof cards")
-        render_architecture_assets(GALLERY / PRIMARY_OUTPUTS[5])
+        print("[7/10] qwen-vl, architecture, health/readiness and SHA-bound Alibaba proof cards")
+        render_architecture_assets(GALLERY / PRIMARY_OUTPUTS[6])
+        render_vision_canary_card(
+            GALLERY / SECONDARY_OUTPUTS[0], vision_canary,
+            base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
+        )
         render_health_card(
-            GALLERY / SECONDARY_OUTPUTS[0], probes,
+            GALLERY / SECONDARY_OUTPUTS[1], probes,
             base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
         )
         sanitized_alibaba = sanitize_alibaba_capture(private_alibaba, redaction_profile)
         render_alibaba_card(
-            GALLERY / SECONDARY_OUTPUTS[1], sanitized_alibaba, probes,
+            GALLERY / SECONDARY_OUTPUTS[2], sanitized_alibaba, probes,
             base_url=args.base_url, expected_sha=expected_sha, observed_at=observed_at,
         )
 
-        print("[6/8] public GitHub + MIT API gate and repository capture")
+        print("[8/10] public GitHub + MIT API gate and repository capture")
         github_public_probe(args.repo_url)
         render_repository_card(
-            captured["repoRaw"], GALLERY / SECONDARY_OUTPUTS[2],
+            captured["repoRaw"], GALLERY / SECONDARY_OUTPUTS[3],
             repo_url=args.repo_url, remote_main=remote_main, observed_at=observed_at,
         )
 
-        print("[7/8] 1280×720 YouTube thumbnail and English subtitle artifact")
-        render_youtube_thumbnail(GALLERY / PRIMARY_OUTPUTS[1], FINAL_MEDIA / "youtube-thumbnail.png")
+        print("[9/10] 1280×720 YouTube thumbnail and English subtitle artifact")
+        render_youtube_thumbnail(GALLERY / PRIMARY_OUTPUTS[2], FINAL_MEDIA / "youtube-thumbnail.png")
         srt_source = emit_srt(
             FINAL_MEDIA / "memoryagent-demo.en.srt",
             measured_windows=caption_windows,
@@ -1336,7 +1888,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             web_narration=web_narration,
         )
 
-        print("[8/8] dimensions, metadata, private-original tracking and artifact hashes")
+        print("[10/10] dimensions, metadata, private-original tracking and artifact hashes")
         hashes = verify_outputs(expected_sha, args.base_url)
         enforce_private_scratch_budget()
         write_review_manifest(
@@ -1345,6 +1897,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             base_url=args.base_url,
             observed_at=observed_at,
             probes=probes,
+            feedback_proof=feedback_proof,
+            vision_canary=vision_canary,
             hashes=hashes,
             srt_source=srt_source,
         )

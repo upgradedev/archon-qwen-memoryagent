@@ -17,10 +17,12 @@ Most agent-memory demos prove that a fact can be written in one session and retr
 For the Global AI Hackathon Series with Qwen Cloud, we built **Archon MemoryAgent**:
 
 - persistent, tenant-scoped pgvector memory across sessions;
-- hybrid dense + lexical retrieval with Qwen reranking and cited answers;
+- hybrid dense + lexical retrieval with one bounded listwise Qwen rerank and cited answers;
 - a deterministic field-level self-audit that detects conflicts and recommends which value to trust without mutating either memory;
 - an additive Qwen meaning-level audit for contradictions with no shared field;
-- explicit feedback, dry-run/confirm forgetting, authenticated HTTP MCP, and currency-safe financial evidence.
+- explicit persisted feedback that a fresh session can cite, protected qwen-vl
+  document dry-runs with zero writes, one-row preview/confirm forgetting,
+  authenticated HTTP MCP, and currency-safe financial evidence.
 
 The claims are measured: 5/5 field-level injected problems with 0 false positives; 4/4 labelled resolution-policy results; and an offline meaning-level benchmark at 90% recall, 100% precision, and 0 false positives. That semantic score is deliberately reported as an offline deterministic-judge result—not live-Qwen accuracy.
 
@@ -55,8 +57,8 @@ Architecture: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/do
 Alibaba/Qwen code proof: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts
 Technical post: [PUBLIC_BLOG_URL]
 
-Models: `text-embedding-v4`, `qwen-plus` narration/rerank/skills, the health-visible configured semantic judge (`qwen-plus` rollback baseline), and `qwen-vl-max` via Alibaba Cloud Model Studio / DashScope.
+Models: `text-embedding-v4`, `qwen-plus` narration/bounded listwise rerank/skills, the health-visible configured semantic judge (`qwen-plus` rollback baseline), and `qwen-vl-max` via Alibaba Cloud Model Studio / DashScope. The release canary uses original synthetic document images in protected dry-run mode and proves zero memory residue.
 
 ## Devpost project update
 
-Final release update: Archon MemoryAgent now ships server-owned tenant isolation, authenticated mutations and semantic audit, durable weighted Qwen quotas, exact invoice idempotency, explicit human conflict resolution, dry-run/confirm memory lifecycle, authenticated HTTP MCP, and mixed-currency-safe P&L. Exact test/coverage values are linked from the final immutable CI run. Demo: [PUBLIC_VIDEO_URL]
+Final release update: Archon MemoryAgent now ships server-owned tenant isolation, authenticated mutations and semantic audit, durable weighted Qwen quotas, exact invoice idempotency, explicit human conflict resolution, protected qwen-vl document dry-runs, fresh-session feedback persistence, exact one-row lifecycle evidence, authenticated HTTP MCP, and mixed-currency-safe P&L. Exact test/coverage values are linked from the final immutable CI run. Demo: [PUBLIC_VIDEO_URL]
