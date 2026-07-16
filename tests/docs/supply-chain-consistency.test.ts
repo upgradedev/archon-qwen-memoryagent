@@ -356,6 +356,39 @@ test("CHECK 4h — sealed-SBOM vulnerability gate has no suppression or substitu
   assert.match(workflow, /--by-cve --fail-on high --output table/);
   assert.ok(!/\|\|\s*true/.test(workflow));
 
+  const runtimeStart = workflow.indexOf("Exercise the constrained production runtime");
+  const runtimeEnd = workflow.indexOf("Install pinned Syft and Grype archives");
+  assert.ok(runtimeStart > 0 && runtimeStart < runtimeEnd);
+  const runtimeBlock = workflow.slice(runtimeStart, runtimeEnd);
+  assert.match(
+    runtimeBlock,
+    /assert\.deepEqual\(config\.Entrypoint, \["docker-entrypoint\.sh"\]\);/,
+  );
+  assert.ok(!runtimeBlock.includes("assert.equal(config.Entrypoint, null)"));
+  const entrypointCanaryStart = runtimeBlock.indexOf('DEFAULT_ENTRYPOINT_OUTPUT="$(');
+  const entrypointCanaryEnd = runtimeBlock.indexOf('\n          )"', entrypointCanaryStart);
+  assert.ok(entrypointCanaryStart > 0 && entrypointCanaryStart < entrypointCanaryEnd);
+  const entrypointCanary = runtimeBlock.slice(entrypointCanaryStart, entrypointCanaryEnd);
+  for (const constraint of [
+    "--network none",
+    "--read-only",
+    "--cap-drop ALL",
+    "--security-opt no-new-privileges",
+    "--pids-limit 64",
+    "--memory 256m",
+    "--cpus 1",
+    "--tmpfs /tmp:rw,noexec,nosuid,size=16m",
+  ]) {
+    assert.ok(entrypointCanary.includes(constraint), "entrypoint canary lost " + constraint);
+  }
+  assert.ok(!entrypointCanary.includes("--entrypoint"));
+  assert.match(entrypointCanary, /"\$IMAGE" node --version/);
+  assert.match(runtimeBlock, /test "\$DEFAULT_ENTRYPOINT_OUTPUT" = "v24\.18\.0"/);
+  assert.match(
+    runtimeBlock,
+    /printf '%s\\n' "\$DEFAULT_ENTRYPOINT_OUTPUT" > "\$EVIDENCE_DIR\/runtime-entrypoint\.txt"/,
+  );
+
   const scannerInvocations = workflow
     .split("\n")
     .map((line) => line.trim())
@@ -379,14 +412,26 @@ test("CHECK 4h — sealed-SBOM vulnerability gate has no suppression or substitu
   assert.match(workflow, /ignored\.length, 0/);
 
   const retainBefore = workflow.indexOf("Retain SBOM evidence before vulnerability scanning");
+  const seal = workflow.indexOf("Validate and seal the pre-scan SBOM bundle");
   const report = workflow.indexOf("Produce JSON, SARIF, and human-readable vulnerability reports");
   const gate = workflow.indexOf("Gate every high or critical finding");
+  const validateCombined = workflow.indexOf("Validate and hash the combined evidence");
+  const uploadSarif = workflow.indexOf("Upload Grype SARIF to GitHub code scanning");
   const retainFinal = workflow.indexOf("Retain SBOM, scan, database, and provenance evidence");
-  assert.ok(retainBefore > 0 && retainBefore < report && report < gate && gate < retainFinal);
+  assert.ok(
+    seal > 0 && seal < retainBefore && retainBefore < report && report < gate &&
+      gate < validateCombined && validateCombined < uploadSarif && uploadSarif < retainFinal,
+  );
+  const sealBlock = workflow.slice(seal, retainBefore);
+  assert.match(sealBlock, /runtime-entrypoint\.txt/);
   const preScanBlock = workflow.slice(retainBefore, report);
+  assert.match(preScanBlock, /runtime-entrypoint\.txt/);
   assert.match(preScanBlock, /if-no-files-found: error/);
   assert.match(preScanBlock, /retention-days: 30/);
+  const validateCombinedBlock = workflow.slice(validateCombined, uploadSarif);
+  assert.match(validateCombinedBlock, /runtime-entrypoint\.txt/);
   const finalBlock = workflow.slice(retainFinal);
+  assert.match(finalBlock, /runtime-entrypoint\.txt/);
   assert.match(finalBlock, /if: always\(\)/);
   assert.match(finalBlock, /if-no-files-found: warn/);
   assert.match(finalBlock, /retention-days: 30/);

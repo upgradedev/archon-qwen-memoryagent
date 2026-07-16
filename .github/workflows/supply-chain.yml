@@ -130,7 +130,7 @@ jobs:
           );
           assert.equal(config.WorkingDir, "/app");
           assert.equal(config.User, "node");
-          assert.equal(config.Entrypoint, null);
+          assert.deepEqual(config.Entrypoint, ["docker-entrypoint.sh"]);
           assert.deepEqual(config.Cmd, ["node", "dist/src/server.js"]);
           assert.deepEqual(config.ExposedPorts, { "9000/tcp": {} });
           for (const expected of ["NODE_ENV=production", "PORT=9000"]) {
@@ -147,6 +147,16 @@ jobs:
           assert.equal(config.Healthcheck?.StartPeriod, 15_000_000_000);
           assert.equal(config.Healthcheck?.Retries, 3);
           NODE
+          DEFAULT_ENTRYPOINT_OUTPUT="$(
+            docker run --rm --network none --read-only --cap-drop ALL \
+              --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 \
+              --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+              "$IMAGE" node --version
+          )"
+          test "$DEFAULT_ENTRYPOINT_OUTPUT" = "v24.18.0"
+          printf '%s\n' "$DEFAULT_ENTRYPOINT_OUTPUT" > "$EVIDENCE_DIR/runtime-entrypoint.txt"
+          test "$(wc -l < "$EVIDENCE_DIR/runtime-entrypoint.txt")" -eq 1
+          grep -Fx "v24.18.0" "$EVIDENCE_DIR/runtime-entrypoint.txt"
           docker run --rm --network none --read-only --cap-drop ALL \
             --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m --entrypoint /bin/sh \
@@ -359,7 +369,8 @@ jobs:
             sha256sum INPUT-LOCKS.sha256 SCANNED-SBOM.sha256 docker-version.txt \
               grype-config.effective.yaml grype-db-status.txt grype-version.txt \
               image-provenance.json memoryagent.cyclonedx.json memoryagent.spdx.json \
-              memoryagent.syft.json runtime-boundary.txt runtime-image-config.actual.json \
+              memoryagent.syft.json runtime-boundary.txt runtime-entrypoint.txt \
+              runtime-image-config.actual.json \
               syft-config.effective.yaml syft-version.txt input-locks/Dockerfile \
               input-locks/dockerignore input-locks/gitattributes input-locks/package-lock.json input-locks/syft.yaml \
               input-locks/grype.yaml > SBOM-SHA256SUMS
@@ -383,6 +394,7 @@ jobs:
             .artifacts/supply-chain/grype-db-status.txt
             .artifacts/supply-chain/docker-version.txt
             .artifacts/supply-chain/runtime-boundary.txt
+            .artifacts/supply-chain/runtime-entrypoint.txt
             .artifacts/supply-chain/runtime-image-config.actual.json
             .artifacts/supply-chain/INPUT-LOCKS.sha256
             .artifacts/supply-chain/SBOM-SHA256SUMS
@@ -474,7 +486,8 @@ jobs:
               docker-version.txt grype-config.effective.yaml grype-db-status.txt \
               grype-report.json grype-report.sarif grype-report.txt grype-version.txt \
               image-provenance.json memoryagent.cyclonedx.json memoryagent.spdx.json \
-              memoryagent.syft.json runtime-boundary.txt runtime-image-config.actual.json \
+              memoryagent.syft.json runtime-boundary.txt runtime-entrypoint.txt \
+              runtime-image-config.actual.json \
               syft-config.effective.yaml syft-version.txt vulnerability-summary.json \
               input-locks/Dockerfile input-locks/dockerignore input-locks/gitattributes input-locks/package-lock.json \
               input-locks/syft.yaml input-locks/grype.yaml > SHA256SUMS
@@ -509,6 +522,7 @@ jobs:
             .artifacts/supply-chain/grype-config.effective.yaml
             .artifacts/supply-chain/docker-version.txt
             .artifacts/supply-chain/runtime-boundary.txt
+            .artifacts/supply-chain/runtime-entrypoint.txt
             .artifacts/supply-chain/runtime-image-config.actual.json
             .artifacts/supply-chain/vulnerability-summary.json
             .artifacts/supply-chain/INPUT-LOCKS.sha256

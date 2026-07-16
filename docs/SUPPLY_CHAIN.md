@@ -19,8 +19,11 @@ The release boundary fails closed unless all of these statements hold:
    image. The Docker build uses the production `runtime` target, Linux AMD64,
    no base pull, and no build cache.
 3. The built image ID is carried as an immutable step output. The runtime
-   configuration and a no-network/read-only/capability-free static canary must
-   match the production contract before inventory.
+   configuration must match the production contract, including the exact
+   `docker-entrypoint.sh` inherited from the digest-pinned official Node image.
+   That default entrypoint is actively exercised under no-network, read-only,
+   capability-free constraints before a separate static boundary canary and
+   inventory.
 4. Official Syft v1.46.0 and Grype v0.115.0 Linux AMD64 archives and their
    extracted executables match independent SHA-256 anchors before every use.
    They are invoked by project-local path, never a mutable `PATH` lookup.
@@ -73,7 +76,7 @@ A successful inventory stage uploads `production-sbom-<commit>` for 30 days
 - the sealed scanned-SBOM hash and pre-scan `SBOM-SHA256SUMS`;
 - source/image/tool/database provenance and effective scanner policies;
 - exact snapshotted production inputs, Docker/scanner versions, image config,
-  and constrained-runtime evidence.
+  default-entrypoint output, and constrained-runtime boundary evidence.
 
 The final `production-supply-chain-<commit>` artifact additionally retains
 Grype JSON, SARIF 2.1.0, a human-readable report, a severity-only summary, and
