@@ -235,11 +235,11 @@ export function retrieveHybridMMR(
   return mmr(query.embedding, pool, k, lambda);
 }
 
-// HYBRID + CROSS-ENCODER RE-RANK: fuse hybrid to a candidate pool, then re-order
-// that pool by a cross-encoder relevance score (`scoreOf(id)`) and take top-k.
-// Recall is fixed by the hybrid pool; the re-ranker only refines ORDER, so it can
-// lift MRR/nDCG without dropping a recalled gold memory. `scoreOf` is injected —
-// a live cross-encoder in production, a cached fixture score in the benchmark.
+// HYBRID + LISTWISE RE-RANK: fuse hybrid to a candidate pool, then re-order that
+// pool by bounded Qwen relevance scores (`scoreOf(id)`) and take top-k. Reordering
+// can change any top-k metric in either direction; the pinned fixture measures
+// the observed delta. `scoreOf` is injected — live listwise Qwen scores in
+// production, cached fixture scores in the benchmark.
 export function retrieveHybridReranked(
   query: { text: string; embedding: number[] },
   corpus: Candidate[],

@@ -49,6 +49,10 @@ complete these attestations for the entrant.
 - [ ] Every image, diagram, icon and thumbnail is original or has a recorded license.
 - [ ] Music is omitted or owned/licensed for public competition and promotional use;
   a streaming-platform library track is not assumed portable.
+- [ ] For the preferred caption-led build, the final manifest confirms
+  `voiceUsed=false`, `ttsUsed=false`, `musicUsed=false`, generated digital silence,
+  and only SHA-bound human-reviewed project visuals. No external font file is copied
+  or embedded; Pillow's bundled default is rasterized into the frames.
 - [ ] Every human voice/likeness has a release covering the organizer's stated
   judging and promotional use. If synthetic speech is used, both the selected
   service/voice and any fallback path permit publication and promotional reuse.

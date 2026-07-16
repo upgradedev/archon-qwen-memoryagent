@@ -10,6 +10,7 @@
 <!-- USER: replace with YouTube URL before submit — make the Demo Video badge a link to the uploaded video -->
 
 **Final recording pack:** [`VIDEO_SCRIPT.md`](demo/VIDEO_SCRIPT.md) ·
+[`CAPTION_VIDEO_BUILD.md`](demo/CAPTION_VIDEO_BUILD.md) ·
 [`VIDEO_RECORDING_CHECKLIST.md`](demo/VIDEO_RECORDING_CHECKLIST.md) ·
 [`BUILD_RECORDING.md`](demo/BUILD_RECORDING.md) ·
 [`FINAL_MEDIA_CHECKLIST.md`](demo/FINAL_MEDIA_CHECKLIST.md). Security and private
@@ -25,7 +26,7 @@ reporting guidance lives in [`SECURITY.md`](SECURITY.md).
 
 1. **★ Read-only self-auditing memory (the innovation).** A cross-session agent accumulates facts from many separate writes — and nothing stops two of them from **contradicting**. The agent **audits its own memory** (`POST /consistency`, [`src/memory/consistency.ts`](./src/memory/consistency.ts)): it detects same-record contradictions + dangling references and **recommends which value to trust** (`{rule, ordinal confidence, rationale}` over a fixed importance → source-authority → recency ladder) — but it is a **pure function that never mutates memory**. The measured differentiator is deliberately narrow: our pinned Mem0 2.0.11 `dir()` probe found no separately named public contradiction/resolution method, and its returned memory strings contained both conflicting values; that does not rule out internal, undocumented, differently named, or newer behavior. Graphiti models temporal validity through graph updates; this project exposes an explicit, read-only recommendation surface. Measured: **5/5 developer-injected problems detected, 0 false positives** on that control, and **4/4 policy-conformance cases** (not independently validated truth). → [details](#-self-auditing-memory-the-headline) · [BENCHMARK.md](./BENCHMARK.md#head-to-head-vs-mem0-and-zep)
 
-2. **Recall measured against a common dense-only baseline.** A frozen **32-memory / 15-query synthetic financial benchmark** on real `text-embedding-v4` embeddings scores our `reranked-hybrid` retriever (dense + BM25 RRF fusion + a `qwen-plus` cross-encoder re-rank) against `naive-vector`, a common single-vector cosine ANN configuration:
+2. **Recall measured against a common dense-only baseline.** A frozen **32-memory / 15-query synthetic financial benchmark** on real `text-embedding-v4` embeddings scores our `reranked-hybrid` retriever (dense + BM25 RRF fusion + one bounded listwise `qwen-plus` re-rank call) against `naive-vector`, a common single-vector cosine ANN configuration:
 
    | Metric (frozen corpus; explicit dense condition) | naive-vector | **reranked-hybrid (ours)** |
    |---|---:|---:|
@@ -84,8 +85,8 @@ The concrete demo memories cover payroll evidence, purchase/sales invoices, vali
 | **Queryable memory** | Recall is semantic ANN search (`ORDER BY embedding <=> $q`) over an HNSW cosine index, with `kind`/`company` pre-filters. |
 | **Across sessions** | The headline e2e test (`tests/e2e/cross-session.test.ts`) proves it. Session A writes and tears down completely; a fresh session B — no shared in-process state — recalls those memories and answers from them. The only thing shared is the database. |
 | **Limited context windows** | Recall retrieves a bounded, relevant slice (`limit` is capped at 20) and narrates only from the returned, cited memories rather than replaying the whole store. |
-| **Increasingly accurate over time** | Authenticated `POST /feedback` can protect a correct memory or atomically supersede an incorrect one with a high-importance correction; later recall uses the active corrected state. This is explicit feedback, not an unmeasured claim of automatic learning. |
-| **Timely forgetting** | `POST /consolidate` and `POST /forget` provide tenant-scoped hygiene. Both require an operation id + explicit reason and preview by default; `confirm=true` is required before any mutation/deletion. Confirmed actor/reason/result provenance is persisted atomically and exact retries replay it. |
+| **Increasingly accurate over time** | Authenticated `POST /feedback` can protect a correct memory or atomically supersede an incorrect one with a high-importance correction; later recall uses the active corrected state. The release-bound evidence gate stores a Session-A correction and requires a fresh Session-B request to recall and cite it. This is explicit persisted feedback, not autonomous training or a model-weight update. |
+| **Timely forgetting** | `POST /consolidate` and `POST /forget` provide tenant-scoped hygiene. Both require an operation id + explicit reason and preview by default; `confirm=true` is required before any mutation/deletion. Confirmed actor/reason/result provenance is persisted atomically and exact retries replay it. The final live proof requires exactly one feedback-superseded candidate previewed, exactly one audited deletion, protected state unchanged, and zero run-marker residue. |
 
 ## What makes the memory strong (not just present)
 
@@ -131,14 +132,14 @@ The claim is not "we detect and they cannot." It is **"the audit recommends with
 
 Full method + honesty caveats: **[BENCHMARK.md](./BENCHMARK.md)**.
 
-### Hybrid retrieval (dense + lexical, RRF) + a cross-encoder re-ranker
+### Hybrid retrieval (dense + lexical, RRF) + a bounded listwise Qwen re-ranker
 
 Agent memories are full of exact tokens that dense embeddings blur: document numbers (`INV-2043`, `PINV-771`), euro figures, company names, period codes.
 
 Recall handles both meaning and exact tokens:
 
 1. Fuse `text-embedding-v4` cosine search with BM25 / full-text lexical search using **Reciprocal Rank Fusion (RRF)**.
-2. Refine the top of the list with a **cross-encoder re-rank stage** (`qwen-plus` scoring each query/memory pair jointly).
+2. Refine the bounded candidate list in **one listwise `qwen-plus` call** that returns a complete score map. This is the actual candidate-set prompt behavior, not a dedicated pairwise reranking architecture.
 
 ### Measured against explicit baselines — with fixture-bounded claims
 
@@ -148,8 +149,8 @@ The `naive-vector` baseline is a real and common dense-only configuration, but i
 
 Findings, stated honestly:
 
-- **Hybrid is robust on this fixture.** It does not recall worse than dense on these 15 queries (Recall@3 90.0% → 93.3%) and exceeds lexical-only here.
-- **Hybrid alone doesn't beat a strong dense embedder on top-rank** — so we added the cross-encoder re-ranker, which does.
+- **Hybrid is robust on this fixture.** Its Recall@3 and Recall@5 remain at least the dense condition on these 15 queries (Recall@3 90.0% → 93.3%) and it exceeds lexical-only here. CI gates only this disclosed fixture relationship.
+- **Hybrid alone doesn't beat the dense condition on top-rank here** — the bounded listwise Qwen re-ranker does on this same fixture.
 - **`reranked-hybrid` wins on top-rank** over dense: MRR **0.883 → 0.911**, nDCG@5 **0.903 → 0.938**, Recall@3 **90.0% → 96.7%**.
 
 Reproducible offline from committed fixtures (no key, no spend), **gated in CI**, and shipped with a **sensitivity control** — a meaning-shuffled retriever that must score near chance, proving the benchmark actually discriminates.
@@ -198,7 +199,7 @@ recall(question):
   D  = dense ANN over pgvector      (ORDER BY embedding <=> q)   ── meaning
   L  = lexical full-text / BM25     (ts_rank over content)       ── exact tokens
   pool = RRF(D, L)                  rank-fusion, superseded hidden
-  hits = rerank(qwen-plus, q, pool) cross-encoder top-rank refine (optional)
+  hits = rerank(qwen-plus, q, pool) one bounded listwise score-map call (optional)
   answer = qwen-plus(question, hits)   grounded, citing [n]
 
 consistency(scope):                 ── the agent audits its OWN memory
@@ -339,7 +340,7 @@ archon-qwen-memoryagent/
 │   ├── memory/
 │   │   ├── embeddings.ts        # QwenEmbedder (text-embedding-v4) + offline FakeEmbedder
 │   │   ├── retrieval.ts         # BM25 + cosine + RRF + MMR + hybrid + rerank retrievers (pure)
-│   │   ├── rerank.ts            # cross-encoder re-rank: LlmReranker (qwen-plus) + offline FakeReranker
+│   │   ├── rerank.ts            # bounded listwise Qwen re-rank + offline FakeReranker
 │   │   ├── consistency.ts       # SELF-AUDIT: cross-session contradiction + dangling-ref DETECT + RESOLVE (pure)
 │   │   ├── semantic-consistency.ts # SELF-AUDIT (meaning): embedding-gated + configured Qwen/offline judge — read-only
 │   │   ├── consolidation.ts     # consolidate (dedup) + forget planners (pure)
@@ -423,7 +424,7 @@ Once the backend is running, open **`http://localhost:9000/docs`** for the inter
 | `POST /demo/seed` | Public fixed payload; ingest quota | Idempotently seed the built-in payroll + field/meaning contradiction demo. It accepts no caller-controlled memory content. |
 | `POST /ingest` | Authenticated; ingest quota | `{ event }` → tenant-scoped memories for a fused payroll event. |
 | `POST /ingest/invoice` | Authenticated; ingest quota | Currency-explicit purchase/sales invoice. Exact retries are idempotent; a changed payload for the same logical invoice returns `409`. |
-| `POST /ingest/documents` | Authenticated; ingest quota | Payroll evidence pipeline over scanned-image data URLs, PDF-extracted text, or text (Extractor → Classifier → EventLinker by company/period/event_ref → Validator → P&L). Each fused event's memories are committed as one tenant-scoped atomic batch; a multi-event request is not advertised as one transaction. The aggregate JSON body is capped at 10 MiB by default (`MAX_JSON_BODY_BYTES`); decoded images and text have stricter extraction limits. |
+| `POST /ingest/documents` | Authenticated; ingest quota | Payroll evidence pipeline over scanned-image data URLs, PDF-extracted text, or text (Extractor → Classifier → EventLinker by company/period/event_ref → Validator → P&L). Default mode commits each fused event's memories as one tenant-scoped atomic batch; a multi-event request is not advertised as one transaction. With strict boolean `dryRun=true`, the same protected/provider/admission/quota path executes extraction through P&L, returns `written=0`, `memoryIds=[]`, and `extractionModels`, and performs no memory write. The aggregate JSON body is capped at 10 MiB by default (`MAX_JSON_BODY_BYTES`); decoded images and text have stricter extraction limits. |
 | `GET /pnl` | Public tenant, or credential tenant | `?company=&period=` → payroll + purchase/sales-invoice P&L. `currency_status` and `by_currency` prevent mixed-currency totals. |
 | `POST /recall` | Public tenant, or credential tenant; recall quota | Grounded, cited answer (hybrid + rerank by default) plus best-effort self-audit over recalled memories. |
 | `POST /feedback` | Authenticated; incorrect correction uses ingest quota | Protect a correct memory or atomically supersede an incorrect one with a high-importance correction. |
@@ -576,7 +577,7 @@ Because the store is pg-wire, switching between the two is a `DATABASE_URL` swap
 
 This backend's qualifying path runs on **Alibaba Cloud ECS**. Two halves of proof:
 
-**1. Runtime recording** — only after [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) turns green for the current source candidate, capture the app-specific `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` from that verified live deployment. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized sequence; never reuse another entry's recording. Keep raw console footage only in ignored `demo/private-originals/`.
+**1. Runtime proof image** — only after [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) turns green for the current source candidate, generate the app-specific canonical PNG [`demo/gallery/08-alibaba-runtime-proof.png`](./demo/gallery/08-alibaba-runtime-proof.png) from that verified live deployment. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized composite; never reuse another entry's proof. Keep raw console captures only in ignored `demo/private-originals/`.
 
 ```text
 $ aliyun ecs DescribeInstances --RegionId ap-southeast-1 --InstanceIds "['<redacted-instance-id>']"

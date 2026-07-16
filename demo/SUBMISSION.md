@@ -24,8 +24,9 @@ recording tooling only.
 ## Archon MemoryAgent — a memory that audits itself
 
 **AI agents and assistants forget the moment a session ends** — and when they *do*
-carry facts forward, they silently contradict themselves. One session records a
-figure as €18,000; a later session records €19,000 for the same record; plain vector
+carry facts forward, they silently contradict themselves. In the original synthetic
+demo, one session records `INV-5521.amount` as €8,400 and a later session records
+€8,900 for the same field; plain vector
 recall just returns whichever ranked higher and stays quiet. Anyone building agents
 that must stay consistent over time — support copilots, research assistants,
 financial-document pipelines — inherits a memory they can't trust. **Archon
@@ -58,11 +59,16 @@ reusable beyond this financial proof without claiming unmeasured production scal
   scope: proven mechanism + working live demo + a labelled offline regression set;
   its offline 90% recall/100% precision figures describe the deterministic judge.
 - **Feedback and forgetting**: authenticated feedback protects a correct memory or
-  atomically supersedes an incorrect one. Consolidation and retention endpoints are
-  tenant-scoped, preview by default, and require `confirm=true` before mutation.
-- **Strong retrieval**: hybrid dense + lexical (RRF) with a `qwen-plus` cross-encoder
-  re-rank. Reranked-hybrid beats a strong dense baseline — MRR 0.883 → 0.911,
-  Recall@3 90.0% → 96.7% — on a frozen labelled benchmark, gated in CI.
+  atomically supersedes an incorrect one. The final live gate stores a Session-A
+  correction, then requires a fresh Session-B request to recall and cite it—durable
+  state, not autonomous training or model-weight learning. Retention preview selects
+  exactly one synthetic superseded candidate before one audited deletion; protected
+  state must remain unchanged and exact-marker cleanup must reach zero.
+- **Strong retrieval**: hybrid dense + lexical (RRF) with one bounded listwise
+  `qwen-plus` re-rank call. On the frozen labelled fixture, reranked-hybrid beats
+  the explicit dense condition — MRR 0.883 → 0.911, Recall@3 90.0% → 96.7%.
+  CI separately gates fixture-bound hybrid Recall@3/@5 ≥ dense; it does not claim
+  that relationship universally.
 - **Honest positioning**: a pinned probe vs Mem0 (retrieval parity; no separately
   named contradiction/resolution method matched the disclosed `dir()` probe) with Zep cited — the differentiator
   is a portable, explainable, read-only audit plus explicit human resolution.
@@ -84,10 +90,13 @@ repository history alone is not proof of authorship, originality, or completenes
 
 ### Qwen Cloud usage
 
-`text-embedding-v4` (embeddings) · `qwen-plus` (RAG narration + cross-encoder rerank)
+`text-embedding-v4` (embeddings) · `qwen-plus` (RAG narration + bounded listwise rerank)
 · health-visible `QWEN_JUDGE_MODEL` (semantic judge; `qwen-plus` rollback baseline)
 · `qwen-vl-max` (document-ingestion vision extractor) — via the OpenAI-compatible
-DashScope endpoint.
+DashScope endpoint. The final release-bound canary sends an original synthetic
+payroll-register + bank-confirmation PNG pair through protected `dryRun`, requires
+response-reported `qwen-vl-max` and one fused event, then proves zero writes and
+zero marker residue.
 
 **Live:** https://memory.43.106.13.19.sslip.io · **Track 1 (MemoryAgent)** · Repo:
 https://github.com/upgradedev/archon-qwen-memoryagent
@@ -97,4 +106,4 @@ https://github.com/upgradedev/archon-qwen-memoryagent
 **Operator-only Alibaba Cloud proof reference (use the dedicated form field):** the DashScope OpenAI-compatible client (base URL + Qwen
 instantiation) is
 [`src/qwen/client.ts`](https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts);
-app-specific runtime proof recording: `demo/gallery/memoryagent-alibaba-runtime-proof.mp4` (to be captured from the verified live deployment during final media production; raw console footage stays ignored under `demo/private-originals/`).
+app-specific runtime proof image: `demo/gallery/10-alibaba-runtime-proof.png` (generated only from exact-deploy controller evidence plus sanitized Alibaba console, live readiness, and the response-reported qwen-vl-max dry-run canary; raw captures stay ignored under `demo/private-originals/`).

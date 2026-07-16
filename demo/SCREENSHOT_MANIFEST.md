@@ -6,18 +6,23 @@ Capture only from the verified release described in
 `demo/gallery/`. Do not fabricate a result, hand-edit a response value, or combine
 screens from different releases into one claimed live journey.
 
+Every invoice, payroll, vendor, and contradiction record visible in this gallery is
+original synthetic demo data. Retain that label wherever a business record is the
+focal proof.
+
 ## Primary Devpost gallery — upload in this order
 
 | Order | Canonical file | Required visible proof | English gallery caption |
 |---:|---|---|---|
-| 1 | `demo/gallery/01-grounded-cross-session-recall.png` | Live hostname, grounded answer, numbered memory citations | **A fresh session recalls a bounded slice of durable pgvector memory and grounds the Qwen answer in numbered evidence.** |
-| 2 | `demo/gallery/02-read-only-field-self-audit.png` | `INV-5521`, `8400`, `8900`, recency recommendation, no secret field value | **The read-only audit keeps both cross-session values visible and recommends a policy winner without rewriting history.** |
-| 3 | `demo/gallery/03-qwen-semantic-self-audit.png` | “always pays on time” vs “chronically late”, configured model/completion provenance; token fully absent/cropped | **Qwen catches a meaning-level contradiction with no shared numeric field; the result remains a recommendation, not an automatic edit.** |
-| 4 | `demo/gallery/04-human-resolution-control.png` | Accept/Override/Defer or equivalent response, provenance preserved | **A separate authenticated human decision can accept, override or defer the recommendation through one atomic, idempotent action.** |
-| 5 | `demo/gallery/05-safe-memory-lifecycle.png` | Preview plus confirmed consolidation/forgetting result, reason and tenant-safe status; no token | **Memory hygiene is explicit: preview first, then authenticated confirmation and reason, with an auditable state transition.** |
-| 6 | `demo/final-media/judge-architecture.jpg` | Canonical readable 16:9 architecture | **Qwen embeddings and narration, hybrid pgvector recall, read-only self-audit and human control are separated by explicit trust boundaries.** |
+| 1 | `demo/gallery/01-grounded-cross-session-recall.png` | Live hostname, grounded answer, numbered memory citations | **On original synthetic demo data, a fresh session recalls a bounded slice of durable pgvector memory and grounds the Qwen answer in numbered evidence.** |
+| 2 | `demo/gallery/02-session-feedback-persistence.png` | Session-A correction and separately authenticated fresh Session-B cited application | **Explicit reviewer feedback persists as a cited memory that a fresh session applies; this is stored state, not autonomous training or a model-weight update.** |
+| 3 | `demo/gallery/03-read-only-field-self-audit.png` | `INV-5521`, `8400`, `8900`, recency recommendation, no secret field value | **On original synthetic demo data, the read-only audit keeps both cross-session values visible and recommends a policy winner without rewriting history.** |
+| 4 | `demo/gallery/04-qwen-semantic-self-audit.png` | “always pays on time” vs “chronically late”, configured model/completion provenance; token fully absent/cropped | **On original synthetic vendor claims, Qwen catches a meaning-level contradiction with no shared numeric field; the result remains a recommendation, not an automatic edit.** |
+| 5 | `demo/gallery/05-human-resolution-control.png` | Live Defer result only; zero API call/write; Accept/Override visibly labelled unexercised | **The live frame proves Defer with zero API call and zero mutation. Accept/Override are separately tested protected actions and are not claimed by this capture.** |
+| 6 | `demo/gallery/06-safe-memory-lifecycle.png` | Preview exactly one synthetic candidate, confirm exactly one deletion, protected state unchanged during that operation, post-proof cleanup leaves zero prefix residue | **Lifecycle control is concrete: preview one feedback-superseded retention candidate, confirm one audited deletion, preserve protected memory during that operation, then perform post-proof exact-marker cleanup.** |
+| 7 | `demo/gallery/07-qwen-memoryagent-architecture.png` | No-crop 3:2 wrapper of the canonical architecture | **Qwen embeddings and narration, hybrid pgvector recall, read-only self-audit and human control are separated by explicit trust boundaries.** |
 
-If the gallery has fewer slots, keep **1, 2, 3 and 6** in that order. The thumbnail
+If the gallery has fewer slots, keep **1, 2, 3 and 7** in that order. The thumbnail
 is a separate 3:2 asset and should not consume a gallery slot.
 
 ## Secondary proof captures
@@ -27,16 +32,21 @@ the gallery only if they improve rather than crowd the primary sequence.
 
 | Canonical file | Required visible proof | Caption |
 |---|---|---|
-| `demo/gallery/06-live-health-readiness.png` | `/health` and `/ready`, real model ids, database/Qwen/auth ready; never imply these endpoints prove a Git SHA | **Independent live probes show the real Qwen model configuration and database/auth readiness.** |
-| `demo/gallery/07-alibaba-runtime-proof.png` | Sanitized MemoryAgent ECS/container evidence and live hostname; no account, instance, IP/security-group or credential details | **The qualifying live path runs on Alibaba Cloud ECS with a self-hosted PostgreSQL/pgvector container and real Qwen.** |
-| `demo/gallery/08-public-repository-license.png` | Repository landing page, public status, MIT detection, current main | **Public MIT-licensed source, deployment instructions and reproducible evidence are available for judging.** |
+| `demo/gallery/08-qwen-vl-document-canary.png` | Original synthetic two-PNG evidence pair, reported `qwen-vl-max`, one fused event, zero writes, unchanged reviewer count, zero marker residue | **A bounded protected dry-run proves the real qwen-vl-max document path while persisting no canary data.** |
+| `demo/gallery/09-live-health-readiness.png` | `/health` and `/ready`, real model ids, database/Qwen/auth ready; never imply these endpoints prove a Git SHA | **Independent live probes show the real Qwen model configuration and database/auth readiness.** |
+| `demo/gallery/10-alibaba-runtime-proof.png` | Sanitized MemoryAgent ECS/container evidence and live hostname; no account, instance, IP/security-group or credential details | **The qualifying live path runs on Alibaba Cloud ECS with a self-hosted PostgreSQL/pgvector container and real Qwen.** |
+| `demo/gallery/11-public-repository-license.png` | Repository landing page, public status, MIT detection, current main | **Public MIT-licensed source, deployment instructions and reproducible evidence are available for judging.** |
 
 ## Capture and sanitization contract
 
-- Use a clean browser profile at 1440×900 or larger, 100% zoom, English UI, no
+- Use a clean browser profile at 1920×1080 or larger, 100% zoom, English UI, no
   personal tabs, bookmarks bar, avatar, extensions, notifications or autofill.
-- Capture at least 1600×900 PNG. Preserve enough browser chrome to prove the live
-  HTTPS hostname when the caption calls a frame live.
+- Raw browser and video-proof captures are 1920×1080. Canonical Devpost finals are
+  exactly 1500×1000 (3:2), generated by no-crop, center-safe containment rather
+  than cutting any model, caveat, hostname or footer text. The deterministic
+  mapping is documented in [`MEDIA_CAPTURE_RUNBOOK.md`](./MEDIA_CAPTURE_RUNBOOK.md).
+- Preserve a visible, evidence-derived live HTTPS hostname band when the caption
+  calls a frame live. Do not imitate browser chrome or hand-edit a response value.
 - Never show `.env`, token values, Authorization headers, request headers, shell
   history, email, cloud ids, private IPs, real customer/financial data or browser
   profile metadata.
@@ -48,5 +58,8 @@ the gallery only if they improve rather than crowd the primary sequence.
   [`docs/CLAIM_EVIDENCE_MATRIX.md`](../docs/CLAIM_EVIDENCE_MATRIX.md).
 - View every final at 100% and at a small gallery-card size; critical text must be
   readable in both.
+- Keep [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg)
+  as the canonical 16:9 architecture and video source. Upload the generated 3:2
+  wrapper in row 7 to Devpost so the diagram is never cropped by a gallery card.
 - Before staging, run `git status --ignored --short demo/` and
   `git ls-files demo/private-originals/`; the second command must print nothing.

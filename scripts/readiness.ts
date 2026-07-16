@@ -222,7 +222,7 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
     {
       id: "T4-rerank",
       criterion: "Technical",
-      title: "Cross-encoder re-rank stage re-orders the candidate pool",
+      title: "Bounded listwise Qwen re-rank stage re-orders the candidate pool",
       weight: 7.5,
       cls: "automatable",
       async run() {
@@ -368,11 +368,11 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
       async run() {
         const checklist = readText("demo/FINAL_MEDIA_CHECKLIST.md");
         const review = readText("demo/JUDGE_REVIEW.md");
-        const historicalTranscript = readText("demo/video/final/docs/screencast_transcript.txt");
+        const historicalTranscript = readText("demo/archive/pre-hardening-capture-transcript.txt");
         const canonicalDir = existsSync(join(ROOT, "demo/final-media"));
         const durationGate = /strictly under 175 seconds/i.test(checklist);
         const visibilityGate = /Public visibility with no login or access request/i.test(checklist);
-        const rightsGate = /voice-rights attestation|publication rights/i.test(checklist);
+        const rightsGate = /voice[- ]rights attestations?|publication[- ]rights/i.test(checklist);
         const historicalBlocked = /HISTORICAL PRE-HARDENING.*DO NOT RECORD OR PUBLISH/i.test(historicalTranscript);
         const localNotPass = /local MP4 is not a pass/i.test(review);
         return {
@@ -480,7 +480,7 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
         const rel = "demo/final-media/memoryagent-demo.mp4";
         const path = join(ROOT, rel);
         if (!existsSync(path)) {
-          return { ok: false, userGated: true, detail: `pending new authenticated capture at ${rel}; historical demo/video/final artifact is excluded` };
+          return { ok: false, userGated: true, detail: `pending new authenticated capture at ${rel}; archived pre-hardening transcript is excluded` };
         }
         const bytes = statSync(path).size;
         return {

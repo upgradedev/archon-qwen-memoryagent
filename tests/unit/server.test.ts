@@ -201,6 +201,23 @@ test("POST /ingest/documents validates an empty array and enforces an aggregate 
   }
 });
 
+test("POST /ingest/documents dryRun is a strict boolean contract", async () => {
+  const res = await app.inject({
+    method: "POST",
+    url: "/ingest/documents",
+    payload: {
+      dryRun: "true",
+      documents: [{
+        doc_id: "dry-run-contract",
+        filename: "register.txt",
+        source_kind: "text",
+        content: '{"doc_type":"payroll_register","company":"Contract Co","period":"2026-07","gross_pay_total":1000,"employer_cost_total":1200}',
+      }],
+    },
+  });
+  assert.equal(res.statusCode, 400, "a string must never be coerced into the non-persisting mode");
+});
+
 test("global HTTP limiter bounds database/auth route abuse and emits retry metadata", async () => {
   assert.equal(configuredHttpRateLimitMax(undefined), DEFAULT_HTTP_RATE_LIMIT_MAX);
   assert.throws(() => configuredHttpRateLimitMax("0"), /1 to 100000/);

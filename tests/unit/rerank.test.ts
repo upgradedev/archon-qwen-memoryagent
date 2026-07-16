@@ -1,4 +1,4 @@
-// Unit tests for the cross-encoder re-rank stage — no DB, no key. These pin the
+// Unit tests for the bounded listwise Qwen re-rank stage — no DB, no key. These pin the
 // re-rank plumbing (pool → scores → stable re-order) and the LLM reranker's
 // parsing, both driven by injected fakes so they run fully offline.
 

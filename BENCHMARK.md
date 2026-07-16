@@ -31,10 +31,10 @@ dense on MRR (0.883 → 0.839) and nDCG@5 (0.903 → 0.884) — a strong 1024-di
 embedder already ranks the right memory first, so rank-fusing a weaker lexical
 list only jostles it down. **The committed listwise re-rank result addresses
 that on this corpus:**
-reading each (query, memory) pair jointly, it lifts **MRR 0.883 → 0.911 (+0.028)**,
+reading the query and bounded candidate list together, it lifts **MRR 0.883 → 0.911 (+0.028)**,
 **nDCG@5 0.903 → 0.938 (+0.035)** and **Recall@3 90.0% → 96.7%** over the dense
 baseline — a genuine top-rank win on the rebalanced corpus (see
-[The cross-encoder re-ranker](#the-cross-encoder-re-ranker)).
+[The bounded listwise Qwen re-ranker](#the-bounded-listwise-qwen-re-ranker)).
 
 ## What the explicit dense baseline represents
 
@@ -82,19 +82,18 @@ rebalanced corpus showed dense's MRR *rise* (0.813 → 0.883), not fall. Rather
 than tune the corpus back toward duplicates to recover the number, we report the
 honest result: **on a clean, diverse corpus with a modern embedder, hybrid *alone*
 gives recall robustness, not a top-rank win.** The genuine top-rank win needs a
-different mechanism — a **cross-encoder re-ranker** — which we then built and
+different mechanism — a **bounded listwise Qwen re-ranker** — which we then built and
 measured (next section). It is not future work anymore; it is a real, reproducible
 number over the same embeddings.
 
-## The cross-encoder re-ranker
+## The bounded listwise Qwen re-ranker
 
-Dense and hybrid rank a memory by a similarity computed *independently* for the
-query and each memory (a bi-encoder). A **cross-encoder** instead reads the
-`(query, memory)` pair *together* and scores their relevance jointly — strictly
-more expressive, and the standard way to squeeze extra top-rank quality out of a
-retrieval stack. We add it as a **re-rank stage over the hybrid candidate pool**
-(`retrieveHybridReranked`): hybrid fixes recall, the re-ranker only re-orders the
-top ~10, so it can lift MRR/nDCG **without dropping a recalled gold memory**.
+Dense and hybrid establish a bounded candidate pool. The shipped re-ranker then
+sends the query and that complete candidate list to `qwen-plus` in **one prompt**
+and requires one score for every candidate. This is a listwise LLM scoring step,
+not a dedicated pairwise reranking architecture. `retrieveHybridReranked` re-orders
+the pool and selects top-k; that can move a relevant item up or down, so every
+quality statement below is tied to this committed labelled fixture.
 
 Measured on the same real embeddings, `reranked-hybrid` **beats the dense
 baseline on every metric**: Recall@3 90.0% → **96.7%**, MRR 0.883 → **0.911**
@@ -107,9 +106,9 @@ real mechanism on the diverse corpus, not by reverting to a duplicate-heavy one.
 
 - **Provider substitution & listwise efficiency.** The intended model was Alibaba's dedicated
   `gte-rerank`, but that service returned `AccessDenied` on the hackathon account
-  (rerank not activated). So the shipped `Reranker` is an **LLM cross-encoder
-  using `qwen-plus`** — the same Model Studio chat model the narrator uses, which
-  *is* accessible. Crucially, the implementation is **listwise** rather than pairwise:
+  (rerank not activated). So the shipped `Reranker` is a **bounded listwise LLM
+  scorer using `qwen-plus`** — the same Model Studio chat model the narrator uses,
+  which *is* accessible. It is presented precisely as the listwise prompt it uses:
   `LlmReranker` (`src/memory/rerank.ts`) packs the entire candidate pool (top-10) into
   a **single, unified prompt** and scores them listwise. This avoids the cost/latency
   bottleneck of N pairwise completions, executing in exactly **one** API call. The seam
@@ -120,7 +119,7 @@ real mechanism on the diverse corpus, not by reverting to a duplicate-heavy one.
   scores to `bench/fixtures/rerank.json`. `npm run bench` and CI **replay** those
   scores with **no key and no spend**, so the +0.028 MRR is reproducible offline,
   exactly like the embedding fixture. Re-run only if the dataset changes.
-- **We do NOT gate on `re-rank > dense`.** A cross-encoder win over a strong
+- **We do NOT gate on `re-rank > dense`.** A listwise reranker win over a strong
   embedder is plausible but corpus-dependent; a hard CI gate on it would be
   brittle. The benchmark *reports* the delta every run; the enforced gates stay on
   the robust facts (regression guard + fusion value + discrimination).
@@ -190,8 +189,9 @@ qualitative "why memory at all" contrast, not a tuned number.
 CI runs `npm run bench -- --gate` on every push. The gate is aligned to what is
 **true**, not to a number we wish were true:
 
-1. **Regression guard** — `hybrid ≥ naive-vector` on Recall@3 and Recall@5.
-   Hybrid must never recall worse than pure dense.
+1. **Fixture regression guard** — `hybrid ≥ naive-vector` on Recall@3 and
+   Recall@5 **for this committed labelled corpus**. This prevents a regression in
+   the disclosed evidence; it is not a universal hybrid-versus-dense guarantee.
 2. **Fusion value** — `hybrid > lexical-bm25` on MRR and nDCG@5. The dense half
    must genuinely add ranking signal over sparse-only.
 
@@ -202,7 +202,7 @@ CI runs `npm run bench -- --gate` on every push. The gate is aligned to what is
 We deliberately **retired** the old `hybrid > naive on MRR/nDCG` gate: that
 top-rank win was a near-duplicate-corpus artifact and does not survive a strong
 embedder (above). We also deliberately **do not** gate on `reranked-hybrid > dense`
-even though it currently holds — a cross-encoder win is corpus-dependent, so we
+even though it currently holds — a listwise reranker win is corpus-dependent, so we
 report the delta every run rather than freezing it into a brittle gate.
 
 ## Reproduce
@@ -216,7 +216,7 @@ npm run bench:consistency -- --gate   # self-auditing memory: detection + 0 fals
 npm run bench:resolution -- --gate    # declared-policy conformance + structural invariants
 # optional, need DASHSCOPE_API_KEY, rebuild the fixtures (one-time ~cents each):
 npm run bench:embed      # re-embed the corpus/queries (text-embedding-v4)
-npm run bench:rerank     # re-score the cross-encoder re-rank (qwen-plus)
+npm run bench:rerank     # re-score the bounded listwise re-rank (qwen-plus)
 npm run bench:answers    # re-narrate the grounded answers (qwen-plus)
 # optional versioned external probe (needs `pip install "mem0ai==2.0.11" qdrant-client` + a key):
 npm run bench:export
@@ -327,7 +327,7 @@ override.
 
 | Capability | Mem0 (OSS) | Zep / Graphiti | **This entry** |
 |---|---|---|---|
-| Cross-session retrieval | dense (+ newer multi-signal) | graph + semantic/BM25 | dense + BM25 **RRF** + cross-encoder re-rank |
+| Cross-session retrieval | dense (+ newer multi-signal) | graph + semantic/BM25 | dense + BM25 **RRF** + bounded listwise Qwen re-rank |
 | Detects same-record contradictions | write-time LLM operations; no separately named method matched the pinned `dir()` probe | at write time (LLM, graph edges) | **on demand, read-only** (`POST /consistency`) |
 | Resolution output | not evaluated beyond the narrow public-name/search probe | temporal: newer edge wins | **recommendation** `{rule, confidence, rationale}` (importance→authority→recency) |
 | Mutation semantics | write-time LLM memory operations were observed in the pinned/configured probe | closes temporal validity windows | audit is read-only; a separate authenticated human decision endpoint can atomically apply a selected existing value |

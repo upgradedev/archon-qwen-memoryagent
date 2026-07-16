@@ -26,11 +26,11 @@ August 11, 2026 at 2:00 PM PDT.
 - [ ] Protected semantic audit works with the reviewer token.
 - [ ] Browser console is clean and the final repository changes are pushed to `main`.
 - [ ] [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-      `aee7897d4d436501fc9b0dc1ed28e3757131f559` as exact-deployed and
+      `<FINAL_RUNTIME_SHA>` (replaced with the real 40-character SHA) as exact-deployed and
       live-verified. **At authoring time this is pending; do not check the box from
       `/health` or `/ready` alone.**
-- [ ] `git merge-base --is-ancestor aee7897d4d436501fc9b0dc1ed28e3757131f559 origin/main`
-      passes, then `git diff --name-only aee7897d4d436501fc9b0dc1ed28e3757131f559..origin/main`
+- [ ] `git merge-base --is-ancestor <FINAL_RUNTIME_SHA> origin/main` passes after
+      placeholder replacement, then `git diff --name-only <FINAL_RUNTIME_SHA>..origin/main`
       contains only the post-candidate submission-pack allowlist recorded in
       [`DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). Any new runtime-affecting path
       requires review and redeployment.
@@ -45,8 +45,11 @@ Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use 
 
 Follow the canonical [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md), run the operational
 [`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md), and use
-[`BUILD_RECORDING.md`](./BUILD_RECORDING.md) for the authenticated workflow and
-artifact-review procedure.
+[`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) for the preferred no-TTS,
+caption-led final; [`BUILD_RECORDING.md`](./BUILD_RECORDING.md) retains the optional
+authenticated source-footage procedure. After final mux/inspection, use the paste-ready
+[`VIDEO_PUBLICATION_PACKET.md`](./VIDEO_PUBLICATION_PACKET.md); it prepares upload
+metadata but does not authorize publication.
 
 - [ ] Use only owned or properly licensed music, images, logos, fonts, and footage; include no copyrighted third-party asset without permission, and use competition marks only as the rules permit.
 
@@ -54,43 +57,56 @@ artifact-review procedure.
 
 | Time | Visual | Narration point |
 |---:|---|---|
-| 0:00–0:14 | Title, live URL, Track 1 | Conflict stakes and one-line product answer. |
-| 0:14–0:29 | Sanitized exact-runtime-SHA release card, `/health`, `/ready` | Commit provenance is separate from endpoint/model readiness. Never show environment variables. |
-| 0:29–0:53 | `demo/final-media/judge-architecture.jpg` | Trust boundary, Qwen, pgvector, hybrid cited recall, read-only audit/human resolution, and portable REST/MCP/pg-wire seams. |
-| 0:53–1:19 | Session A write/disconnect, fresh Session B cited recall | `€15,800` true cost versus `€10,000` bank outflow; dense score is exposed only for this human-readable proof while product default remains hybrid. |
-| 1:19–1:40 | Two writes plus field self-audit | `€18,000` versus `€19,000`, provenance, recency recommendation, and no silent mutation. |
-| 1:40–1:58 | Cropped authenticated semantic result plus four-tool MCP card | “Pays on time” versus “chronically late”; hide the credential/request header and distinguish authenticated HTTP from trusted-local stdio. |
-| 1:58–2:10 | Authenticated lifecycle preview followed by confirmed result | Dry-run first, explicit reason + confirmation, tenant scope, and auditable transition; no surprise deletion. |
-| 2:10–2:35 | One prepared evidence card | 5/5 field issues with 0 FP; 4/4 policy conformance; deterministic semantic 90% recall/100% precision/0 FP; MRR 0.883→0.911 and Recall@3 90.0%→96.7%. Keep fixture labels/caveats visible. |
-| 2:35–2:49 | Sanitized MemoryAgent-only Alibaba proof, then repo/MIT end card | Active ECS + self-hosted pgvector topology, public TLS URL, real Qwen model ids, and one-line portable-product close. |
+| 0:00–0:13 | Title, live URL, Track 1 | Conflict stakes and one-line product answer. |
+| 0:13–0:32 | Sanitized exact-runtime-SHA release card, `/health`, `/ready`, qwen-vl canary | Commit provenance stays separate from readiness; original synthetic two-PNG dry-run reports `qwen-vl-max`, one fused event, zero writes and zero residue. |
+| 0:32–0:51 | `demo/final-media/judge-architecture.jpg` | Trust boundary, Qwen, pgvector, bounded-listwise reranked hybrid recall, read-only audit/human resolution, and portable REST/MCP/pg-wire seams. |
+| 0:51–1:13 | Session A write/disconnect, fresh Session B cited recall | `€15,800` true cost versus `€10,000` bank outflow; dense score is exposed only for this human-readable proof while product default remains hybrid. |
+| 1:13–1:35 | Original synthetic `INV-5521`, field self-audit, human-control frame | `€8,400` versus `€8,900`, recency recommendation, no silent mutation; live Defer only with zero API/write and Accept/Override unexercised. |
+| 1:35–1:53 | Feedback-persistence proof | Session-A stored correction and separately authenticated fresh Session-B cited application; persisted state, not weight learning. |
+| 1:53–2:10 | Cropped authenticated semantic result plus four-tool MCP card | “Pays on time” versus “chronically late”; hide the credential/request header and distinguish authenticated HTTP from trusted-local stdio. |
+| 2:10–2:22 | Authenticated one-row lifecycle preview and confirmation | Preview one feedback-superseded candidate, delete one with audit, protected state unchanged, zero marker residue. |
+| 2:22–2:42 | One prepared evidence card | 5/5 field issues with 0 FP; 4/4 policy conformance; deterministic semantic 90% recall/100% precision/0 FP; MRR 0.883→0.911 and Recall@3 90.0%→96.7%. Keep fixture labels/caveats visible. |
+| 2:42–2:52 | Sanitized MemoryAgent-only Alibaba proof, then repo/MIT end card | Active ECS + self-hosted pgvector topology, public TLS URL, real Qwen model ids, and one-line portable-product close. |
 
 ### Video quality gate
 
 - [ ] Final file is strictly under 175 seconds and 1080p or better.
-- [ ] Set the workflow's separate ElevenLabs and edge-tts publication rights
-      attestations only for the paths independently authorized for public competition
-      use; otherwise do not run the synthesizer and use an owned human recording.
+- [ ] Prefer the caption-led path: no voice, no TTS, no third-party music, generated
+      digital silence, burned English captions, and a green final build manifest. If
+      narrated source footage is used, set the workflow's separate ElevenLabs and
+      edge-tts publication-rights attestations only for independently authorized
+      paths; otherwise do not run the synthesizer.
 - [ ] Text is readable at normal YouTube playback size.
-- [ ] Captions are enabled and names/model ids are spelled correctly.
+- [ ] Burned captions and the uploaded exact SRT are enabled; names/model ids are
+      spelled correctly and the ten windows match the measured final.
 - [ ] No API key, reviewer token, Authorization header, shell history secret, email, or cloud credential is visible in any frame, thumbnail, caption, or description. Clear the Judge token field before any beauty shot.
 - [ ] Claims match [`../docs/CLAIM_EVIDENCE_MATRIX.md`](../docs/CLAIM_EVIDENCE_MATRIX.md).
 - [ ] The description includes live URL, public repo, Track 1, and architecture/code-proof links.
-- [ ] Test the public URL in an incognito window with audio enabled.
+- [ ] Test the public URL in an incognito window with audio enabled. For the preferred
+      build, confirm the generated-silence track remains silent and captions are on.
 
 **Public video URL:** `____________________________________________`
 
 ## 2. Screenshot set
 
-Capture clean 16:9 or high-resolution browser images; hide bookmarks, personal tabs, tokens, and terminal history.
-Use the canonical filenames, upload order and ready-to-paste English captions in
-[`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
+Run the fail-closed [`MEDIA_CAPTURE_RUNBOOK.md`](./MEDIA_CAPTURE_RUNBOOK.md).
+Canonical Devpost images are clean 1500×1000 (3:2); each maps deterministically to
+a no-crop 1920×1080 proof frame for video. Hide bookmarks, personal tabs, tokens,
+and terminal history. Use the canonical filenames, upload order and ready-to-paste
+English captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
 
 - [ ] Hero: Explorer loaded at the live HTTPS URL with Track 1/product name visible.
 - [ ] Grounded recall: answer plus numbered citations in the same frame.
+- [ ] Feedback persistence: Session-A stored correction plus fresh Session-B cited application; label persistence, not weight learning.
 - [ ] Field self-audit: `INV-5521`, both values, and the recency recommendation visible.
 - [ ] Semantic self-audit: meaning-level pair and read-only resolution visible; clear/crop out the Judge token field and all auth details.
-- [ ] Feedback/lifecycle: correction result or dry-run preview with `confirm` semantics visible.
-- [ ] Architecture: use the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg), not a screenshot of raw Mermaid. Keep [`../docs/architecture.png`](../docs/architecture.png) only as the dense technical appendix.
+- [ ] Qwen-VL canary: original synthetic payroll-register + bank-confirmation PNG pair, response-reported `qwen-vl-max`, one fused event, zero writes, unchanged count and exact-prefix absence.
+- [ ] Lifecycle: exactly one synthetic candidate previewed and one deleted; protected seed/correction unchanged and cleanup residue zero.
+- [ ] Architecture: use the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg)
+      for video/custom architecture upload; upload the generated 3:2
+      [`gallery/07-qwen-memoryagent-architecture.png`](./gallery/07-qwen-memoryagent-architecture.png)
+      to the Devpost gallery, not a screenshot of raw Mermaid. Keep
+      [`../docs/architecture.png`](../docs/architecture.png) only as the dense technical appendix.
 - [ ] Live proof: `/ready` and `/health` showing ready + real Qwen model ids.
 - [ ] Alibaba proof: ECS/container service and live endpoint in one safe frame; redact account IDs/IP metadata not needed for proof.
 - [ ] Repository proof: public repo landing page with latest commit and GitHub's MIT
@@ -98,9 +114,17 @@ Use the canonical filenames, upload order and ready-to-paste English captions in
 
 Store sensitive originals only in the ignored repo-local folder `demo/private-originals/` so every agent shares one project boundary without risking a commit. Redact there, then add only sanitized final images under `demo/gallery/`. Before staging, run `git status --ignored --short demo/` and verify no private original is tracked.
 
+- [ ] `demo/gallery/CAPTURE_REVIEW.json` is `passed`, records the exact runtime SHA,
+      measured SRT timing source, current model ids, vision/feedback/lifecycle
+      gates and SHA-256 for every final.
+- [ ] [`final-media/youtube-thumbnail.png`](./final-media/youtube-thumbnail.png) is
+      exactly 1280×720 and [`final-media/memoryagent-demo.en.srt`](./final-media/memoryagent-demo.en.srt)
+      is regenerated from final measured windows, not the canonical fallback.
+
 ## 3. Public posts
 
-- [ ] Publish the technical article from [`BLOG.md`](./BLOG.md); replace relative image links with the hosted architecture image and keep the Qwen Cloud build journey explicit, as required for bonus eligibility.
+- [ ] Publish the technical article from [`BLOG.md`](./BLOG.md); remove its publisher-only HTML checklist, resolve only public video/Devpost placeholders, and keep its absolute architecture image URL and Qwen Cloud build journey intact.
+- [ ] Open the published article, architecture image, live CTA, repository CTA, and optional video/Devpost links in a signed-out/private browser; require every page to load without a login or access request.
 - [ ] Publish at least one social post from [`POST_DRAFTS.md`](./POST_DRAFTS.md).
 - [ ] Confirm each post is public in an incognito window.
 - [ ] Add the public blog/social URL to the Devpost submission for the optional bonus.

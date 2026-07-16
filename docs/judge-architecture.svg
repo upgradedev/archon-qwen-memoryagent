@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
   <title id="title">Archon MemoryAgent judge architecture</title>
-  <desc id="desc">Tenant-scoped evidence is admitted through strict deterministic boundaries, embedded with Qwen text-embedding-v4, and persisted with audited provenance in pgvector. Hybrid recall and qwen-plus reranking feed a citation-validated Qwen answer. A separate read-only self-audit uses a configured Qwen semantic judge to detect field and meaning-level contradictions; an authenticated human accepts, overrides, or defers a recommendation without silently rewriting history.</desc>
+  <desc id="desc">Tenant-scoped evidence is admitted through strict deterministic boundaries, embedded with Qwen text-embedding-v4, and persisted with audited provenance in pgvector. Hybrid recall and one bounded listwise qwen-plus rerank feed a citation-validated Qwen answer. A separate read-only self-audit uses a configured Qwen semantic judge to detect field and meaning-level contradictions; an authenticated human accepts, overrides, or defers a recommendation without silently rewriting history.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop stop-color="#090b14"/>
@@ -81,7 +81,7 @@
   <text x="96" y="467" class="title">Meaning + exact language</text>
   <text x="96" y="501" class="mono">cosine + PostgreSQL FTS → RRF</text>
   <text x="96" y="534" class="body">tenant / company / kind filters</text>
-  <text x="96" y="563" class="small">qwen-plus cross-encoder rerank</text>
+  <text x="96" y="563" class="small">bounded listwise qwen-plus rerank</text>
 
   <rect x="482" y="390" width="396" height="205" rx="20" fill="#10263a" stroke="#0ea5e9" stroke-width="2.5"/>
   <text x="510" y="426" class="cap" style="fill:#7dd3fc">GROUNDED ANSWER</text>

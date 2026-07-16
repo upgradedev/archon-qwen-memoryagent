@@ -41,11 +41,56 @@ after(async () => {
   await closePool();
 });
 
+test("POST /ingest/documents dryRun executes the full pipeline with zero real-DB memory rows", { skip: !HAS_DB }, async () => {
+  const company = "DryRun ByteCraft";
+  const documents = DOCS.map((document) => ({
+    ...document,
+    doc_id: `dry-${document.doc_id}`,
+    company,
+    event_ref: "DRY-RUN-2026-05",
+  }));
+  const before = await app.inject({
+    method: "GET",
+    url: `/memory/list?company=${encodeURIComponent(company)}&limit=100`,
+  });
+  assert.equal(before.statusCode, 200);
+  assert.equal(before.json().count, 0);
+
+  const res = await app.inject({
+    method: "POST",
+    url: "/ingest/documents",
+    payload: { documents, dryRun: true },
+  });
+  assert.equal(res.statusCode, 200);
+  const body = res.json();
+  assert.equal(body.events, 1);
+  assert.equal(body.dryRun, true);
+  assert.equal(body.written, 0);
+  assert.deepEqual(body.memoryIds, []);
+  assert.deepEqual(
+    [...body.extractionModels].sort(),
+    ["fake-text-extractor", "fake-vision-extractor"],
+  );
+  assert.equal(body.results[0].event.employer_cost_total, 8600);
+
+  const after = await app.inject({
+    method: "GET",
+    url: `/memory/list?company=${encodeURIComponent(company)}&limit=100`,
+  });
+  assert.equal(after.statusCode, 200);
+  assert.equal(after.json().count, 0, "dryRun must not persist even one real PostgreSQL row");
+});
+
 test("POST /ingest/documents fuses the triplet and feeds memory", { skip: !HAS_DB }, async () => {
   const res = await app.inject({ method: "POST", url: "/ingest/documents", payload: { documents: DOCS } });
   assert.equal(res.statusCode, 200);
   const body = res.json();
   assert.equal(body.events, 1);
+  assert.equal(body.dryRun, false);
+  assert.deepEqual(
+    [...body.extractionModels].sort(),
+    ["fake-text-extractor", "fake-vision-extractor"],
+  );
   assert.ok(body.written > 0);
   assert.ok(Array.isArray(body.memoryIds) && body.memoryIds.length === body.written);
   // The fused event carries the accurate employer cost + off-bank cost gap.

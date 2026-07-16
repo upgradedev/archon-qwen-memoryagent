@@ -21,7 +21,7 @@ export function loadFixture(): EmbeddingFixture | null {
   return JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as EmbeddingFixture;
 }
 
-// Cached cross-encoder re-rank scores: query id → { memory id → relevance }.
+// Cached bounded listwise Qwen re-rank scores: query id → { memory id → relevance }.
 // Built once by `npm run bench:rerank` (real qwen-plus), replayed offline in CI.
 export interface RerankFixture {
   model: string;

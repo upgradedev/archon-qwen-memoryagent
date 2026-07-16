@@ -11,10 +11,10 @@ video-specific; the screenshots, posts, and Devpost fields remain in
       hosted on YouTube, Vimeo, or Youku.
 - [ ] Confirm `origin/main` is the intended submission source and
       [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-      `aee7897d4d436501fc9b0dc1ed28e3757131f559` as exact-deployed and
+      `<FINAL_RUNTIME_SHA>` (replaced with the real 40-character SHA) as exact-deployed and
       live-verified. Its current **REDEPLOY REQUIRED** state is a hard stop.
-- [ ] Confirm `aee7897d4d436501fc9b0dc1ed28e3757131f559` is an ancestor of
-      `origin/main`, then inspect `git diff --name-only aee7897d4d436501fc9b0dc1ed28e3757131f559..origin/main`.
+- [ ] Confirm `<FINAL_RUNTIME_SHA>` is an ancestor of `origin/main`, then inspect
+      `git diff --name-only <FINAL_RUNTIME_SHA>..origin/main` after replacing the placeholder.
       Every later path must remain within the explicit submission-pack allowlist in
       `DEPLOY_STATE.md`; any new runtime-affecting delta requires another redeploy.
 - [ ] Exercise selected-company P&L in the live Explorer and confirm its request and
@@ -26,24 +26,36 @@ video-specific; the screenshots, posts, and Devpost fields remain in
       echoing it. Clear the credential from the UI immediately afterward.
 - [ ] Use a clean browser profile at 1440×900 or larger, 100% zoom, no personal tabs,
       bookmarks, password-manager popups, extensions, notifications, or account avatar.
-- [ ] Confirm the narration/voice, fonts, music, images, logos, and all other assets
-      are owned or authorized for public competition use. Keep the evidence of rights.
+- [ ] Choose and record the final path. Preferred: the caption-led builder in
+      [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md), with no voice/TTS/music
+      and generated digital silence. If any narrated/source-footage path is used,
+      confirm its voice, fonts, music, images, logos, and all other assets are owned
+      or authorized for public competition use. Keep the evidence of rights.
 - [ ] Read [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md) and
       [`../docs/CLAIM_EVIDENCE_MATRIX.md`](../docs/CLAIM_EVIDENCE_MATRIX.md) end to end.
 
-## Required footage
+## Required visuals
 
 - [ ] Project/Track 1 hook and live HTTPS hostname.
 - [ ] Exact deployed runtime SHA proof, followed by `/health` and `/ready`; keep
       commit attestation and endpoint readiness as two distinct claims.
+- [ ] Release-bound qwen-vl proof: original synthetic payroll-register +
+      bank-confirmation PNG pair, response-reported `qwen-vl-max`, one fused event,
+      zero writes, unchanged reviewer count, and zero exact-marker residue.
 - [ ] Canonical 16:9 architecture held long enough to read.
 - [ ] Session A write and fresh Session B grounded/cited recall.
 - [ ] Field contradiction with both values, provenance, recommendation, and
       read-only/no-mutation boundary.
+- [ ] Human-control frame exercises Defer only and visibly says zero API call/write;
+      Accept/Override remain labelled unexercised rather than implied live.
+- [ ] Session-A feedback stores a correction; a separately authenticated fresh
+      Session-B request recalls and cites it. Label persisted state, never training
+      or model-weight learning.
 - [ ] Meaning-level contradiction via the configured Qwen judge with the token hidden.
 - [ ] Four typed MCP operations and the authenticated HTTP/trusted-local distinction.
-- [ ] Timely forgetting/lifecycle proof: tenant-scoped preview first, then explicit
-      reason + confirmation and an auditable result; never stage a surprise deletion.
+- [ ] Timely forgetting/lifecycle proof: preview exactly one feedback-superseded
+      retention candidate, confirm exactly one audited deletion, prove protected
+      seed/correction unchanged, and finish at zero exact-marker residue.
 - [ ] One honest evidence card with fixture labels and caveats.
 - [ ] MemoryAgent-only Alibaba runtime proof; no reused footage from another entry.
 - [ ] End card: project name, Track 1, live URL, public repository, MIT, Qwen/Alibaba.
@@ -61,18 +73,24 @@ video-specific; the screenshots, posts, and Devpost fields remain in
 
 ## Technical acceptance
 
-- [ ] A scratch recording of the exact final narration measures `<=168` seconds by
-      `ffprobe`; if longer, tighten wording and re-record before editing.
-- [ ] The workflow source candidate's permanent A/V/caption/order gate passed. If the
-      final edit changes that structure, do not represent the source-candidate gate as
-      validation of the exported final.
-- [ ] `ffprobe` reports a duration strictly below 175 seconds and one expected video
-      plus audio stream; no blank lead-in or silent ending.
-- [ ] Narration, screen action, captions, and highlighted evidence stay synchronized.
+- [ ] For the preferred caption-led path, `memoryagent-demo.manifest.json` records
+      exactly 5,160 frames, 172 measured seconds, ten SRT entries, one 1080p H.264
+      stream, one generated-silence AAC stream, and decoded silence peak `<=4`.
+- [ ] If narration is used instead, a scratch recording of the exact final narration
+      measures `<=168` seconds by `ffprobe`; if longer, tighten wording and re-record
+      before editing.
+- [ ] If the workflow source candidate is used, its permanent A/V/caption/order gate
+      passed. Do not represent that source-candidate gate as validation of a changed
+      exported final.
+- [ ] `ffprobe` reports a duration strictly below 175 seconds and exactly one expected
+      video plus one expected audio stream; no blank lead-in or unexplained tail.
+- [ ] Burned captions, source labels, beat transitions, and highlighted evidence stay
+      synchronized. If narration is present, it stays synchronized too.
 - [ ] Captions are accurate English, correctly spell every model id, and remain inside
       safe margins at 1080p playback.
-- [ ] The full video was watched with headphones at normal speed and once muted with
-      captions; no clipped sentence, unreadable panel, stale metric, or unexplained cut.
+- [ ] The full video was watched at normal speed and at 0.25×. For narration, also
+      watch once with headphones and once muted. For caption-led silence, confirm the
+      host/player does not add audio and every beat remains fully understandable.
 - [ ] The thumbnail contains no unverified metric or sensitive browser/terminal detail.
 
 ## Publication and Devpost

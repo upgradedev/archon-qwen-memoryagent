@@ -2,6 +2,30 @@
 
 *Global AI Hackathon Series with Qwen Cloud — MemoryAgent track.*
 
+<!--
+PUBLISHER-ONLY CHECKLIST — remove this comment before publishing:
+
+- [ ] Publish from the final default branch; do not paste from an unmerged worktree.
+- [ ] Keep the absolute architecture-image URL below. Open it in a signed-out/private
+      browser and confirm that the 1600×900 image renders without a GitHub login.
+- [ ] Open https://memory.43.106.13.19.sslip.io and the repository CTA in a
+      signed-out/private browser. Confirm the landing page, public health state, and
+      linked source are reachable without an access request.
+- [ ] Run every outbound link through a signed-out/private window; remove any draft,
+      localhost, credential-bearing, or private-console URL.
+- [ ] Replace {{PUBLIC_VIDEO_URL}} and {{DEVPOST_PROJECT_URL}} only after those pages
+      are public, then add them to the optional CTA sentence below.
+- [ ] Confirm the published post visibly credits Qwen Cloud / Alibaba Cloud and add
+      its final public URL to the Devpost blog/social field.
+- [ ] Save a signed-out screenshot of the published article under the project-local,
+      ignored `demo/private-originals/publication/` directory; never store login
+      tokens or private console data.
+
+Optional sentence after both placeholders resolve:
+“Watch the under-three-minute demo at {{PUBLIC_VIDEO_URL}} and see the competition
+entry at {{DEVPOST_PROJECT_URL}}.”
+-->
+
 Most "agent memory" demos prove one thing: the agent can write a fact in one
 session and read it back in another. That's necessary, but it's the easy half.
 The hard half — the half nobody shows — is what happens when the agent's own
@@ -9,8 +33,8 @@ memory starts to **disagree with itself**.
 
 A cross-session agent accumulates facts from many separate write events, over
 days, across processes. Nothing stops two of those writes from recording the same
-record two different ways: one session records a payroll event's employer cost at
-€18,000, a later session records €19,000 for the same event. A plain vector store does the worst
+record two different ways: in the original synthetic demo, one session records
+`INV-5521.amount` at €8,400 and a later session records €8,900 for the same field. A plain vector store does the worst
 possible thing here — it silently returns whichever one happened to rank higher,
 and never tells you the two ever conflicted. Your agent is now confidently wrong,
 and you have no way to know.
@@ -24,17 +48,18 @@ part that's usually missing: **the memory audits itself.**
 
 Below is the system architecture diagram showing the ingestion pipeline, MemoryAgent core, and Qwen Cloud / Alibaba Cloud integration:
 
-![Archon MemoryAgent judge architecture](./final-media/judge-architecture.jpg)
+![Archon MemoryAgent judge architecture](https://raw.githubusercontent.com/upgradedev/archon-qwen-memoryagent/main/demo/final-media/judge-architecture.jpg)
 
 The trust boundary matters as much as the model graph. The public surface is a fixed,
 idempotent demo plus public-tenant reads; public seed and recall are quota-bounded.
 Writes, feedback, lifecycle operations, meaning-level audit, and Streamable HTTP MCP
 are authenticated and mapped to a tenant by the server. The event linker groups by
 `company + period + event_ref`, and P&L totals stay separated by currency.
-The judge-facing image above is the canonical 16:9 submission hero. The editable
-hero source is [`docs/judge-architecture.svg`](../docs/judge-architecture.svg);
-the denser technical appendix and its PNG/SVG renders remain under
-[`docs/architecture.mmd`](../docs/architecture.mmd).
+The judge-facing image above is the canonical 16:9 submission hero. Its editable
+source is public in
+[`docs/judge-architecture.svg`](https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/docs/judge-architecture.svg);
+the denser technical appendix and its PNG/SVG renders are generated from
+[`docs/architecture.mmd`](https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/docs/architecture.mmd).
 
 ## The innovation: detect → resolve
 
@@ -83,8 +108,9 @@ same-subject pairs by cosine, then asks the configured `QWEN_JUDGE_MODEL` whethe
 they directly contradict (`qwen-plus` is the rollback baseline; a candidate is
 eligible only after the versioned promotion gate), and a deterministic polarity/negation
 heuristic offline so it still runs in CI with no key. The online judge **fails
-closed**: any error or unparseable reply is treated as "no contradiction", never a
-manufactured one. It reuses the **same read-only resolution ladder** and, like the
+closed**: any error or unparseable reply returns an explicit `inconclusive` result
+with error metadata; it never masquerades as a clean no-conflict result or invents a
+contradiction. It reuses the **same read-only resolution ladder** and, like the
 rule-based path, **never mutates memory** — it runs *alongside* the field-level
 engine, additive, neither replacing the other. It is exposed over authenticated,
 quota-bounded HTTP and HTTP MCP (the `audit_memory` tool takes `semantic: true`),
@@ -102,8 +128,9 @@ reproducible from committed fixtures with no API key or spend and are gated in C
 
 **Retrieval.** On real `text-embedding-v4` embeddings, over a frozen, diverse,
 hand-labelled corpus, our `reranked-hybrid` retriever (dense + lexical fused with
-Reciprocal Rank Fusion, then a `qwen-plus` cross-encoder re-rank) beats a strong
-single-vector dense condition on the three reported metrics in this frozen corpus:
+Reciprocal Rank Fusion, then a bounded `qwen-plus` listwise rerank over the candidate
+set) beats a strong single-vector dense condition on the three reported metrics in
+this frozen corpus:
 
 | Metric | dense baseline | reranked-hybrid |
 |---|---:|---:|
@@ -116,10 +143,13 @@ similar to the plain similarity mode documented by LangChain's
 `VectorStoreRetriever`. It is not a product head-to-head or a claim about every
 system's current defaults.
 (We were honest where honesty cost us: hybrid *alone* does **not** beat a modern
-embedder on top-rank ordering on a clean corpus — that's why we added the
-cross-encoder, and reported the null result rather than tuning the corpus back
-toward duplicates.) A meaning-shuffled control retriever collapses to near chance,
-proving the benchmark actually discriminates semantics.
+embedder on top-rank ordering on a clean corpus — that's why we added bounded
+Qwen listwise reranking, and reported the null result rather than tuning the corpus
+back toward duplicates.) A meaning-shuffled control retriever collapses to near
+chance, proving the benchmark actually discriminates semantics. The CI claim is
+fixture-bound: on the committed labelled retrieval fixture, hybrid Recall@3 and
+Recall@5 must remain at least as high as dense recall; it is not a universal claim
+about unseen corpora.
 
 **Self-audit.** On a labelled dataset of injected conflicts plus a consistent
 control set (agreeing re-ingests, float-noise, distinct records sharing an
@@ -216,7 +246,19 @@ the MIT core reusable for support, research, and other long-lived agents. The ne
 evidence step is independent labelling and longitudinal usage—not an unsupported
 claim that this synthetic fixture already proves production-scale accuracy.
 
-## Try it
+## Try it — and verify it signed out
+
+The public, quota-bounded Explorer is live at
+[memory.43.106.13.19.sslip.io](https://memory.43.106.13.19.sslip.io/). Open it in a
+signed-out/private browser to inspect the public demo and health state; protected
+mutation, lifecycle, feedback, semantic-audit, and MCP operations intentionally
+require the separate reviewer credential supplied through Devpost testing
+instructions. No credential belongs in this article.
+
+The complete MIT-licensed source, architecture, benchmark fixtures, and exact
+reproduction commands are in the
+[public repository](https://github.com/upgradedev/archon-qwen-memoryagent). To run
+the offline evidence locally:
 
 ```bash
 cp .env.example .env
@@ -239,5 +281,7 @@ That's what we built.
 
 ---
 
-*Repo: `README.md` (architecture + quickstart) · `BENCHMARK.md` (full method and
-honest caveats) · MIT licensed.*
+**Next step:** [try the live Explorer](https://memory.43.106.13.19.sslip.io/), then
+[inspect the architecture and quickstart](https://github.com/upgradedev/archon-qwen-memoryagent#readme)
+or [reproduce the full benchmark method](https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/BENCHMARK.md).
+The project is MIT licensed.
