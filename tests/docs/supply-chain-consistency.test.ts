@@ -26,11 +26,11 @@ const K6_VERSION = "2.1.0";
 const K6_SHA256 = "295d961ebfca306f295f1133068dcd403a8171c87f387928f5f30b0fbcff858a";
 
 const ACTION_PINS = new Map([
-  ["actions/checkout", { sha: "34e114876b0b11c390a56381ad16ebd13914f8d5", release: "v4.3.1" }],
-  ["actions/setup-node", { sha: "49933ea5288caeca8642d1e84afbd3f7d6820020", release: "v4.4.0" }],
-  ["actions/setup-python", { sha: "a26af69be951a213d495a4c3e4e4022e16d87065", release: "v5.6.0" }],
-  ["actions/upload-artifact", { sha: "ea165f8d65b6e75b540449e92b4886f43607fa02", release: "v4.6.2" }],
-  ["github/codeql-action", { sha: "e5d2f324924c57b6cabef9bdd7a1c85d62a89be2", release: "v3.37.0" }],
+  ["actions/checkout", { sha: "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", release: "v7.0.0" }],
+  ["actions/setup-node", { sha: "820762786026740c76f36085b0efc47a31fe5020", release: "v7.0.0" }],
+  ["actions/setup-python", { sha: "ece7cb06caefa5fff74198d8649806c4678c61a1", release: "v6.3.0" }],
+  ["actions/upload-artifact", { sha: "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", release: "v7.0.1" }],
+  ["github/codeql-action", { sha: "7188fc363630916deb702c7fdcf4e481b751f97a", release: "v4.37.1" }],
 ]);
 
 const workflowFiles = readdirSync(join(ROOT, ".github", "workflows"))
@@ -55,6 +55,18 @@ test("CHECK 4a — every external GitHub Action is pinned to its verified releas
     }
   }
   assert.ok(usesCount >= 30, `expected the complete workflow action surface, found only ${usesCount} uses`);
+});
+
+test("CHECK 4a2 — CodeQL v4 uses the supported plural languages input", () => {
+  const workflow = readText(".github/workflows/codeql.yml");
+  assert.ok(
+    workflow.includes("          languages: ${{ matrix.language }}"),
+    "CodeQL init must bind the matrix through its supported languages input",
+  );
+  assert.ok(
+    !workflow.includes("          language: ${{ matrix.language }}"),
+    "the unsupported singular CodeQL language input must not return",
+  );
 });
 
 test("CHECK 4b — CI runtimes, runner OS, Docker base, and package metadata agree exactly", () => {
@@ -274,12 +286,17 @@ test("CHECK 4g — production image supply-chain workflow is immutable, minimal,
   const actionUses = [...workflow.matchAll(/^        uses: (\S+)\s+#\s+(v\d+\.\d+\.\d+)$/gm)]
     .map((match) => match[1]);
   assert.deepEqual(actionUses, [
-    "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
-    "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
-    "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
-    "github/codeql-action/upload-sarif@e5d2f324924c57b6cabef9bdd7a1c85d62a89be2",
-    "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+    "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+    "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a",
+    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
   ]);
+  assert.match(
+    workflow,
+    /- name: Select exact Node runtime\n        uses: actions\/setup-node@[0-9a-f]{40} # v7\.0\.0\n        with:\n          node-version: "24\.18\.0"\n          package-manager-cache: false\n/,
+    "the security workflow must explicitly disable setup-node v7 automatic package-manager caching",
+  );
   assert.equal((workflow.match(/^        run: \|$/gm) ?? []).length, 11);
   assert.equal((workflow.match(/^          set -euo pipefail$/gm) ?? []).length, 11);
 

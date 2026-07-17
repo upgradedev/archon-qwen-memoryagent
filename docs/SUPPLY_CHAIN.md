@@ -63,7 +63,8 @@ gate still run.
 | Grype archive | v0.115.0 · SHA-256 `3fad92940650e514c0aa2dad83526942a055e210cec09a8a59d9c024adc2b90e` |
 | Grype executable | SHA-256 `05ffd2c28a607e48fb2269d9aac5b3d53e8a51bbac501946644745eae2119907` |
 | Vulnerability DB | schema v6.1.8, built 2026-07-15 · SHA-256 `0d9ac9d49c93649ea6bf713c60960b46e33c939d49ac7de52df649453d29cf8e` |
-| GitHub Actions | Full 40-character release commits; checked by `npm run test:docs` |
+| Source analyzer | [CodeQL Action v4.37.1](https://github.com/github/codeql-action/releases/tag/v4.37.1) commit `7188fc363630916deb702c7fdcf4e481b751f97a`; the exact commit's `defaults.json` selects bundled CLI/query bundle `2.26.1` |
+| GitHub Actions | [checkout v7.0.0](https://github.com/actions/checkout/releases/tag/v7.0.0) commit `9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0`; [setup-node v7.0.0](https://github.com/actions/setup-node/releases/tag/v7.0.0) commit `820762786026740c76f36085b0efc47a31fe5020`; [setup-python v6.3.0](https://github.com/actions/setup-python/releases/tag/v6.3.0) commit `ece7cb06caefa5fff74198d8649806c4678c61a1`; [upload-artifact v7.0.1](https://github.com/actions/upload-artifact/releases/tag/v7.0.1) commit `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`; all are checked by `npm run test:docs` and their exact official `action.yml` files declare Node 24 |
 
 The final image removes npm, npx, Corepack, Yarn, and pnpm after the pinned
 runtime stage is selected. The service starts compiled JavaScript with `node`;

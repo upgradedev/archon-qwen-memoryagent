@@ -54,12 +54,13 @@ jobs:
       EXPECTED_GRYPE_POLICY_SHA256: 874e6bf141aa28702079cb523851d686cae7dd4054e4e8c86817035b1ddb3582
     steps:
       - name: Checkout exact source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Select exact Node runtime
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.18.0"
+          package-manager-cache: false
 
       - name: Anchor immutable production inputs
         shell: bash
@@ -401,7 +402,7 @@ jobs:
           )
 
       - name: Retain SBOM evidence before vulnerability scanning
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-sbom-${{ github.sha }}
           path: |
@@ -519,14 +520,14 @@ jobs:
 
       - name: Upload Grype SARIF to GitHub code scanning
         if: ${{ !cancelled() && steps.validate_supply_evidence.outcome == 'success' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: github/codeql-action/upload-sarif@e5d2f324924c57b6cabef9bdd7a1c85d62a89be2 # v3.37.0
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
         with:
           sarif_file: .artifacts/supply-chain/grype-report.sarif
           category: grype-production-image
 
       - name: Retain SBOM, scan, database, and provenance evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-supply-chain-${{ github.sha }}
           path: |
