@@ -24,6 +24,13 @@ const ROOT = join(HERE, "..", "..");
 const readText = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 
 const README = readText("README.md");
+const CANONICAL_JUDGE_COPY = [
+  "README.md",
+  "demo/BLOG.md",
+  "demo/SUBMISSION.md",
+  "demo/DEVPOST_STAGING.md",
+  "demo/PROJECT_STORY.md",
+] as const;
 
 function pythonConcatenatedString(source: string, name: string): string {
   const assignment = source.match(new RegExp(`^${name}\\s*=\\s*\\(([\\s\\S]*?)^\\)`, "m"));
@@ -349,7 +356,7 @@ test("CHECK 1e — skill kind descriptions are generated from the complete enum"
 });
 
 test("CHECK 1f — every local Markdown link resolves to a present repository path", () => {
-  const ignored = new Set([".artifacts", ".git", "dist", "node_modules"]);
+  const ignored = new Set([".artifacts", ".git", ".worktrees", "dist", "node_modules"]);
   const markdown: string[] = [];
   const visit = (directory: string) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -394,7 +401,7 @@ test("CHECK 2b — judge-facing Markdown renders only the modern architecture he
 });
 
 test("CHECK 1g — tracked Markdown avoids provider-pricing rhetoric", () => {
-  const ignored = new Set([".artifacts", ".git", "dist", "node_modules"]);
+  const ignored = new Set([".artifacts", ".git", ".worktrees", "dist", "node_modules"]);
   const markdown: string[] = [];
   const visit = (directory: string) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -416,4 +423,23 @@ test("CHECK 1g — tracked Markdown avoids provider-pricing rhetoric", () => {
     [],
     `replace provider-pricing rhetoric with provider-call, quota, or offline language: ${failures.join(", ")}`,
   );
+});
+
+test("CHECK 1h — canonical judge copy avoids template headings and em dashes", () => {
+  const defaultDevpostHeading = /^#{1,6}\s+(?:Inspiration|What it does|How we built it|Challenges we ran into|Accomplishments that we're proud of|What we learned|What's next(?:\s+for\b.*)?)\s*$/im;
+  const renderedEmDash = /(?:\u2014|&mdash;|&#0*8212;|&#x0*2014;)/i;
+
+  for (const relativePath of CANONICAL_JUDGE_COPY) {
+    const source = readText(relativePath);
+    assert.doesNotMatch(
+      source,
+      renderedEmDash,
+      `${relativePath} contains a literal or HTML-encoded em dash`,
+    );
+    assert.doesNotMatch(
+      source,
+      defaultDevpostHeading,
+      `${relativePath} contains a default Devpost project-story heading`,
+    );
+  }
 });

@@ -592,6 +592,26 @@ class CaptionTimelineTests(unittest.TestCase):
         self.assertIn("VALUE A", thumbnail)
         self.assertIn("VALUE B", thumbnail)
 
+    def test_canonical_judge_copy_avoids_template_headings_and_em_dashes(self) -> None:
+        canonical_paths = (
+            "README.md",
+            "demo/BLOG.md",
+            "demo/SUBMISSION.md",
+            "demo/DEVPOST_STAGING.md",
+            "demo/PROJECT_STORY.md",
+        )
+        default_heading = re.compile(
+            r"^#{1,6}\s+(?:Inspiration|What it does|How we built it|"
+            r"Challenges we ran into|Accomplishments that we're proud of|"
+            r"What we learned|What's next(?:\s+for\b.*)?)\s*$",
+            re.I | re.M,
+        )
+        rendered_em_dash = re.compile(r"(?:\u2014|&mdash;|&#0*8212;|&#x0*2014;)", re.I)
+        for relative in canonical_paths:
+            copy = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIsNone(rendered_em_dash.search(copy), relative)
+            self.assertNotRegex(copy, default_heading, relative)
+
     def test_production_gate_contract_is_explicit(self) -> None:
         self.assertEqual(builder.REQUIRED_BOOLEAN_GATES["exactDeploymentEvidence"], True)
         self.assertEqual(builder.REQUIRED_BOOLEAN_GATES["authenticatedDeepReadiness"], True)
