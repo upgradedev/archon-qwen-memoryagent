@@ -24,10 +24,11 @@ authorize or perform publication.
 > text-embedding-v4 for 1,024-dimensional memory embeddings, qwen-plus for grounded
 > narration and one bounded listwise rerank, a separately health-visible configured
 > Qwen semantic judge, and qwen-vl-max for protected document vision. PostgreSQL +
-> pgvector stores durable memory. `/health` and `/ready` prove models and readiness
-> independently; the exact runtime source is attested by the release record shown
-> in the video. The vision canary is an original synthetic dry-run with zero writes;
-> explicit feedback is persisted state, not model-weight learning.
+> pgvector stores durable memory. `/health` and `/ready` evidence model configuration
+> and service readiness; exercised provider execution is evidenced separately
+> by the exact-deploy record and canaries shown in the video. The vision canary is an
+> original synthetic dry-run with zero writes; the exact runtime source is attested by
+> that release evidence. Explicit feedback is persisted state, not model-weight learning.
 >
 > Live app: https://memory.43.106.13.19.sslip.io
 >
@@ -38,8 +39,6 @@ authorize or perform publication.
 > Qwen integration: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts
 >
 > Reproducible deployment path: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh
->
-> Technical build journey: `[PUBLIC_BLOG_URL — replace after signed-out publication, or remove this line]`
 >
 > Evaluation numbers shown in the video are frozen, developer-labelled fixtures—not
 > production-traffic accuracy or universal superiority: field audit 5/5 with 0

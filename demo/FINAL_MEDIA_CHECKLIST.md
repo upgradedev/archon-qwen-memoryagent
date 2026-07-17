@@ -88,7 +88,7 @@ upload metadata but does not authorize publication.
 - [ ] Text is readable at normal YouTube playback size.
 - [ ] Burned captions and the uploaded exact SRT are enabled; names/model ids are
       spelled correctly and the ten windows match the measured final.
-- [ ] No API key, reviewer token, Authorization header, shell history secret, email, or cloud credential is visible in any frame, thumbnail, caption, or description. Clear the Judge token field before any beauty shot.
+- [ ] No API key, reviewer token, Authorization header, shell history secret, email, or cloud credential is visible in any frame, thumbnail, caption, or description. Clear the **Reviewer token (protected audit/feedback)** field before any beauty shot.
 - [ ] Claims match [`../docs/CLAIM_EVIDENCE_MATRIX.md`](../docs/CLAIM_EVIDENCE_MATRIX.md).
 - [ ] The description includes live URL, public repo, Track 1, and architecture/code-proof links.
 - [ ] Test the public URL in an incognito window with audio enabled. For the canonical
@@ -108,7 +108,7 @@ English captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
 - [ ] Grounded recall: answer plus numbered citations in the same frame.
 - [ ] Feedback persistence: Session-A stored correction plus fresh Session-B cited application; label persistence, not weight learning.
 - [ ] Field self-audit: `INV-5521`, both values, and the recency recommendation visible.
-- [ ] Semantic self-audit: meaning-level pair and read-only resolution visible; clear/crop out the Judge token field and all auth details.
+- [ ] Semantic self-audit: meaning-level pair and read-only resolution visible; clear/crop out the **Reviewer token (protected audit/feedback)** field and all auth details.
 - [ ] Qwen-VL canary: original synthetic payroll-register + bank-confirmation PNG pair, response-reported `qwen-vl-max`, one fused event, zero writes, unchanged count and exact-prefix absence.
 - [ ] Lifecycle: exactly one synthetic candidate previewed and one deleted; protected seed/correction unchanged and cleanup residue zero.
 - [ ] Architecture: use the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg)

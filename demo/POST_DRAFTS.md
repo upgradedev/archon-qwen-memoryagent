@@ -1,6 +1,6 @@
 # Archon MemoryAgent — ready-to-publish post drafts
 
-Replace only bracketed placeholders after the video/blog is public. All numerical claims below match the committed evidence matrix.
+Replace `[PUBLIC_VIDEO_URL]` only after the video is public and passes the signed-out acceptance gate. All numerical claims below match the committed evidence matrix.
 
 ## Short launch post (X / Bluesky)
 
@@ -29,7 +29,6 @@ The claims are measured: 5/5 field-level injected problems with 0 false positive
 Live demo: https://memory.43.106.13.19.sslip.io
 Public repo: https://github.com/upgradedev/archon-qwen-memoryagent
 Video: [PUBLIC_VIDEO_URL]
-Technical write-up: [PUBLIC_BLOG_URL]
 
 #Qwen #AlibabaCloud #AIAgents #RAG #MCP #PostgreSQL #pgvector
 
@@ -49,15 +48,18 @@ An agent can retrieve the “right” vector and still be wrong if another store
 
 ## Video description
 
+[`VIDEO_PUBLICATION_PACKET.md`](./VIDEO_PUBLICATION_PACKET.md) is the canonical upload
+title, description, tags, chapters, and acceptance gate; this shorter copy is only a
+fallback excerpt and must not override that packet.
+
 Archon MemoryAgent is a Track 1 submission for the Global AI Hackathon Series with Qwen Cloud. It stores persistent cross-session memories in pgvector, recalls grounded answers with Qwen citations, and audits its own memory for field-level and meaning-level contradictions—returning a read-only resolution recommendation rather than silently rewriting history.
 
 Live: https://memory.43.106.13.19.sslip.io
 Source (MIT): https://github.com/upgradedev/archon-qwen-memoryagent
-Architecture: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/docs/judge-architecture.svg
+Architecture: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/demo/final-media/judge-architecture.jpg
 Alibaba/Qwen code proof: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts
-Technical post: [PUBLIC_BLOG_URL]
 
-Models: `text-embedding-v4`, `qwen-plus` narration/bounded listwise rerank/skills, the health-visible configured semantic judge (`qwen-plus` rollback baseline), and `qwen-vl-max` via Alibaba Cloud Model Studio / DashScope. The release canary uses original synthetic document images in protected dry-run mode and proves zero memory residue.
+Models: `text-embedding-v4`, `qwen-plus` narration/bounded listwise rerank/skills, the health-visible configured semantic judge (`qwen-plus` rollback baseline), and `qwen-vl-max` via Alibaba Cloud Model Studio / DashScope. `/health` and `/ready` evidence configuration and readiness; the exact-deploy record and canaries separately evidence exercised provider execution and exact runtime source. The vision canary uses original synthetic document images in protected dry-run mode and proves zero memory residue.
 
 ## Devpost project update
 

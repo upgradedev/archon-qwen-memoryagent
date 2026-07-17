@@ -19,14 +19,16 @@ certification.
 ## 60 seconds: seed, recall, self-audit
 
 1. Open the [Memory Explorer](https://memory.43.106.13.19.sslip.io).
-2. Click **Run demo**. The server idempotently seeds only its fixed payroll evidence plus planted field-level and meaning-level contradictions. It accepts no caller-controlled content. The seed is public but quota-bounded.
-3. Click **Using only the retrieved memory, state the true employer cost for
-   Northwind Trading in 2026-05 and include citation marker [1] in the
-   sentence.** The Explorer requests a bounded top-three slice (up to three
-   memories) from the public tenant and returns a grounding-validated answer
-   with a resolvable `[1]` citation. Recall is also protected by per-IP plus
-   global daily quotas.
-4. Click **Run self-audit**. The deterministic, read-only audit should show `INV-5521 · amount` recorded as `8400` and `8900`, then recommend `8900` under the recency rule. It reports the disagreement; it does not overwrite either memory.
+2. Click **Run demo** once. The server idempotently seeds only its fixed payroll
+   evidence plus planted field-level and meaning-level contradictions; it accepts
+   no caller-controlled content. The Explorer then selects and submits the
+   canonical `company=Northwind Trading`, `limit=3` recall automatically:
+   **Using only the retrieved memory, state the true employer cost for Northwind
+   Trading in 2026-05 and include citation marker [1] in the sentence.** Inspect
+   the grounding-validated answer and its resolvable numbered citations; do not
+   submit that question a second time. Seed and recall are public but quota-bounded
+   by per-IP and global daily limits.
+3. Click **Run self-audit**. The deterministic, read-only audit should show `INV-5521 · amount` recorded as `8400` and `8900`, then recommend `8900` under the recency rule. It reports the disagreement; it does not overwrite either memory.
 
 That screen demonstrates the Track 1 core: persistent, queryable memory across writes, bounded recall for limited context windows, and an explicit consistency mechanism.
 
@@ -51,7 +53,7 @@ Expected field-level result: a contradiction for `INV-5521`, values `8400` and `
 
 ## 30 seconds more: authenticated meaning-level audit
 
-The semantic route is intentionally protected because it invokes the heavier Qwen judge. In the Explorer, paste the dedicated Devpost reviewer credential into the password-type **Judge token (protected audit/lifecycle)** field, keep the demo company selected, and click **Run semantic audit**. Do not publish or screenshot the credential. Swagger's **Authorize** control is an alternative. If a terminal is necessary, use an interactive no-echo prompt so the value is absent from shell history and curl's command-line arguments:
+The semantic route is intentionally protected because it invokes the heavier Qwen judge. In the Explorer, paste the dedicated Devpost reviewer credential into the password-type **Reviewer token (protected audit/feedback)** field, keep the demo company selected, and click **Run semantic audit**. Do not publish or screenshot the credential. Swagger's **Authorize** control is an alternative. If a terminal is necessary, use an interactive no-echo prompt so the value is absent from shell history and curl's command-line arguments:
 
 ```bash
 BASE=https://memory.43.106.13.19.sslip.io
