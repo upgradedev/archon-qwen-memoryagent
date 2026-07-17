@@ -1,4 +1,4 @@
-# Devpost staging sheet — Archon MemoryAgent
+# Archon MemoryAgent: Devpost draft operator sheet
 
 This is the single operator sheet for taking the project to a complete **Draft** on
 Devpost without clicking **Submit project**. The official
@@ -11,18 +11,18 @@ country, or other personal data into this public repository.
 `CAPTURE_REVIEW.json` also passes for that exact SHA and retained controller
 status/output; endpoint health alone is not source attestation.
 
-## Step 1 — team
+## Entrant details
 
 - **Solo/team:** `[SELECT IN DEVPOST]`
 - **Team members:** `[ADD DIRECTLY IN DEVPOST]`
 - If entering as a team or organization, the submitting account must be its
   authorized representative. Complete [`RIGHTS_RELEASE_CHECKLIST.md`](./RIGHTS_RELEASE_CHECKLIST.md).
 
-## Step 2 — overview
+## Project card
 
 | Field | Exact value / artifact |
 |---|---|
-| Project name | **Archon MemoryAgent — a memory that audits itself** |
+| Project name | **Archon MemoryAgent: a memory that audits itself** |
 | Tagline | **Persistent Qwen memory that recalls, cites, and surfaces its own cross-session contradictions.** |
 | Thumbnail | [`thumbnail.png`](./thumbnail.png), 1500×1000 (3:2), PNG, below 5 MB |
 | Thumbnail source | [`thumbnail.svg`](./thumbnail.svg), original repository-owned vector |
@@ -31,24 +31,24 @@ The tagline is 94 characters, below Devpost's published 140-character limit.
 Preview the gallery crop before leaving this step; the title and two conflicting
 values must remain readable on a small project card.
 
-## Step 3 — project details
+## Story, links, and media
 
 | Field | Exact value / action |
 |---|---|
 | Built with | **Qwen Cloud, Alibaba Cloud, Qwen, Model Context Protocol (MCP), TypeScript, Fastify, PostgreSQL, pgvector, Docker, OpenAI SDK** |
 | Project Story | Paste only the canonical body between the horizontal separators in [`SUBMISSION.md`](./SUBMISSION.md). |
 | Try it out | <https://memory.43.106.13.19.sslip.io> |
-| Video demo | `[PUBLIC_YOUTUBE_VIMEO_OR_YOUKU_URL]` — public, no login, strictly under 3:00 |
+| Video demo | `[PUBLIC_YOUTUBE_VIMEO_OR_YOUKU_URL]`: public, no login, strictly under 3:00 |
 | Image gallery | Upload the approved 1500×1000 files in the order and with the captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md). Do not substitute the 16:9 video proof frames. |
 | Gallery evidence gate | Require `gallery/CAPTURE_REVIEW.json` status `passed` for the exact deployed SHA, including qwen-vl dry-run/absence, fresh-session feedback, one-row lifecycle/cleanup, human Defer-only and artifact-hash gates. |
 | Public source | <https://github.com/upgradedev/archon-qwen-memoryagent> |
 | License | **MIT**; confirm GitHub shows it on the repository landing page. |
-| Track/category | **Track 1 — MemoryAgent** |
+| Track/category | **Track 1: MemoryAgent** |
 | Architecture diagram | Upload [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg). |
 | Organizer deck (strict-union artifact) | If the organizer's separate Qwen flow requests a PPT/PDF, use `demo/deck/archon-memoryagent-judge-deck.pptx` and `demo/deck/archon-memoryagent-judge-deck.pdf` only after final exact-release screenshots, layout review and hash verification. Do not upload a placeholder build. |
 | Alibaba/Qwen code proof | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts> |
 | Additional live-deploy code | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh> |
-| Optional public article URL | `[PUBLIC_DEVTO_URL]` — publish the canonical [`BLOG.md`](./BLOG.md) on dev.to and verify it signed out to qualify for the bonus. No LinkedIn post is planned. |
+| Optional public article URL | `[PUBLIC_DEVTO_URL]`: use the canonical [`BLOG.md`](./BLOG.md) for dev.to and verify it signed out to qualify for the bonus. No LinkedIn post is planned. |
 
 ### Existing-project / competition-window answer
 
@@ -98,7 +98,7 @@ Use or edit this only if the form asks for tool feedback:
 - Any organizer custom question containing personal, contractual or cloud-account
   information.
 
-## Step 4 — additional information / custom questions
+## Custom questions and attestations
 
 The live 2026-07-16 form exposes the following fields. Values marked **human** must
 be confirmed by the entrant and entered directly; the repository intentionally does
@@ -108,10 +108,10 @@ not guess or retain them.
 |---|---|
 | Submitter type | `[HUMAN CONFIRM: Individual / Team / Organization]` |
 | Organization name | Leave blank only if the confirmed submitter type is Individual/Team and no organization applies. |
-| Country of residence | `[HUMAN CONFIRM AND ENTER DIRECTLY]` — appears publicly in the gallery. |
-| Newly built or previously existing | **New** — the distinct entry repository starts 2026-07-01; retain the reuse disclosure below. |
+| Country of residence | `[HUMAN CONFIRM AND ENTER DIRECTLY]` (appears publicly in the gallery). |
+| Newly built or previously existing | **New**: the distinct entry repository starts 2026-07-01; retain the reuse disclosure below. |
 | Start date | **07-01-26** |
-| Required pre-May-26/update explanation | **Not applicable — this is a new competition-period project started July 1, 2026. It carries forward the Archon name, financial-analysis context, and a small set of disclosed pipeline patterns for provider access, document extraction and analysis, health/deployment, and pgvector plumbing. During the submission period we built the standalone Qwen/Alibaba persistent memory store, hybrid recall and bounded listwise reranking, field- and meaning-level self-audits, explicit human conflict resolution, lifecycle controls, REST/MCP boundaries, evaluations, CI, and live deployment. Reused patterns are identified in the repository and are not claimed as newly authored evidence.** |
+| Required pre-May-26/update explanation | **Not applicable. This is a new competition-period project started July 1, 2026. It carries forward the Archon name, financial-analysis context, and a small set of disclosed pipeline patterns for provider access, document extraction and analysis, health/deployment, and pgvector plumbing. During the submission period we built the standalone Qwen/Alibaba persistent memory store, hybrid recall and bounded listwise reranking, field- and meaning-level self-audits, explicit human conflict resolution, lifecycle controls, REST/MCP boundaries, evaluations, CI, and live deployment. Reused patterns are identified in the repository and are not claimed as newly authored evidence.** |
 | Track | **Track 1: MemoryAgent** |
 | Code repository | <https://github.com/upgradedev/archon-qwen-memoryagent> |
 | Alibaba/Qwen code file | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts> |
@@ -129,7 +129,7 @@ not guess or retain them.
 - Do not infer privacy from a field name. Save the draft, then inspect its public
   preview logged out before any live credential is added.
 
-## Stop point — complete draft, no submission
+## Final handoff: complete draft, no submission
 
 The requested handoff point is reached only when every Devpost step is green and
 the final page is open, but **Submit project has not been clicked**.
