@@ -64,10 +64,10 @@ and fail closed. Worst-case reserved work is explicit: Session-B recall 3×4=12
 of its 200-unit judge pool, Explorer recall 3×4=12 of its 200-unit public pool,
 and semantic audit 3×25=75 of its 500-unit judge pool.
 
-The live stage order is also a spend-safety invariant. The Session-B proof and
+The live stage order is also a quota-safety invariant. The Session-B proof and
 the complete Explorer recall/semantic/browser gate run before the two-document
 `qwen-vl-max` dry run. Consequently, a failed stochastic recall or semantic
-stage cannot burn that canary's 10 authenticated ingest work units. The canary
+stage cannot consume that canary's 10 authenticated ingest work units. The canary
 is not cached or replaced: after those gates pass, it still runs live in the
 same capture run and must pass the original model, zero-write, unchanged-count,
 and exact-prefix-absence checks before `CAPTURE_REVIEW.json` can exist.

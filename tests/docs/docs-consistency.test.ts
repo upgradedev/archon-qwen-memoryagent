@@ -392,3 +392,28 @@ test("CHECK 2b — judge-facing Markdown renders only the modern architecture he
     }
   }
 });
+
+test("CHECK 1g — tracked Markdown avoids provider-pricing rhetoric", () => {
+  const ignored = new Set([".artifacts", ".git", "dist", "node_modules"]);
+  const markdown: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!ignored.has(entry.name)) visit(join(directory, entry.name));
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        markdown.push(join(directory, entry.name));
+      }
+    }
+  };
+  visit(ROOT);
+
+  const prohibited = /\b(?:spend|spending|spent|price|pricing)\b|hidden[\s-]+costs?|\bfew[\s-]+cents?\b|~\s*cents?\b/i;
+  const failures = markdown
+    .filter((file) => prohibited.test(readFileSync(file, "utf8")))
+    .map((file) => relative(ROOT, file));
+  assert.deepEqual(
+    failures,
+    [],
+    `replace provider-pricing rhetoric with provider-call, quota, or offline language: ${failures.join(", ")}`,
+  );
+});

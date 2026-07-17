@@ -465,12 +465,16 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
     {
       id: "UG1-live-semantic-route",
       criterion: "Presentation",
-      title: "Live box POST /consistency/semantic returns 200 (after redeploy)",
+      title: "Authenticated live POST /consistency/semantic returns 200",
       weight: 5,
       cls: "user-gated",
       async run() {
         if (process.env.READINESS_PROBE_LIVE !== "1") {
-          return { ok: false, userGated: true, detail: "not probed (set READINESS_PROBE_LIVE=1 to probe the live deployment)" };
+          return {
+            ok: false,
+            userGated: true,
+            detail: "deferred to the quota-gated final capture (set READINESS_PROBE_LIVE=1 to run the live probe)",
+          };
         }
         return probePinnedLiveSemanticRoute(process.env.READINESS_JUDGE_API_KEY);
       },
@@ -487,7 +491,7 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
         return {
           ok: !!hosted,
           userGated: true,
-          detail: hosted ? `hosted at ${hosted[0]}` : "no hosted video URL yet (user records/uploads after redeploy)",
+          detail: hosted ? `hosted at ${hosted[0]}` : "no hosted video URL yet; capture, review, and publication wait on the quota gate",
         };
       },
     },
@@ -501,7 +505,11 @@ function buildChecks(bench: SemanticBenchResult): CheckSpec[] {
         const rel = "demo/final-media/memoryagent-demo.mp4";
         const path = join(ROOT, rel);
         if (!existsSync(path)) {
-          return { ok: false, userGated: true, detail: `pending new authenticated capture at ${rel}; archived pre-hardening transcript is excluded` };
+          return {
+            ok: false,
+            userGated: true,
+            detail: `quota-gated authenticated capture pending at ${rel}; archived pre-hardening transcript is excluded`,
+          };
         }
         const bytes = statSync(path).size;
         return {

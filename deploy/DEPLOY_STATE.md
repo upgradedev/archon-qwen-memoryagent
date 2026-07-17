@@ -109,7 +109,7 @@ The live Alibaba security group exposes `80` only for HTTP redirect/ACME and `44
 - The Explorer's password-type **Judge token** field is only for the dedicated low-privilege judging credential supplied through Devpost testing instructions. Verify field visibility rather than assuming privacy; never commit, log, screenshot, or intentionally publish it, and rotate/revoke it after judging.
 - Streamable HTTP MCP is separately fail-closed authenticated; stdio is the local trusted transport.
 
-### Spend and runtime containment
+### Provider-call and runtime containment
 
 - Qwen-heavy HTTP/MCP requests use durable PostgreSQL-backed per-subject/IP plus global UTC-daily quotas, so counters survive backend restarts and work across replicas.
 - The backend image runs as the unprivileged `node` user.
