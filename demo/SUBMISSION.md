@@ -25,9 +25,9 @@ recording tooling only.
 
 **AI agents and assistants forget the moment a session ends** — and when they *do*
 carry facts forward, they silently contradict themselves. In the original synthetic
-demo, one session records `INV-5521.amount` as €8,400 and a later session records
-€8,900 for the same field; plain vector
-recall just returns whichever ranked higher and stays quiet. Anyone building agents
+demo, separate sessions assign different values to the same `INV-5521.amount` field;
+plain vector recall just returns whichever ranked higher and stays quiet. Anyone
+building agents
 that must stay consistent over time — support copilots, research assistants,
 financial-document pipelines — inherits a memory they can't trust. **Archon
 MemoryAgent** is a persistent, queryable, cross-session memory that recalls grounded,

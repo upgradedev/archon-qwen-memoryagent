@@ -24,7 +24,7 @@ submission-pack allowlist; any runtime-affecting delta requires another exact de
 | 2 · Exact live + vision | 0:13–0:32 | Sanitized exact-SHA release card, `/health`, `/ready`, then the qwen-vl canary card | Keep commit provenance separate from endpoint/model readiness. Show the original synthetic two-PNG dry-run, response-reported model, zero writes and exact-marker absence. |
 | 3 · Architecture + scale path | 0:32–0:51 | [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg), held long enough to read | Trace evidence → trust edge → Qwen → pgvector → hybrid cited answer → read-only audit/human decision; point to tenant-scoped REST/MCP and pg-wire portability without claiming unmeasured scale. |
 | 4 · Cross-session memory | 0:51–1:13 | Live Explorer plus generated Session A/Session B proof | Fresh Session B receives a grounded cited answer from Session A. Product default is hybrid; the proof exposes pure cosine only for readable similarity. |
-| 5 · Headline differentiator | 1:13–1:35 | Original synthetic `INV-5521`, field self-audit, then human-control frame | Show `€8,400` vs `€8,900`, provenance, `recency`, no silent mutation. The live frame exercises **Defer only** with zero API call/write; Accept/Override remain visibly unexercised. |
+| 5 · Headline differentiator | 1:13–1:35 | Original synthetic `INV-5521`, field self-audit, then human-control frame | Show that the same field differs across sessions, with both provenance records visible, a declared `recency` recommendation, and no silent mutation. The live frame exercises **Defer only** with zero API call/write; Accept/Override remain visibly unexercised. |
 | 6 · Feedback persistence | 1:35–1:53 | Session-A correction beside separately authenticated fresh Session-B recall/application | Prove durable stored feedback with a citation. Explicitly say this is persistence, not autonomous training or model-weight learning. |
 | 7 · Meaning + MCP | 1:53–2:10 | “always pays on time” vs “chronically late”, Qwen result, four-tool MCP card | Separate the working live semantic mechanism from the offline 90% fixture and distinguish authenticated HTTP from trusted-local stdio. |
 | 8 · Timely forgetting | 2:10–2:22 | Authenticated lifecycle preview followed by confirmed result | Show exactly one feedback-superseded candidate previewed, exactly one audited deletion, protected state unchanged and exact-marker residue zero. |
@@ -57,14 +57,13 @@ never remove a claim caveat.
 > bounded listwise qwen-plus rerank, and a grounded cited answer. Read-only audit and
 > explicit human control sit behind tenant-scoped REST and MCP.
 >
-> Session A commits financial facts and disconnects. A fresh Session B asks by
-> meaning. Qwen returns 14,600 euros true workforce cost against 10,800 euros bank
-> outflow, with citations. This proof exposes cosine scores for readability; product
-> default stays hybrid.
+> Session A commits source-linked synthetic facts and disconnects. A fresh Session B
+> asks by meaning and receives a grounded answer with numbered citations. This proof
+> exposes cosine scores for readability; product default stays hybrid.
 >
-> Now the differentiator. Original synthetic sessions record 8,400 and 8,900 euros
-> for `INV-5521.amount`. Archon preserves both and recommends the newer value under
-> declared recency; it never rewrites silently. The live human frame exercises Defer
+> Now the differentiator. Original synthetic sessions disagree on
+> `INV-5521.amount`. Archon preserves both values and recommends under declared
+> recency; it never rewrites silently. The live human frame exercises Defer
 > only: zero API call, zero write. Accept and Override are protected actions, not
 > claimed here.
 >
@@ -130,8 +129,9 @@ never remove a claim caveat.
   deliberately selects dense cosine recall so the displayed score is meaningful.
 - Do not claim Function Compute/RDS is the live topology.
 - Label `INV-5521` and all other displayed business records as original synthetic
-  demo data. Use the same canonical `€8,400`/`€8,900` pair in the story, thumbnail,
-  public Explorer, screenshots, captions, and final video.
+  demo data. The evidence frame may show the exact fixture values needed to prove
+  the conflict; promotional copy, thumbnail text, and captions should describe the
+  cross-session disagreement without repeating monetary examples.
 - Do not publish a candidate whose duration is `>=175` seconds, whose voice rights
   are unverified, or whose frames contain third-party material without permission.
 

@@ -84,11 +84,11 @@ Recheck the chapters after YouTube finishes processing.
 
 ## Thumbnail and captions
 
-- Upload [`final-media/youtube-thumbnail.png`](./final-media/youtube-thumbnail.png):
+- Upload `demo/final-media/youtube-thumbnail.png`:
   exactly 1280×720, original project imagery, no token/account identifiers, readable
   at small card size.
 - Set the video language to **English**.
-- Upload [`final-media/memoryagent-demo.en.srt`](./final-media/memoryagent-demo.en.srt)
+- Upload `demo/final-media/memoryagent-demo.en.srt`
   as English subtitles. It must be byte-identical to the SHA-bound ten-entry file
   mirrored by the burned captions and final real-motion manifest.
 - Do not publish an SRT whose capture review says

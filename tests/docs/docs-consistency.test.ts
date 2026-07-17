@@ -11,9 +11,9 @@
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../src/server.js";
 import { DEMO_PRIMARY_RECALL_QUESTION, DEMO_TEMPLATES } from "../../src/demo-data.js";
@@ -345,5 +345,50 @@ test("CHECK 1e — skill kind descriptions are generated from the complete enum"
   for (const skill of SKILLS) {
     const kind = skill.parameters.properties.kind as { description?: string } | undefined;
     if (kind) assert.equal(kind.description, expected, `${skill.name} kind description drifted from MEMORY_KINDS`);
+  }
+});
+
+test("CHECK 1f — every local Markdown link resolves to a present repository path", () => {
+  const ignored = new Set([".artifacts", ".git", "dist", "node_modules"]);
+  const markdown: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!ignored.has(entry.name)) visit(join(directory, entry.name));
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        markdown.push(join(directory, entry.name));
+      }
+    }
+  };
+  visit(ROOT);
+
+  const failures: string[] = [];
+  const link = /!?\[[^\]]*\]\((?<target>[^)]+)\)/g;
+  for (const file of markdown) {
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(link)) {
+      let target = match.groups?.target?.trim() ?? "";
+      if (target.startsWith("<") && target.endsWith(">")) target = target.slice(1, -1);
+      if (/^(?:https?:\/\/|mailto:|data:|#)/i.test(target)) continue;
+      target = target.replace(/\s+["'][^"']*["']$/, "").split("#", 1)[0] ?? "";
+      if (!target || /^\[[A-Z0-9_]+\]$/.test(target)) continue;
+      const resolved = resolve(dirname(file), decodeURIComponent(target));
+      if (!existsSync(resolved)) failures.push(`${relative(ROOT, file)} -> ${target}`);
+    }
+  }
+  assert.deepEqual(failures, [], `broken local Markdown links:\n${failures.join("\n")}`);
+});
+
+test("CHECK 2b — judge-facing Markdown renders only the modern architecture hero", () => {
+  const publicDocs = ["README.md", "demo/BLOG.md", "demo/DEVPOST_STAGING.md", "demo/PROJECT_STORY.md"];
+  for (const relativePath of publicDocs) {
+    const source = readText(relativePath);
+    const architectureImages = [...source.matchAll(/!\[[^\]]*\]\((?<target>[^)]*architecture[^)]*)\)/gi)];
+    for (const image of architectureImages) {
+      assert.match(image.groups?.target ?? "", /judge-architecture\.(?:jpg|svg)/i, `${relativePath} renders the dense appendix as a judge hero`);
+    }
+    if (/docs\/architecture\.(?:mmd|png|svg)/i.test(source)) {
+      assert.match(source, /technical appendix/i, `${relativePath} must label docs/architecture.* as the dense technical appendix`);
+    }
   }
 });
