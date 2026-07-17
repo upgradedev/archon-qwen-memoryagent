@@ -368,6 +368,80 @@ class CapturePersistentTransportTests(unittest.TestCase):
             capture.PinnedHttpsJsonTransport(ssl_context=no_certificate)
 
 
+class CaptureQuotaOrderingTests(unittest.TestCase):
+    def test_document_vision_reservation_runs_only_after_browser_semantic_success(self) -> None:
+        order: list[str] = []
+        probes = {"health": {"judge": capture.EXPECTED_NARRATOR}}
+        feedback = {"status": "passed"}
+        captured = {"repoRaw": "ignored-project-local-fixture"}
+        vision = {"status": "passed", "modelId": capture.EXPECTED_VISION}
+
+        with (
+            mock.patch.object(
+                capture,
+                "public_release_probes",
+                side_effect=lambda *_args: order.append("release-probes") or probes,
+            ),
+            mock.patch.object(
+                capture,
+                "feedback_persistence_and_lifecycle_proof",
+                side_effect=lambda *_args: order.append("feedback-session-b") or feedback,
+            ),
+            mock.patch.object(
+                capture,
+                "contained_browser_capture",
+                side_effect=lambda *_args: order.append("browser-semantic") or captured,
+            ),
+            mock.patch.object(
+                capture,
+                "vision_document_canary",
+                side_effect=lambda *_args: order.append("qwen-vl-ingest") or vision,
+            ),
+        ):
+            result = capture.collect_live_submission_evidence(
+                base_url=capture.DEFAULT_BASE_URL,
+                repo_url=capture.DEFAULT_REPO_URL,
+                reviewer_token="offline-reviewer-fixture",
+                expected_sha="1" * 40,
+                observed_at="2000-01-01T00:00:00Z",
+                attempt_ledger=mock.Mock(),
+            )
+
+        self.assertEqual(
+            order,
+            ["release-probes", "feedback-session-b", "browser-semantic", "qwen-vl-ingest"],
+        )
+        self.assertEqual(result, (probes, feedback, captured, vision))
+        self.assertIs(probes["visionCanary"], vision)
+
+    def test_browser_or_semantic_failure_never_calls_document_vision(self) -> None:
+        vision = mock.Mock()
+        with (
+            mock.patch.object(capture, "public_release_probes", return_value={"health": {}}),
+            mock.patch.object(
+                capture,
+                "feedback_persistence_and_lifecycle_proof",
+                return_value={"status": "passed"},
+            ),
+            mock.patch.object(
+                capture,
+                "contained_browser_capture",
+                side_effect=capture.GateError("semantic audit failed closed"),
+            ),
+            mock.patch.object(capture, "vision_document_canary", vision),
+            self.assertRaisesRegex(capture.GateError, "semantic audit failed closed"),
+        ):
+            capture.collect_live_submission_evidence(
+                base_url=capture.DEFAULT_BASE_URL,
+                repo_url=capture.DEFAULT_REPO_URL,
+                reviewer_token="offline-reviewer-fixture",
+                expected_sha="1" * 40,
+                observed_at="2000-01-01T00:00:00Z",
+                attempt_ledger=mock.Mock(),
+            )
+        vision.assert_not_called()
+
+
 class CaptionTimelineTests(unittest.TestCase):
     def test_real_motion_defaults_cover_the_matching_recall_beat(self) -> None:
         build_source = (ROOT / "demo" / "tools" / "build_real_motion_submission.py").read_text(encoding="utf-8")

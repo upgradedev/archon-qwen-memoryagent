@@ -2772,6 +2772,45 @@ def capture_resilience_self_test(root: Path) -> None:
     require(source.is_file() and not stale.exists() and snapshot.is_file(), "private stale-output cleanup self-test failed")
 
 
+def collect_live_submission_evidence(
+    *,
+    base_url: str,
+    repo_url: str,
+    reviewer_token: str,
+    expected_sha: str,
+    observed_at: str,
+    attempt_ledger: CaptureAttemptLedger,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Run live gates with the scarce document-ingest reservation last.
+
+    The qwen-vl-max dry run atomically reserves ten authenticated ingest work
+    units.  Session-B recall and the Explorer's recall/semantic/browser proof are
+    availability-sensitive, so they must pass before that reservation is made.
+    The vision result remains fresh, live, zero-write evidence from this same
+    capture run; only its position changes.
+    """
+
+    print("[2/10] public health/readiness, authenticated deep readiness, seed and selected-company P&L")
+    probes = public_release_probes(base_url, reviewer_token)
+
+    print("[3/10] Session-A feedback, fresh Session-B application, one-row lifecycle + cleanup")
+    feedback_proof = feedback_persistence_and_lifecycle_proof(
+        base_url, reviewer_token, probes, attempt_ledger
+    )
+
+    print("[4/10] canonical Explorer recall, field audit, semantic audit and honest Defer-only capture")
+    captured = contained_browser_capture(
+        base_url, repo_url, reviewer_token, expected_sha, observed_at, probes, attempt_ledger
+    )
+
+    # Keep this after every stochastic recall/semantic/browser gate.  A failure
+    # above therefore cannot consume the scarce 10-unit document-ingest charge.
+    print("[5/10] original-synthetic qwen-vl-max dry-run canary + exact absence gate")
+    vision_canary = vision_document_canary(base_url, reviewer_token, expected_sha)
+    probes["visionCanary"] = vision_canary
+    return probes, feedback_proof, captured, vision_canary
+
+
 def self_test() -> int:
     root = project_path(".artifacts/media-pipeline-selftest", "self-test output")
     if root.exists():
@@ -3029,21 +3068,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         observed_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
-        print("[2/10] public health/readiness, authenticated deep readiness, seed and selected-company P&L")
-        probes = public_release_probes(base_url, reviewer_token)
-
-        print("[3/10] original-synthetic qwen-vl-max dry-run canary + exact absence gate")
-        vision_canary = vision_document_canary(base_url, reviewer_token, expected_sha)
-        probes["visionCanary"] = vision_canary
-
-        print("[4/10] Session-A feedback, fresh Session-B application, one-row lifecycle + cleanup")
-        feedback_proof = feedback_persistence_and_lifecycle_proof(
-            base_url, reviewer_token, probes, attempt_ledger
-        )
-
-        print("[5/10] canonical Explorer recall, field audit, semantic audit and honest Defer-only capture")
-        captured = contained_browser_capture(
-            base_url, args.repo_url, reviewer_token, expected_sha, observed_at, probes, attempt_ledger
+        probes, feedback_proof, captured, vision_canary = collect_live_submission_evidence(
+            base_url=base_url,
+            repo_url=args.repo_url,
+            reviewer_token=reviewer_token,
+            expected_sha=expected_sha,
+            observed_at=observed_at,
+            attempt_ledger=attempt_ledger,
         )
         enforce_private_scratch_budget()
 
