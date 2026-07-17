@@ -32,7 +32,7 @@ import ssl
 import subprocess
 import sys
 import time
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
@@ -82,9 +82,74 @@ CANONICAL_RECALL_QUESTION = (
 )
 VALID_GROUNDING_RESULTS = frozenset({("passed", 1), ("repaired", 2)})
 
+# HTTP-200, read-only stage resilience.  These retries are intentionally separate
+# from transport retrying: the server has authoritatively completed a read-only
+# request and returned one of two small, typed degradation shapes.  Mutations,
+# transport exceptions, non-200 responses, malformed/unknown payloads, grounding
+# failures and content/safety failures are never retried here.
+STAGE_LOCAL_MAX_ATTEMPTS = 3
+STAGE_LOCAL_BACKOFF_SECONDS = (1.0, 2.0)
+STAGE_LOCAL_RETRY_QUOTA = {
+    "session-b-recall": {"pool": "judge-recall", "workUnitsPerAttempt": 4, "limit": 200},
+    "explorer-recall": {"pool": "public-recall", "workUnitsPerAttempt": 4, "limit": 200},
+    "semantic-audit": {"pool": "judge-semantic", "workUnitsPerAttempt": 25, "limit": 500},
+}
+REQUIRED_STAGE_LOCAL_PROVENANCE = tuple(STAGE_LOCAL_RETRY_QUOTA)
+ALLOWLISTED_NARRATOR_TRANSIENT_CODES = frozenset({
+    "upstream_rate_limited",
+    "upstream_timeout",
+    "upstream_unavailable",
+})
+NARRATOR_DEGRADED_MESSAGE = "narrator unavailable — returning raw recalled memories"
+ATTEMPT_CLASSIFICATIONS = frozenset({
+    "allowlisted-narrator-upstream-unavailable",
+    "allowlisted-semantic-judge-unavailable",
+    "http-non-200",
+    "malformed-payload",
+    "non-retryable-narrator-contract",
+    "non-retryable-semantic-contract",
+    "request-or-parse-failure",
+    "strict-complete-semantic-audit",
+    "strict-qwen-narrator",
+})
+CANONICAL_PRIVATE_SOURCE_NAMES = frozenset({
+    "alibaba-ecs-overview-raw.png",
+    "alibaba-ecs-overview-raw.jpg",
+})
+LEGACY_PRIVATE_GENERATED_NAMES = frozenset({
+    "01-grounded-cross-session-recall-raw.png",
+    "01-grounded-cross-session-recall-response.json",
+    "02-feedback-persistence-lifecycle-proof.json",
+    "02-session-a-feedback-response.json",
+    "02-session-a-ingest-response.json",
+    "02-session-b-recall-response.json",
+    "03-field-audit-raw.png",
+    "03-field-audit-response.json",
+    "04-semantic-audit-raw.png",
+    "04-semantic-audit-response.json",
+    "05-human-control-raw.png",
+    "06-lifecycle-confirmed.json",
+    "06-lifecycle-preview.json",
+    "08-qwen-vl-document-canary-proof.json",
+    "08-qwen-vl-document-canary-response.json",
+    "11-github-public-probe.json",
+    "11-public-repository-raw.png",
+    "alibaba-ecs-overview-sanitized.png",
+    "browser-runtime",
+    "health.json",
+    "northwind-pnl.json",
+    "ready-deep.json",
+    "ready.json",
+    "reviewer-northwind-pnl.json",
+    "reviewer-seed-idempotent.json",
+    "runs",
+    "seed-idempotent.json",
+})
+
 # Capture-only ingress resilience.  The four deterministic delays yield at most
 # five transport attempts for body-free GET probes.  Mutations, HTTP responses,
-# malformed payloads, and failed semantic gates are deliberately never retried.
+# malformed payloads, and generic content/semantic gate failures are deliberately
+# never retried; the typed HTTP-200 stage controller above is a separate policy.
 GET_TRANSPORT_RETRY_DELAYS_SECONDS = (0.25, 0.5, 1.0, 2.0)
 GET_TRANSPORT_MAX_ATTEMPTS = len(GET_TRANSPORT_RETRY_DELAYS_SECONDS) + 1
 
@@ -117,6 +182,436 @@ class GateError(RuntimeError):
     """A fail-closed release/media validation error."""
 
 
+_ACTIVE_PRIVATE_OUTPUT_DIR: Path | None = None
+
+
+def _strict_int(value: Any) -> bool:
+    return type(value) is int
+
+
+def _list_count(value: Any) -> int | None:
+    return len(value) if isinstance(value, list) else None
+
+
+def _safe_evidence_value(value: Any) -> None:
+    """Reject secret-shaped attempt evidence before it reaches disk."""
+
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if SENSITIVE_KEY.search(str(key)):
+                raise GateError("capture attempt evidence contains a sensitive key")
+            _safe_evidence_value(item)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _safe_evidence_value(item)
+        return
+    if isinstance(value, str):
+        if BEARER.search(value) or EMAIL.search(value) or PRIVATE_IPV4.search(value):
+            raise GateError("capture attempt evidence contains sensitive text")
+
+
+class CaptureAttemptLedger:
+    """Secret-safe, run-scoped evidence for bounded read-only stage retries."""
+
+    def __init__(self, run_id: str, output_dir: Path) -> None:
+        if re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}", run_id) is None:
+            raise GateError("capture run id is invalid")
+        try:
+            output_dir.resolve().relative_to(REPO.resolve())
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise GateError("capture attempt evidence directory escaped the repository") from exc
+        self.run_id = run_id
+        self.output_dir = output_dir
+        self.records: list[dict[str, Any]] = []
+
+    def record(
+        self,
+        *,
+        stage: str,
+        attempt: int,
+        outcome: str,
+        classification: str,
+        observation: dict[str, Any],
+    ) -> None:
+        quota = STAGE_LOCAL_RETRY_QUOTA.get(stage)
+        require(quota is not None, "capture retry stage is not quota-declared")
+        require(1 <= attempt <= STAGE_LOCAL_MAX_ATTEMPTS, "capture retry attempt is out of bounds")
+        require(
+            outcome in {"selected", "retryable-transient", "transient-exhausted", "rejected-no-retry", "request-failed-no-retry"},
+            "capture retry outcome is invalid",
+        )
+        require(classification in ATTEMPT_CLASSIFICATIONS, "capture retry classification is invalid")
+        if outcome == "selected":
+            require(
+                classification in {"strict-qwen-narrator", "strict-complete-semantic-audit"},
+                "capture selected outcome has a non-success classification",
+            )
+        elif outcome in {"retryable-transient", "transient-exhausted"}:
+            require(
+                classification in {
+                    "allowlisted-narrator-upstream-unavailable",
+                    "allowlisted-semantic-judge-unavailable",
+                },
+                "capture transient outcome has a non-transient classification",
+            )
+            require(
+                (outcome == "retryable-transient" and attempt < STAGE_LOCAL_MAX_ATTEMPTS)
+                or (outcome == "transient-exhausted" and attempt == STAGE_LOCAL_MAX_ATTEMPTS),
+                "capture transient outcome is inconsistent with its attempt",
+            )
+        elif outcome == "request-failed-no-retry":
+            require(classification == "request-or-parse-failure", "capture failed request classification is invalid")
+        else:
+            require(
+                classification in {
+                    "http-non-200",
+                    "malformed-payload",
+                    "non-retryable-narrator-contract",
+                    "non-retryable-semantic-contract",
+                },
+                "capture rejected outcome has a retryable classification",
+            )
+        backoff = (
+            STAGE_LOCAL_BACKOFF_SECONDS[attempt - 1]
+            if outcome == "retryable-transient"
+            else None
+        )
+        document = {
+            "schemaVersion": 1,
+            "captureRunId": self.run_id,
+            "stage": stage,
+            "attempt": attempt,
+            "maxAttempts": STAGE_LOCAL_MAX_ATTEMPTS,
+            "outcome": outcome,
+            "classification": classification,
+            "backoffSecondsBeforeNextAttempt": backoff,
+            "quota": {
+                "pool": quota["pool"],
+                "workUnitsUpperBoundThisAttempt": quota["workUnitsPerAttempt"],
+                "maxStageWorkUnits": quota["workUnitsPerAttempt"] * STAGE_LOCAL_MAX_ATTEMPTS,
+                "dailyLimit": quota["limit"],
+            },
+            "observation": observation,
+        }
+        _safe_evidence_value(document)
+        attempt_dir = self.output_dir / "attempts"
+        attempt_dir.mkdir(parents=True, exist_ok=True)
+        require(attempt_dir.is_dir() and not attempt_dir.is_symlink(), "capture attempt directory is unsafe")
+        path = attempt_dir / f"{stage}-attempt-{attempt:02d}.json"
+        require(not path.exists() and not path.is_symlink(), "capture attempt evidence path already exists")
+        try:
+            with path.open("x", encoding="utf-8", newline="\n") as handle:
+                handle.write(json.dumps(document, ensure_ascii=False, indent=2) + "\n")
+        except FileExistsError as exc:
+            raise GateError("capture attempt evidence path already exists") from exc
+        try:
+            relative = str(path.relative_to(REPO)).replace("\\", "/")
+        except ValueError as exc:
+            raise GateError("capture attempt evidence escaped the repository") from exc
+        self.records.append({
+            "stage": stage,
+            "attempt": attempt,
+            "outcome": outcome,
+            "classification": classification,
+            "backoffSecondsBeforeNextAttempt": backoff,
+            "quota": document["quota"],
+            "observation": observation,
+            "path": relative,
+            "sha256": sha256_file(path),
+        })
+
+    def review_provenance(self) -> dict[str, Any]:
+        selected: dict[str, Any] = {}
+        for stage in REQUIRED_STAGE_LOCAL_PROVENANCE:
+            stage_records = [record for record in self.records if record["stage"] == stage]
+            chosen = [record for record in stage_records if record["outcome"] == "selected"]
+            require(len(chosen) == 1, f"capture retry provenance has no unique selected {stage} attempt")
+            require(
+                [record["attempt"] for record in stage_records] == list(range(1, len(stage_records) + 1)),
+                f"capture retry provenance has a non-contiguous {stage} attempt sequence",
+            )
+            selected_record = chosen[0]
+            require(selected_record is stage_records[-1], f"capture retry provenance selected a non-final {stage} attempt")
+            require(
+                all(record["outcome"] == "retryable-transient" for record in stage_records[:-1]),
+                f"capture retry provenance contains a non-retryable pre-selection {stage} attempt",
+            )
+            for record in stage_records:
+                evidence_path = REPO / record["path"]
+                require(
+                    evidence_path.is_file() and not evidence_path.is_symlink(),
+                    f"capture retry evidence for {stage} is missing or unsafe",
+                )
+                require(
+                    evidence_path.parent.resolve() == (self.output_dir / "attempts").resolve(),
+                    f"capture retry evidence for {stage} escaped its run",
+                )
+                require(
+                    sha256_file(evidence_path) == record["sha256"],
+                    f"capture retry evidence hash drifted for {stage}",
+                )
+            selected[stage] = {
+                "selectedAttempt": selected_record["attempt"],
+                "attemptCount": len(stage_records),
+                "evidencePath": selected_record["path"],
+                "evidenceSha256": selected_record["sha256"],
+            }
+        return {
+            "captureRunId": self.run_id,
+            "policy": {
+                "maxAttempts": STAGE_LOCAL_MAX_ATTEMPTS,
+                "backoffSeconds": list(STAGE_LOCAL_BACKOFF_SECONDS),
+                "retryableHttpResults": [
+                    "typed narrator upstream unavailability after HTTP 200",
+                    "typed semantic judge unavailability after HTTP 200",
+                ],
+                "neverRetried": [
+                    "mutations",
+                    "transport errors",
+                    "non-200 responses",
+                    "malformed or unknown payloads",
+                    "grounding or content safety failures",
+                    "embedding failures or truncation",
+                    "unparseable judge output",
+                ],
+            },
+            "quotaBounds": {
+                stage: {
+                    **quota,
+                    "maxStageWorkUnits": quota["workUnitsPerAttempt"] * STAGE_LOCAL_MAX_ATTEMPTS,
+                }
+                for stage, quota in STAGE_LOCAL_RETRY_QUOTA.items()
+            },
+            "selectedAttempts": selected,
+            "attemptEvidence": list(self.records),
+        }
+
+
+def classify_narrator_stage(payload: Any, http_status: int) -> tuple[str, str, dict[str, Any]]:
+    """Select, retry, or reject a recall result without retaining its content."""
+
+    if http_status != 200:
+        return "rejected", "http-non-200", {
+            "httpStatus": http_status,
+            "payloadShape": "object" if isinstance(payload, dict) else "unavailable",
+        }
+    if not isinstance(payload, dict):
+        return "rejected", "malformed-payload", {"httpStatus": http_status, "payloadShape": "non-object"}
+    grounding = payload.get("grounding")
+    grounding_status = grounding.get("status") if isinstance(grounding, dict) else None
+    grounding_attempts = grounding.get("attempts") if isinstance(grounding, dict) else None
+    grounding_result = (
+        (grounding_status, grounding_attempts)
+        if isinstance(grounding_status, str) and _strict_int(grounding_attempts)
+        else (None, None)
+    )
+    model_id = payload.get("modelId")
+    degradation_code = payload.get("degradationCode")
+    degradation_allowlisted = (
+        isinstance(degradation_code, str)
+        and degradation_code in ALLOWLISTED_NARRATOR_TRANSIENT_CODES
+    )
+    summary = {
+        "httpStatus": http_status,
+        "payloadShape": "object",
+        "modelClass": "expected" if model_id == EXPECTED_NARRATOR else "degraded" if model_id == "degraded" else "other",
+        "groundingClass": grounding_result[0] if grounding_result in VALID_GROUNDING_RESULTS else "missing-or-invalid",
+        "groundingAttempts": grounding_result[1] if grounding_result in VALID_GROUNDING_RESULTS else None,
+        "degradationClass": "allowlisted-upstream" if degradation_allowlisted else "none" if degradation_code is None else "other",
+        "hitCount": _list_count(payload.get("hits")),
+        "citationCount": _list_count(payload.get("citations")),
+    }
+    strict_success = (
+        model_id == EXPECTED_NARRATOR
+        and "degraded" not in payload
+        and "degradationCode" not in payload
+        and "degradationAttempts" not in payload
+        and isinstance(grounding, dict)
+        and _strict_int(grounding.get("attempts"))
+        and grounding_result in VALID_GROUNDING_RESULTS
+    )
+    if strict_success:
+        return "selected", "strict-qwen-narrator", summary
+    hits = payload.get("hits")
+    citations = payload.get("citations")
+    degraded_keys = {
+        "answer", "hits", "citations", "modelId", "consistency", "retrieval",
+        "degraded", "degradationCode", "degradationAttempts",
+    }
+    retryable = (
+        set(payload) == degraded_keys
+        and model_id == "degraded"
+        and payload.get("degraded") == NARRATOR_DEGRADED_MESSAGE
+        and degradation_allowlisted
+        and _strict_int(payload.get("degradationAttempts"))
+        and payload.get("degradationAttempts") == 1
+        and "grounding" not in payload
+        and isinstance(payload.get("answer"), str)
+        and bool(payload["answer"].strip())
+        and isinstance(hits, list)
+        and len(hits) > 0
+        and all(isinstance(hit, dict) for hit in hits)
+        and isinstance(citations, list)
+        and len(citations) == len(hits)
+        and all(isinstance(citation, dict) for citation in citations)
+        and isinstance(payload.get("consistency"), dict)
+        and isinstance(payload.get("retrieval"), dict)
+    )
+    if retryable:
+        return "retryable", "allowlisted-narrator-upstream-unavailable", summary
+    return "rejected", "non-retryable-narrator-contract", summary
+
+
+def classify_semantic_stage(payload: Any, http_status: int) -> tuple[str, str, dict[str, Any]]:
+    """Retry only a structurally exact judge-unavailable semantic report."""
+
+    if http_status != 200:
+        return "rejected", "http-non-200", {
+            "httpStatus": http_status,
+            "payloadShape": "object" if isinstance(payload, dict) else "unavailable",
+        }
+    if not isinstance(payload, dict):
+        return "rejected", "malformed-payload", {"httpStatus": http_status, "payloadShape": "non-object"}
+    errors = payload.get("errors")
+    embedding_errors = payload.get("embeddingErrors")
+    findings = payload.get("semanticContradictions")
+    status_value = payload.get("status")
+    compared = payload.get("compared")
+    judged = payload.get("judged")
+    failed = payload.get("failed")
+    model_calls = payload.get("modelCalls")
+    summary = {
+        "httpStatus": http_status,
+        "payloadShape": "object",
+        "statusClass": status_value if isinstance(status_value, str) and status_value in {"complete", "partial", "inconclusive"} else "other",
+        "compared": compared if _strict_int(compared) else None,
+        "judged": judged if _strict_int(judged) else None,
+        "failed": failed if _strict_int(failed) else None,
+        "embeddingFailed": payload.get("embeddingFailed") if _strict_int(payload.get("embeddingFailed")) else None,
+        "truncated": payload.get("truncated") if type(payload.get("truncated")) is bool else None,
+        "findingCount": _list_count(findings),
+        "judgeUnavailableErrorCount": (
+            sum(1 for error in errors if isinstance(error, dict) and error.get("reason") == "judge unavailable")
+            if isinstance(errors, list)
+            else None
+        ),
+        "otherErrorCount": (
+            sum(1 for error in errors if not isinstance(error, dict) or error.get("reason") != "judge unavailable")
+            if isinstance(errors, list)
+            else None
+        ),
+    }
+    counters_valid = all(_strict_int(value) and value >= 0 for value in (compared, judged, failed, model_calls))
+    collections_valid = isinstance(errors, list) and isinstance(embedding_errors, list) and isinstance(findings, list)
+    strict_complete = (
+        status_value == "complete"
+        and counters_valid
+        and collections_valid
+        and compared == judged == model_calls
+        and failed == 0
+        and errors == []
+        and _strict_int(payload.get("embeddingFailed"))
+        and payload.get("embeddingFailed") == 0
+        and embedding_errors == []
+        and payload.get("truncated") is False
+    )
+    if strict_complete:
+        return "selected", "strict-complete-semantic-audit", summary
+    error_shape_valid = (
+        isinstance(errors, list)
+        and len(errors) > 0
+        and all(
+            isinstance(error, dict)
+            and set(error) == {"memoryIds", "reason"}
+            and error.get("reason") == "judge unavailable"
+            and isinstance(error.get("memoryIds"), list)
+            and len(error["memoryIds"]) == 2
+            and all(isinstance(memory_id, str) and bool(memory_id) for memory_id in error["memoryIds"])
+            for error in errors
+        )
+    )
+    retryable = (
+        set(payload) == {
+            "totalMemories", "audited", "candidatePairs", "compared", "modelCalls",
+            "judged", "failed", "embeddingFailed", "truncated", "status", "errors",
+            "embeddingErrors", "semanticContradictions", "ok",
+        }
+        and isinstance(status_value, str)
+        and status_value in {"partial", "inconclusive"}
+        and counters_valid
+        and all(
+            _strict_int(payload.get(key)) and payload[key] >= 0
+            for key in ("totalMemories", "audited", "candidatePairs")
+        )
+        and collections_valid
+        and compared > 0
+        and model_calls == compared
+        and failed == len(errors) > 0
+        and judged + failed == compared
+        and _strict_int(payload.get("embeddingFailed"))
+        and payload.get("embeddingFailed") == 0
+        and embedding_errors == []
+        and payload.get("truncated") is False
+        and payload.get("ok") is False
+        and error_shape_valid
+    )
+    if retryable:
+        return "retryable", "allowlisted-semantic-judge-unavailable", summary
+    return "rejected", "non-retryable-semantic-contract", summary
+
+
+def run_stage_local_retry(
+    *,
+    stage: str,
+    operation: Callable[[], tuple[Any, int]],
+    classifier: Callable[[Any, int], tuple[str, str, dict[str, Any]]],
+    ledger: CaptureAttemptLedger,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> Any:
+    """Retry only classifier-approved HTTP-200 read results, never requests generically."""
+
+    require(stage in STAGE_LOCAL_RETRY_QUOTA, "capture retry stage has no quota declaration")
+    for attempt in range(1, STAGE_LOCAL_MAX_ATTEMPTS + 1):
+        try:
+            payload, http_status = operation()
+        except Exception as exc:
+            ledger.record(
+                stage=stage,
+                attempt=attempt,
+                outcome="request-failed-no-retry",
+                classification="request-or-parse-failure",
+                observation={"httpStatus": None, "payloadShape": "unavailable"},
+            )
+            if isinstance(exc, GateError):
+                raise
+            raise GateError(f"{stage} request or response parsing failed without retry") from exc
+        decision, classification, observation = classifier(payload, http_status)
+        require(decision in {"selected", "retryable", "rejected"}, "capture retry classifier returned an invalid decision")
+        exhausted = decision == "retryable" and attempt == STAGE_LOCAL_MAX_ATTEMPTS
+        outcome = (
+            "selected" if decision == "selected"
+            else "transient-exhausted" if exhausted
+            else "retryable-transient" if decision == "retryable"
+            else "rejected-no-retry"
+        )
+        ledger.record(
+            stage=stage,
+            attempt=attempt,
+            outcome=outcome,
+            classification=classification,
+            observation=observation,
+        )
+        if decision == "selected":
+            return payload
+        if decision == "rejected":
+            return payload
+        if exhausted:
+            raise GateError(f"{stage} exhausted {STAGE_LOCAL_MAX_ATTEMPTS} allowlisted transient attempts")
+        sleeper(STAGE_LOCAL_BACKOFF_SECONDS[attempt - 1])
+    raise GateError(f"{stage} retry controller reached an impossible state")
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise GateError(message)
@@ -131,6 +626,95 @@ def snapshot_project_file(value: str | Path, label: str) -> ProjectFileSnapshot:
         return read_project_file_once(value, label)
     except ValueError as exc:
         raise GateError(str(exc)) from exc
+
+
+def prepare_private_capture_run(
+    run_id: str,
+    *,
+    private_root: Path = PRIVATE,
+    protected_inputs: Sequence[Path] = (),
+) -> Path:
+    """Remove only known legacy/generated capture paths and create one run root.
+
+    Canonical Alibaba sources and unrelated private inputs are never candidates
+    for deletion.  Previous adjudication snapshots under ``.artifacts`` are
+    outside this root and are therefore also untouched.  Target validation is
+    completed before the first removal so a symlink or unexpected file type
+    fails closed without a partial cleanup.
+    """
+
+    require(
+        re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}", run_id) is not None,
+        "capture run id is invalid",
+    )
+    lexical_root = Path(os.path.abspath(private_root))
+    try:
+        resolved_root = private_root.resolve()
+        resolved_root.relative_to(REPO.resolve())
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise GateError("private capture root escaped the repository") from exc
+    private_root.mkdir(parents=True, exist_ok=True)
+    resolved_root = private_root.resolve()
+    require(
+        resolved_root == lexical_root and not private_root.is_symlink() and private_root.is_dir(),
+        "private capture root is not a regular project directory",
+    )
+    protected = [source.resolve() for source in protected_inputs]
+    for name in sorted(CANONICAL_PRIVATE_SOURCE_NAMES):
+        source = private_root / name
+        if source.exists() or source.is_symlink():
+            require(
+                source.is_file()
+                and not source.is_symlink()
+                and source.resolve() == resolved_root / name,
+                f"canonical private source {name} is not a regular file",
+            )
+    targets: list[Path] = []
+    for name in sorted(LEGACY_PRIVATE_GENERATED_NAMES):
+        require(name not in CANONICAL_PRIVATE_SOURCE_NAMES, "private cleanup policy overlaps a canonical source")
+        target = private_root / name
+        if not target.exists() and not target.is_symlink():
+            continue
+        require(not target.is_symlink(), f"private generated path {name} is a symlink")
+        require(target.is_file() or target.is_dir(), f"private generated path {name} has an unsupported type")
+        resolved_target = target.resolve()
+        require(
+            resolved_target == resolved_root / name,
+            f"private generated path {name} traverses a link or reparse point",
+        )
+        require(
+            all(source != resolved_target and resolved_target not in source.parents for source in protected),
+            f"private input overlaps generated cleanup path {name}",
+        )
+        targets.append(target)
+    for target in targets:
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+    run_dir = private_root / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    return run_dir
+
+
+def set_active_private_output_dir(path: Path) -> None:
+    global _ACTIVE_PRIVATE_OUTPUT_DIR
+    require(path.is_dir() and not path.is_symlink(), "active private capture run is not a regular directory")
+    try:
+        path.resolve().relative_to(PRIVATE.resolve())
+    except ValueError as exc:
+        raise GateError("active private capture run escaped demo/private-originals") from exc
+    _ACTIVE_PRIVATE_OUTPUT_DIR = path
+
+
+def private_output_path(name: str) -> Path:
+    require(_ACTIVE_PRIVATE_OUTPUT_DIR is not None, "private capture run was not initialized")
+    relative = Path(name)
+    require(
+        not relative.is_absolute() and len(relative.parts) == 1 and relative.name == name,
+        "private capture output name must be a single relative filename",
+    )
+    return _ACTIVE_PRIVATE_OUTPUT_DIR / relative
 
 
 def validate_live_origin(value: str) -> str:
@@ -448,7 +1032,7 @@ def scrub_json(value: Any) -> Any:
 
 
 def write_private_json(name: str, value: Any) -> None:
-    path = PRIVATE / name
+    path = private_output_path(name)
     path.write_text(json.dumps(scrub_json(value), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
@@ -1082,7 +1666,7 @@ def sanitize_alibaba_capture(raw_input: Path, profile_path: Path) -> Image.Image
     require(required_labels.issubset(covered), "Alibaba profile does not cover every required identifier class")
 
     sanitized = image.crop((x0, y0, x1, y1))
-    intermediate = PRIVATE / "alibaba-ecs-overview-sanitized.png"
+    intermediate = private_output_path("alibaba-ecs-overview-sanitized.png")
     strip_and_save(sanitized, intermediate)
     return sanitized
 
@@ -1168,6 +1752,7 @@ def browser_capture(
     expected_sha: str,
     observed_at: str,
     probes: dict[str, Any],
+    attempt_ledger: CaptureAttemptLedger,
 ) -> dict[str, Any]:
     base_url = validate_live_origin(base_url)
     try:
@@ -1220,25 +1805,40 @@ def browser_capture(
         # 01 · fresh-session grounded recall.
         page.locator("#company").fill("Northwind Trading")
         page.locator("#question").fill(CANONICAL_RECALL_QUESTION)
-        with page.expect_response(lambda response: response.url.endswith("/recall") and response.request.method == "POST") as pending:
-            page.locator("#askBtn").click()
-        recall_response = pending.value
-        require(recall_response.status == 200, "Explorer recall returned a non-200 response")
-        recall_request_body = recall_response.request.post_data_json
-        require(isinstance(recall_request_body, dict), "Explorer recall request body is not JSON")
-        require(
-            recall_request_body.get("question") == CANONICAL_RECALL_QUESTION,
-            "Explorer recall question drifted from the canonical evidence wording",
+        def explorer_recall_operation() -> tuple[Any, int]:
+            page.wait_for_function(
+                "document.querySelector('#askBtn') && !document.querySelector('#askBtn').disabled"
+            )
+            with page.expect_response(
+                lambda response: response.url.endswith("/recall") and response.request.method == "POST"
+            ) as pending:
+                page.locator("#askBtn").click()
+            recall_response = pending.value
+            recall_request_body = recall_response.request.post_data_json
+            require(isinstance(recall_request_body, dict), "Explorer recall request body is not JSON")
+            require(
+                recall_request_body.get("question") == CANONICAL_RECALL_QUESTION,
+                "Explorer recall question drifted from the canonical evidence wording",
+            )
+            require(
+                recall_request_body.get("company") == "Northwind Trading",
+                "Explorer recall lost its canonical company scope",
+            )
+            require(
+                recall_request_body.get("limit") == 3,
+                "Explorer recall did not send the bounded limit=3 contract",
+            )
+            if recall_response.status != 200:
+                return None, recall_response.status
+            return recall_response.json(), recall_response.status
+
+        recall = run_stage_local_retry(
+            stage="explorer-recall",
+            operation=explorer_recall_operation,
+            classifier=classify_narrator_stage,
+            ledger=attempt_ledger,
         )
-        require(
-            recall_request_body.get("company") == "Northwind Trading",
-            "Explorer recall lost its canonical company scope",
-        )
-        require(
-            recall_request_body.get("limit") == 3,
-            "Explorer recall did not send the bounded limit=3 contract",
-        )
-        recall = recall_response.json()
+        require(isinstance(recall, dict), "Explorer recall returned a non-object response")
         require(recall.get("modelId") == EXPECTED_NARRATOR, "Explorer recall did not use qwen-plus")
         require(isinstance(recall.get("answer"), str) and recall["answer"].strip(), "Explorer recall returned no answer")
         require(isinstance(recall.get("citations"), list) and len(recall["citations"]) >= 1, "Explorer recall returned no citations")
@@ -1263,7 +1863,7 @@ def browser_capture(
             "Explorer recall did not pass strict grounding within the bounded two-attempt contract",
         )
         page.locator("#result .cite").first.wait_for()
-        raw_recall = PRIVATE / "01-grounded-cross-session-recall-raw.png"
+        raw_recall = private_output_path("01-grounded-cross-session-recall-raw.png")
         page.locator("#result").screenshot(path=str(raw_recall), animations="disabled")
         composite_live_capture(
             raw_recall,
@@ -1293,7 +1893,7 @@ def browser_capture(
         require(isinstance(resolution, dict) and resolution.get("recommendedValue") == 8900, "field audit recency recommendation is stale")
         target_locator = page.locator(".audit-flag").filter(has_text="INV-5521").first
         target_locator.wait_for()
-        raw_field = PRIVATE / "03-field-audit-raw.png"
+        raw_field = private_output_path("03-field-audit-raw.png")
         target_locator.screenshot(path=str(raw_field), animations="disabled")
         composite_live_capture(
             raw_field,
@@ -1313,11 +1913,31 @@ def browser_capture(
         # only while the request is in flight, then both field and sessionStorage
         # are cleared before any screenshot is taken.
         page.locator("#judgeToken").fill(reviewer_token)
-        with page.expect_response(lambda response: response.url.endswith("/consistency/semantic") and response.request.method == "POST") as pending:
-            page.locator("#semanticBtn").click()
-        semantic_response = pending.value
-        require(semantic_response.status == 200, "semantic audit returned a non-200 response")
-        semantic = semantic_response.json()
+        def semantic_audit_operation() -> tuple[Any, int]:
+            page.wait_for_function(
+                "document.querySelector('#semanticBtn') && !document.querySelector('#semanticBtn').disabled"
+            )
+            with page.expect_response(
+                lambda response: response.url.endswith("/consistency/semantic")
+                and response.request.method == "POST"
+            ) as pending:
+                page.locator("#semanticBtn").click()
+            semantic_response = pending.value
+            if semantic_response.status != 200:
+                return None, semantic_response.status
+            return semantic_response.json(), semantic_response.status
+
+        try:
+            semantic = run_stage_local_retry(
+                stage="semantic-audit",
+                operation=semantic_audit_operation,
+                classifier=classify_semantic_stage,
+                ledger=attempt_ledger,
+            )
+        finally:
+            page.locator("#judgeToken").fill("")
+            page.evaluate("sessionStorage.removeItem('archon_memory_reviewer_token')")
+        require(isinstance(semantic, dict), "semantic audit returned a non-object response")
         require(semantic.get("status") == "complete", "semantic audit is not complete")
         findings = semantic.get("semanticContradictions")
         require(isinstance(findings, list) and findings, "semantic audit found no contradiction")
@@ -1332,12 +1952,10 @@ def browser_capture(
         require(isinstance(semantic_target, dict), "semantic audit omitted the canonical meaning conflict")
         judge = semantic_target.get("judge")
         require(isinstance(judge, dict) and judge.get("model") == probes["health"]["judge"], "semantic finding has the wrong judge provenance")
-        page.locator("#judgeToken").fill("")
-        page.evaluate("sessionStorage.removeItem('archon_memory_reviewer_token')")
         require(page.locator("#judgeToken").input_value() == "", "reviewer token remained in the page before capture")
         semantic_locator = page.locator(".audit-flag").filter(has_text="chronically late").first
         semantic_locator.wait_for()
-        raw_semantic = PRIVATE / "04-semantic-audit-raw.png"
+        raw_semantic = private_output_path("04-semantic-audit-raw.png")
         semantic_locator.screenshot(path=str(raw_semantic), animations="disabled")
         composite_live_capture(
             raw_semantic,
@@ -1365,7 +1983,7 @@ def browser_capture(
         control.locator("button", has_text="Defer — no write").click()
         control.locator(".decision-result").filter(has_text="Zero API call").wait_for()
         require(page.locator("#judgeToken").input_value() == "", "reviewer token remained before control capture")
-        raw_control = PRIVATE / "05-human-control-raw.png"
+        raw_control = private_output_path("05-human-control-raw.png")
         control.screenshot(path=str(raw_control), animations="disabled")
         composite_live_capture(
             raw_control,
@@ -1386,7 +2004,7 @@ def browser_capture(
         repo_page.goto(repo_url, wait_until="domcontentloaded")
         repo_page.locator("body").wait_for()
         require("archon-qwen-memoryagent" in repo_page.title().lower(), "public repository landing page did not load")
-        raw_repo = PRIVATE / "11-public-repository-raw.png"
+        raw_repo = private_output_path("11-public-repository-raw.png")
         repo_page.screenshot(path=str(raw_repo), animations="disabled")
         results["repoRaw"] = raw_repo
         repo_page.close()
@@ -1399,7 +2017,7 @@ def browser_capture(
 
 def contained_browser_capture(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Keep browser profile/temp/cache scratch inside the ignored project tree."""
-    scratch = PRIVATE / "browser-runtime"
+    scratch = private_output_path("browser-runtime")
     if scratch.exists():
         shutil.rmtree(scratch)
     scratch.mkdir(parents=True)
@@ -1461,6 +2079,7 @@ def feedback_persistence_and_lifecycle_proof(
     base_url: str,
     reviewer_token: str,
     probes: dict[str, Any],
+    attempt_ledger: CaptureAttemptLedger,
 ) -> dict[str, Any]:
     """Create, recall, retire and scrub one synthetic feedback marker.
 
@@ -1541,17 +2160,28 @@ def feedback_persistence_and_lifecycle_proof(
 
         # request_json constructs a new request with no client-side session state.
         # Only the reviewer credential and question cross this Session-B boundary.
-        recall, _ = request_json(
-            "POST", base_url, "/recall",
-            body={
-                "question": f"{marker}: apply the stored reviewer preference. Which workforce-cost figure should appear first?",
-                "company": company,
-                "limit": 5,
-                "hybrid": True,
-                "rerank": True,
-            },
-            reviewer_token=reviewer_token,
-            timeout=150,
+        session_b_body = {
+            "question": f"{marker}: apply the stored reviewer preference. Which workforce-cost figure should appear first?",
+            "company": company,
+            "limit": 5,
+            "hybrid": True,
+            "rerank": True,
+        }
+
+        def session_b_recall_operation() -> tuple[Any, int]:
+            payload, _ = request_json(
+                "POST", base_url, "/recall",
+                body=session_b_body,
+                reviewer_token=reviewer_token,
+                timeout=150,
+            )
+            return payload, 200
+
+        recall = run_stage_local_retry(
+            stage="session-b-recall",
+            operation=session_b_recall_operation,
+            classifier=classify_narrator_stage,
+            ledger=attempt_ledger,
         )
         hits = recall.get("hits") if isinstance(recall, dict) else None
         require(isinstance(hits, list) and any(hit.get("id") == corrected_id for hit in hits if isinstance(hit, dict)), "fresh Session B did not recall the persisted correction")
@@ -1559,6 +2189,16 @@ def feedback_persistence_and_lifecycle_proof(
         require(isinstance(citations, list) and any(marker in str(citation.get("content", "")) for citation in citations if isinstance(citation, dict)), "fresh Session B answer did not cite the persisted preference")
         answer = recall.get("answer")
         require(recall.get("modelId") == EXPECTED_NARRATOR and isinstance(answer, str), "fresh Session B did not return a qwen-plus answer")
+        grounding = recall.get("grounding")
+        grounding_result = (
+            grounding.get("status"), grounding.get("attempts")
+        ) if isinstance(grounding, dict) else (None, None)
+        require(
+            isinstance(grounding, dict)
+            and type(grounding.get("attempts")) is int
+            and grounding_result in VALID_GROUNDING_RESULTS,
+            "fresh Session B did not pass strict grounding within the bounded two-attempt contract",
+        )
         normalized_answer = answer.casefold()
         require(
             "employer" in normalized_answer and "cost" in normalized_answer,
@@ -1847,6 +2487,7 @@ def write_review_manifest(
     vision_canary: dict[str, Any],
     hashes: dict[str, str],
     srt_source: str,
+    attempt_ledger: CaptureAttemptLedger,
 ) -> None:
     manifest = {
         "schemaVersion": 3,
@@ -1869,6 +2510,7 @@ def write_review_manifest(
                 "size": deployment_output.size,
             },
         },
+        "captureRun": attempt_ledger.review_provenance(),
         "models": {
             "embedder": probes["health"]["embedder"],
             "narrator": probes["health"]["narrator"],
@@ -1920,6 +2562,141 @@ def write_review_manifest(
     }
     path = GALLERY / "CAPTURE_REVIEW.json"
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def capture_resilience_self_test(root: Path) -> None:
+    """Exercise the typed retry controller and stale-output cleanup offline."""
+
+    def narrator_success() -> dict[str, Any]:
+        return {
+            "answer": "Synthetic grounded answer [1].",
+            "hits": [{"id": "memory-1"}],
+            "citations": [{"marker": "[1]", "content": "Synthetic fact."}],
+            "modelId": EXPECTED_NARRATOR,
+            "consistency": {},
+            "retrieval": {},
+            "grounding": {"status": "passed", "attempts": 1},
+        }
+
+    def narrator_transient() -> dict[str, Any]:
+        return {
+            "answer": "Synthetic fallback [1].",
+            "hits": [{"id": "memory-1"}],
+            "citations": [{"marker": "[1]", "content": "Synthetic fact."}],
+            "modelId": "degraded",
+            "consistency": {},
+            "retrieval": {},
+            "degraded": NARRATOR_DEGRADED_MESSAGE,
+            "degradationCode": "upstream_timeout",
+            "degradationAttempts": 1,
+        }
+
+    def semantic_result(*, transient: bool) -> dict[str, Any]:
+        failed = 1 if transient else 0
+        return {
+            "totalMemories": 3,
+            "audited": 3,
+            "candidatePairs": 2,
+            "compared": 2,
+            "modelCalls": 2,
+            "judged": 2 - failed,
+            "failed": failed,
+            "embeddingFailed": 0,
+            "truncated": False,
+            "status": "partial" if transient else "complete",
+            "errors": (
+                [{"memoryIds": ["memory-1", "memory-2"], "reason": "judge unavailable"}]
+                if transient else []
+            ),
+            "embeddingErrors": [],
+            "semanticContradictions": [] if transient else [{"type": "semantic-contradiction"}],
+            "ok": False,
+        }
+
+    ledger = CaptureAttemptLedger("20000101T000000Z-00000001", root / "selected-run")
+    session_outcomes = [narrator_transient(), narrator_success()]
+    run_stage_local_retry(
+        stage="session-b-recall",
+        operation=lambda: (session_outcomes.pop(0), 200),
+        classifier=classify_narrator_stage,
+        ledger=ledger,
+        sleeper=lambda _delay: None,
+    )
+    run_stage_local_retry(
+        stage="explorer-recall",
+        operation=lambda: (narrator_success(), 200),
+        classifier=classify_narrator_stage,
+        ledger=ledger,
+        sleeper=lambda _delay: None,
+    )
+    semantic_outcomes = [semantic_result(transient=True), semantic_result(transient=False)]
+    run_stage_local_retry(
+        stage="semantic-audit",
+        operation=lambda: (semantic_outcomes.pop(0), 200),
+        classifier=classify_semantic_stage,
+        ledger=ledger,
+        sleeper=lambda _delay: None,
+    )
+    provenance = ledger.review_provenance()
+    require(
+        {stage: row["selectedAttempt"] for stage, row in provenance["selectedAttempts"].items()}
+        == {"session-b-recall": 2, "explorer-recall": 1, "semantic-audit": 2},
+        "capture retry selected-attempt provenance self-test failed",
+    )
+
+    exhausted_ledger = CaptureAttemptLedger("20000101T000001Z-00000002", root / "exhausted-run")
+    exhausted = False
+    try:
+        run_stage_local_retry(
+            stage="explorer-recall",
+            operation=lambda: (narrator_transient(), 200),
+            classifier=classify_narrator_stage,
+            ledger=exhausted_ledger,
+            sleeper=lambda _delay: None,
+        )
+    except GateError:
+        exhausted = True
+    require(exhausted and len(exhausted_ledger.records) == 3, "capture retry exhaustion self-test failed")
+
+    rejected_ledger = CaptureAttemptLedger("20000101T000002Z-00000003", root / "rejected-run")
+    calls = 0
+
+    def rejected_operation() -> tuple[Any, int]:
+        nonlocal calls
+        calls += 1
+        return {"modelId": "unknown"}, 200
+
+    run_stage_local_retry(
+        stage="explorer-recall",
+        operation=rejected_operation,
+        classifier=classify_narrator_stage,
+        ledger=rejected_ledger,
+        sleeper=lambda _delay: None,
+    )
+    require(calls == 1 and rejected_ledger.records[0]["outcome"] == "rejected-no-retry", "capture no-retry self-test failed")
+    require(
+        all(
+            quota["workUnitsPerAttempt"] * STAGE_LOCAL_MAX_ATTEMPTS <= quota["limit"]
+            for quota in STAGE_LOCAL_RETRY_QUOTA.values()
+        ),
+        "capture retry quota-bound self-test failed",
+    )
+
+    private_fixture = root / "private-originals"
+    private_fixture.mkdir()
+    source = private_fixture / "alibaba-ecs-overview-raw.png"
+    source.write_bytes(b"canonical-source")
+    stale = private_fixture / "04-semantic-audit-response.json"
+    stale.write_text("{}\n", encoding="utf-8")
+    snapshot = root / "attempt-snapshots" / "prior.json"
+    snapshot.parent.mkdir()
+    snapshot.write_text("{}\n", encoding="utf-8")
+    prepare_private_capture_run(
+        "20000101T000003Z-00000004",
+        private_root=private_fixture,
+        protected_inputs=(source,),
+    )
+    require(source.is_file() and not stale.exists() and snapshot.is_file(), "private stale-output cleanup self-test failed")
 
 
 def self_test() -> int:
@@ -2072,6 +2849,7 @@ def self_test() -> int:
     require(Image.open(vision_fixture).size == GALLERY_CANVAS, "vision-card self-test failed")
     require(Image.open(feedback_fixture).size == GALLERY_CANVAS, "feedback-card self-test failed")
     require(Image.open(root / "youtube-thumbnail.png").size == (1280, 720), "YouTube thumbnail self-test failed")
+    capture_resilience_self_test(root / "capture-resilience")
     print("media pipeline self-test: PASS (ignored project-contained fixtures only)")
     return 0
 
@@ -2122,6 +2900,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         caption_windows = project_path(args.caption_windows, "caption windows", must_exist=True) if args.caption_windows else None
         video_manifest = project_path(args.video_manifest, "video manifest", must_exist=True) if args.video_manifest else None
         web_narration = project_path(args.web_narration, "web narration", must_exist=True) if args.web_narration else None
+        reviewer_credential_source = (
+            project_path(args.reviewer_credential_json, "reviewer credential JSON", must_exist=True)
+            if args.reviewer_credential_json
+            else None
+        )
 
         base_url = validate_live_origin(str(args.base_url))
         reviewer_token = reviewer_token_from_args(args)
@@ -2130,6 +2913,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         GALLERY.mkdir(parents=True, exist_ok=True)
         FINAL_MEDIA.mkdir(parents=True, exist_ok=True)
         require(ARCHITECTURE.is_file(), "canonical architecture image is missing")
+
+        run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + f"-{secrets.token_hex(4)}"
+        capture_run_dir = prepare_private_capture_run(
+            run_id,
+            protected_inputs=tuple(
+                path
+                for path in (
+                    raw_alibaba_source,
+                    redaction_profile,
+                    caption_windows,
+                    video_manifest,
+                    web_narration,
+                    reviewer_credential_source,
+                )
+                if path is not None
+            ),
+        )
+        set_active_private_output_dir(capture_run_dir)
+        attempt_ledger = CaptureAttemptLedger(run_id, capture_run_dir)
+        # A failed new run must never leave an older PASS manifest looking current.
+        previous_review = GALLERY / "CAPTURE_REVIEW.json"
+        if previous_review.exists() or previous_review.is_symlink():
+            require(previous_review.is_file() and not previous_review.is_symlink(), "prior capture review path is unsafe")
+            previous_review.unlink()
 
         # Copy the reviewed raw cloud capture into this checkout's ignored private
         # originals.  The source is required to be project-contained; no OS temp or
@@ -2157,11 +2964,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         probes["visionCanary"] = vision_canary
 
         print("[4/10] Session-A feedback, fresh Session-B application, one-row lifecycle + cleanup")
-        feedback_proof = feedback_persistence_and_lifecycle_proof(base_url, reviewer_token, probes)
+        feedback_proof = feedback_persistence_and_lifecycle_proof(
+            base_url, reviewer_token, probes, attempt_ledger
+        )
 
         print("[5/10] canonical Explorer recall, field audit, semantic audit and honest Defer-only capture")
         captured = contained_browser_capture(
-            base_url, args.repo_url, reviewer_token, expected_sha, observed_at, probes
+            base_url, args.repo_url, reviewer_token, expected_sha, observed_at, probes, attempt_ledger
         )
         enforce_private_scratch_budget()
 
@@ -2227,6 +3036,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             vision_canary=vision_canary,
             hashes=hashes,
             srt_source=srt_source,
+            attempt_ledger=attempt_ledger,
         )
         print(f"submission media gate: PASS · exact runtime {expected_sha[:12]} · {len(hashes)} reviewed artifacts")
         return 0
