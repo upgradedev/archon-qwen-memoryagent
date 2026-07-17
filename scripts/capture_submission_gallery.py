@@ -165,7 +165,8 @@ SAFE_POST_DEPLOY_PATHS = (
     re.compile(r"^(?:README\.md|SECURITY\.md|deploy/DEPLOY_STATE\.md)$"),
     re.compile(r"^(?:demo|docs)/"),
     re.compile(r"^\.github/workflows/demo-video\.yml$"),
-    re.compile(r"^scripts/(?:capture_live\.sh|captions\.txt|capture_submission_gallery\.py)$"),
+    re.compile(r"^scripts/(?:capture_live\.sh|captions\.txt|capture_submission_gallery\.py|capture_web\.py)$"),
+    re.compile(r"^tests/docs/docs-consistency\.test\.ts$"),
 )
 
 SENSITIVE_KEY = re.compile(
