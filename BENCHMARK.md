@@ -110,14 +110,14 @@ real mechanism on the diverse corpus, not by reverting to a duplicate-heavy one.
   scorer using `qwen-plus`** — the same Model Studio chat model the narrator uses,
   which *is* accessible. It is presented precisely as the listwise prompt it uses:
   `LlmReranker` (`src/memory/rerank.ts`) packs the entire candidate pool (top-10) into
-  a **single, unified prompt** and scores them listwise. This avoids the cost/latency
+  a **single, unified prompt** and scores them listwise. This avoids the call-count/latency
   bottleneck of N pairwise completions, executing in exactly **one** API call. The seam
   is model-agnostic — swap in a `GteReranker` once the rerank API is enabled; the
   benchmark path is unchanged.
-- **Cached once, replayed free.** `npm run bench:rerank` calls `qwen-plus` **once**
+- **Cached once, replayed offline.** `npm run bench:rerank` calls `qwen-plus` **once**
   per query over the frozen corpus (15 calls, `temperature 0`) and commits the
   scores to `bench/fixtures/rerank.json`. `npm run bench` and CI **replay** those
-  scores with **no key and no spend**, so the +0.028 MRR is reproducible offline,
+  scores **offline without credentials or provider calls**, so the +0.028 MRR is reproducible,
   exactly like the embedding fixture. Re-run only if the dataset changes.
 - **We do NOT gate on `re-rank > dense`.** A listwise reranker win over a strong
   embedder is plausible but corpus-dependent; a hard CI gate on it would be
@@ -164,12 +164,13 @@ qualitative "why memory at all" contrast, not a tuned number.
 - **Metrics** — Recall@k, MRR, nDCG@5 (`bench/metrics.ts`), computed on ranked
   memory ids vs gold. We deliberately do **not** grade the narrator's generated
   prose: `qwen-plus` phrasing (`€22,800` vs "22,800 euros") is brittle to string-
-  match, and an LLM-judge would be both extra spend and circular (same model).
+  match, and an LLM-judge would add another model call while remaining circular
+  (the same model).
   Retrieval metrics against fixed gold labels are objective.
 - **Real embeddings, cached once** — `npm run bench:embed` calls
   `text-embedding-v4` **once** over the frozen dataset and commits the vectors to
   `bench/fixtures/embeddings.json`. `npm run bench` (and CI) replay from that
-  fixture with **no key and no spend**, so a judge reproduces the exact numbers
+  fixture **offline without credentials or provider calls**, so a judge reproduces the exact numbers
   offline. Re-run `bench:embed` only if the dataset changes.
 - **One retrieval engine** — every condition runs over the same pure functions in
   `src/memory/retrieval.ts` (the ones the production store uses), so the
@@ -214,7 +215,7 @@ npm run bench -- --gate  # CI gate: regression guard + fusion value + discrimina
 npm run bench:accuracy -- --gate      # gold EUR-token hit + complete EUR-labelled traceability
 npm run bench:consistency -- --gate   # self-auditing memory: detection + 0 false positives
 npm run bench:resolution -- --gate    # declared-policy conformance + structural invariants
-# optional, need DASHSCOPE_API_KEY, rebuild the fixtures (one-time ~cents each):
+# optional, requires DASHSCOPE_API_KEY and makes provider calls; rebuild only after an intentional fixture change:
 npm run bench:embed      # re-embed the corpus/queries (text-embedding-v4)
 npm run bench:rerank     # re-score the bounded listwise re-rank (qwen-plus)
 npm run bench:answers    # re-narrate the grounded answers (qwen-plus)

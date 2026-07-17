@@ -41,7 +41,7 @@ available and affected credentials or deployments have been rotated.
 - Streamable HTTP MCP is authenticated and tenant-scoped. stdio is trusted-local,
   explicit opt-in in production, and still quota/result bounded.
 - Qwen-heavy HTTP/MCP operations use durable per-principal/IP and global work-unit
-  quotas. These are admission controls, not billing counters or a permanent audit log.
+  quotas. These are admission controls, not usage-accounting counters or a permanent audit log.
 - Production fails closed without real Qwen configuration and judge authentication;
   `/ready` is the release gate.
 - The runtime database identity is non-superuser/DML-only and is denied access to the

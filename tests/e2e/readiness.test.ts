@@ -157,4 +157,6 @@ test("live-deploy and hosted-video checks are correctly classed user-gated (excl
   assert.ok(ids.includes("UG2-video-hosted"), "hosted-video must be user-gated");
   assert.ok(ids.includes("UG3-final-video-reviewed"), "new canonical video review must be user-gated");
   for (const r of report.userGated) assert.equal(r.status, "user-gated");
+  const handoffCopy = report.userGated.map((r) => `${r.title}\n${r.detail}`).join("\n");
+  assert.doesNotMatch(handoffCopy, /after redeploy|user records\/uploads/i, "user-gated copy must not imply that redeployment is still pending");
 });
