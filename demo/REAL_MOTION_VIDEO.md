@@ -54,9 +54,11 @@ python demo/tools/build_real_motion_submission.py `
 python demo/tools/compose_real_motion_video.py --verify-only
 ```
 
-The recorder fails unless the tracked `src/demo-data.ts` at final `HEAD` contains the
-reviewed citation-explicit `DEMO_PRIMARY_RECALL_QUESTION`. It then verifies the real
-request is byte-identical and carries `limit: 3`; the response must report
+The recorder fails unless the tracked `scripts/capture_submission_gallery.py` at
+final `HEAD` contains the reviewed capture-specific, one-sentence citation question.
+That prompt asks for the same employer-cost fact as the public demo chip but excludes
+unrequested amounts, ratios, counts and calculations; it contains no answer. The
+recorder verifies the real request is byte-identical and carries `limit: 3`; the response must report
 `qwen-plus`, one to three citations, `[1]`, and grounding `(passed, 1)` or
 `(repaired, 2)`. The final compositor also binds the exact SHA, CAPTURE_REVIEW bytes,
 interaction-video bytes, SRT and thumbnail.

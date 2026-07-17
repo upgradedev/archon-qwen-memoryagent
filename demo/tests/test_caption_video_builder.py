@@ -943,12 +943,14 @@ class CaptureTransientResilienceTests(unittest.TestCase):
     def test_unknown_malformed_nontransient_and_non_200_results_never_retry(self) -> None:
         malformed_degraded = self.narrator_transient()
         malformed_degraded["unexpected"] = True
+        grounding_degraded = self.narrator_transient("grounding_unsupported_numeric_claim")
+        grounding_degraded["degradationAttempts"] = 2
         cases = (
             (None, 200, capture.classify_narrator_stage),
             ({"modelId": "other-model"}, 200, capture.classify_narrator_stage),
             ({"modelId": "degraded", "degradationCode": []}, 200, capture.classify_narrator_stage),
             ({"modelId": capture.EXPECTED_NARRATOR, "grounding": {"status": [], "attempts": 1}}, 200, capture.classify_narrator_stage),
-            (self.narrator_transient("grounding_invalid_or_missing_citation"), 200, capture.classify_narrator_stage),
+            (grounding_degraded, 200, capture.classify_narrator_stage),
             (malformed_degraded, 200, capture.classify_narrator_stage),
             (None, 503, capture.classify_narrator_stage),
             (self.semantic_transient("unparseable judge response"), 200, capture.classify_semantic_stage),
@@ -974,6 +976,9 @@ class CaptureTransientResilienceTests(unittest.TestCase):
                 self.assertIs(returned, payload)
                 self.assertEqual(calls, 1)
                 self.assertEqual(ledger.records[0]["outcome"], "rejected-no-retry")
+                if payload is grounding_degraded:
+                    self.assertEqual(ledger.records[0]["observation"]["degradationClass"], "grounding-failure")
+                    self.assertEqual(ledger.records[0]["observation"]["degradationAttempts"], 2)
 
     def test_transport_or_parse_exception_never_retries(self) -> None:
         ledger = self.ledger()
