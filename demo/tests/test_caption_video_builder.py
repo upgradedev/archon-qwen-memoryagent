@@ -805,5 +805,356 @@ class ReleaseBoundaryTests(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
 
 
+class CaptureTransientResilienceTests(unittest.TestCase):
+    ROOT = ROOT / ".artifacts" / "capture-transient-resilience-unit-test"
+
+    def setUp(self) -> None:
+        if self.ROOT.exists():
+            shutil.rmtree(self.ROOT)
+        self.ROOT.mkdir(parents=True)
+        self.run_counter = 0
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.ROOT, ignore_errors=True)
+
+    def ledger(self) -> object:
+        self.run_counter += 1
+        run_id = f"20000101T0000{self.run_counter:02d}Z-{self.run_counter:08x}"
+        return capture.CaptureAttemptLedger(run_id, self.ROOT / run_id)
+
+    @staticmethod
+    def narrator_success() -> dict[str, object]:
+        return {
+            "answer": "Employer cost appears first [1].",
+            "hits": [{"id": "memory-1"}],
+            "citations": [{"marker": "[1]", "content": "Synthetic employer cost fact."}],
+            "modelId": capture.EXPECTED_NARRATOR,
+            "consistency": {},
+            "retrieval": {},
+            "grounding": {"status": "passed", "attempts": 1},
+        }
+
+    @staticmethod
+    def narrator_transient(code: str = "upstream_timeout") -> dict[str, object]:
+        return {
+            "answer": "Retrieved memory [1].",
+            "hits": [{"id": "memory-1"}],
+            "citations": [{"marker": "[1]", "content": "Synthetic fact."}],
+            "modelId": "degraded",
+            "consistency": {},
+            "retrieval": {},
+            "degraded": capture.NARRATOR_DEGRADED_MESSAGE,
+            "degradationCode": code,
+            "degradationAttempts": 1,
+        }
+
+    @staticmethod
+    def semantic_success() -> dict[str, object]:
+        return {
+            "totalMemories": 3,
+            "audited": 3,
+            "candidatePairs": 2,
+            "compared": 2,
+            "modelCalls": 2,
+            "judged": 2,
+            "failed": 0,
+            "embeddingFailed": 0,
+            "truncated": False,
+            "status": "complete",
+            "errors": [],
+            "embeddingErrors": [],
+            "semanticContradictions": [{"type": "semantic-contradiction"}],
+            "ok": False,
+        }
+
+    @staticmethod
+    def semantic_transient(reason: str = "judge unavailable") -> dict[str, object]:
+        return {
+            "totalMemories": 3,
+            "audited": 3,
+            "candidatePairs": 2,
+            "compared": 2,
+            "modelCalls": 2,
+            "judged": 1,
+            "failed": 1,
+            "embeddingFailed": 0,
+            "truncated": False,
+            "status": "partial",
+            "errors": [{"memoryIds": ["memory-1", "memory-2"], "reason": reason}],
+            "embeddingErrors": [],
+            "semanticContradictions": [],
+            "ok": False,
+        }
+
+    def test_allowlisted_http_200_transients_select_later_strict_attempt(self) -> None:
+        for stage in ("session-b-recall", "explorer-recall"):
+            with self.subTest(stage=stage):
+                outcomes = [self.narrator_transient(), self.narrator_success()]
+                sleeps: list[float] = []
+                ledger = self.ledger()
+                selected = capture.run_stage_local_retry(
+                    stage=stage,
+                    operation=lambda: (outcomes.pop(0), 200),
+                    classifier=capture.classify_narrator_stage,
+                    ledger=ledger,
+                    sleeper=sleeps.append,
+                )
+                self.assertEqual(selected["modelId"], capture.EXPECTED_NARRATOR)
+                self.assertEqual(sleeps, [1.0])
+                self.assertEqual([row["outcome"] for row in ledger.records], ["retryable-transient", "selected"])
+
+        outcomes = [self.semantic_transient(), self.semantic_success()]
+        sleeps = []
+        ledger = self.ledger()
+        selected = capture.run_stage_local_retry(
+            stage="semantic-audit",
+            operation=lambda: (outcomes.pop(0), 200),
+            classifier=capture.classify_semantic_stage,
+            ledger=ledger,
+            sleeper=sleeps.append,
+        )
+        self.assertEqual(selected["status"], "complete")
+        self.assertEqual(sleeps, [1.0])
+        self.assertEqual([row["outcome"] for row in ledger.records], ["retryable-transient", "selected"])
+
+    def test_transient_exhaustion_is_bounded_and_fail_closed(self) -> None:
+        ledger = self.ledger()
+        calls = 0
+        sleeps: list[float] = []
+
+        def operation() -> tuple[object, int]:
+            nonlocal calls
+            calls += 1
+            return self.narrator_transient("upstream_unavailable"), 200
+
+        with self.assertRaisesRegex(capture.GateError, "exhausted 3"):
+            capture.run_stage_local_retry(
+                stage="session-b-recall",
+                operation=operation,
+                classifier=capture.classify_narrator_stage,
+                ledger=ledger,
+                sleeper=sleeps.append,
+            )
+        self.assertEqual(calls, 3)
+        self.assertEqual(sleeps, [1.0, 2.0])
+        self.assertEqual(ledger.records[-1]["outcome"], "transient-exhausted")
+        self.assertNotIn("selected", {row["outcome"] for row in ledger.records})
+
+    def test_unknown_malformed_nontransient_and_non_200_results_never_retry(self) -> None:
+        malformed_degraded = self.narrator_transient()
+        malformed_degraded["unexpected"] = True
+        cases = (
+            (None, 200, capture.classify_narrator_stage),
+            ({"modelId": "other-model"}, 200, capture.classify_narrator_stage),
+            ({"modelId": "degraded", "degradationCode": []}, 200, capture.classify_narrator_stage),
+            ({"modelId": capture.EXPECTED_NARRATOR, "grounding": {"status": [], "attempts": 1}}, 200, capture.classify_narrator_stage),
+            (self.narrator_transient("grounding_invalid_or_missing_citation"), 200, capture.classify_narrator_stage),
+            (malformed_degraded, 200, capture.classify_narrator_stage),
+            (None, 503, capture.classify_narrator_stage),
+            (self.semantic_transient("unparseable judge response"), 200, capture.classify_semantic_stage),
+            ({"status": []}, 200, capture.classify_semantic_stage),
+        )
+        for index, (payload, status, classifier) in enumerate(cases):
+            with self.subTest(index=index):
+                ledger = self.ledger()
+                calls = 0
+
+                def operation() -> tuple[object, int]:
+                    nonlocal calls
+                    calls += 1
+                    return payload, status
+
+                returned = capture.run_stage_local_retry(
+                    stage="semantic-audit" if classifier is capture.classify_semantic_stage else "explorer-recall",
+                    operation=operation,
+                    classifier=classifier,
+                    ledger=ledger,
+                    sleeper=lambda _delay: self.fail("non-retryable result slept"),
+                )
+                self.assertIs(returned, payload)
+                self.assertEqual(calls, 1)
+                self.assertEqual(ledger.records[0]["outcome"], "rejected-no-retry")
+
+    def test_transport_or_parse_exception_never_retries(self) -> None:
+        ledger = self.ledger()
+        calls = 0
+
+        def operation() -> tuple[object, int]:
+            nonlocal calls
+            calls += 1
+            raise ValueError("synthetic malformed response")
+
+        with self.assertRaisesRegex(capture.GateError, "without retry") as raised:
+            capture.run_stage_local_retry(
+                stage="semantic-audit",
+                operation=operation,
+                classifier=capture.classify_semantic_stage,
+                ledger=ledger,
+                sleeper=lambda _delay: self.fail("failed request slept"),
+            )
+        self.assertIsInstance(raised.exception.__cause__, ValueError)
+        self.assertEqual(calls, 1)
+        self.assertEqual(ledger.records[0]["outcome"], "request-failed-no-retry")
+
+    def test_final_content_and_finding_gates_are_not_retry_triggers(self) -> None:
+        narrator_payload = self.narrator_success()
+        narrator_payload["answer"] = ""
+        narrator_ledger = self.ledger()
+        narrator_calls = 0
+
+        def narrator_operation() -> tuple[object, int]:
+            nonlocal narrator_calls
+            narrator_calls += 1
+            return narrator_payload, 200
+
+        selected = capture.run_stage_local_retry(
+            stage="explorer-recall",
+            operation=narrator_operation,
+            classifier=capture.classify_narrator_stage,
+            ledger=narrator_ledger,
+            sleeper=lambda _delay: self.fail("content failure slept"),
+        )
+        with self.assertRaises(capture.GateError):
+            capture.require(bool(selected["answer"].strip()), "synthetic final content gate")
+        self.assertEqual(narrator_calls, 1)
+
+        semantic_payload = self.semantic_success()
+        semantic_payload["semanticContradictions"] = []
+        semantic_ledger = self.ledger()
+        semantic_calls = 0
+
+        def semantic_operation() -> tuple[object, int]:
+            nonlocal semantic_calls
+            semantic_calls += 1
+            return semantic_payload, 200
+
+        selected_semantic = capture.run_stage_local_retry(
+            stage="semantic-audit",
+            operation=semantic_operation,
+            classifier=capture.classify_semantic_stage,
+            ledger=semantic_ledger,
+            sleeper=lambda _delay: self.fail("finding failure slept"),
+        )
+        with self.assertRaises(capture.GateError):
+            capture.require(bool(selected_semantic["semanticContradictions"]), "synthetic final finding gate")
+        self.assertEqual(semantic_calls, 1)
+
+    def test_quota_math_and_selected_attempt_provenance_are_explicit(self) -> None:
+        expected_max = {
+            "session-b-recall": 12,
+            "explorer-recall": 12,
+            "semantic-audit": 75,
+        }
+        self.assertEqual(len(capture.STAGE_LOCAL_BACKOFF_SECONDS), capture.STAGE_LOCAL_MAX_ATTEMPTS - 1)
+        for stage, quota in capture.STAGE_LOCAL_RETRY_QUOTA.items():
+            max_units = quota["workUnitsPerAttempt"] * capture.STAGE_LOCAL_MAX_ATTEMPTS
+            self.assertEqual(max_units, expected_max[stage])
+            self.assertLessEqual(max_units, quota["limit"])
+
+        ledger = self.ledger()
+        for stage in ("session-b-recall", "explorer-recall"):
+            capture.run_stage_local_retry(
+                stage=stage,
+                operation=lambda: (self.narrator_success(), 200),
+                classifier=capture.classify_narrator_stage,
+                ledger=ledger,
+                sleeper=lambda _delay: self.fail("strict success slept"),
+            )
+        capture.run_stage_local_retry(
+            stage="semantic-audit",
+            operation=lambda: (self.semantic_success(), 200),
+            classifier=capture.classify_semantic_stage,
+            ledger=ledger,
+            sleeper=lambda _delay: self.fail("strict success slept"),
+        )
+        provenance = ledger.review_provenance()
+        self.assertEqual(set(provenance["selectedAttempts"]), set(expected_max))
+        self.assertTrue(all(item["selectedAttempt"] == 1 for item in provenance["selectedAttempts"].values()))
+        for record in provenance["attemptEvidence"]:
+            evidence = ROOT / record["path"]
+            self.assertTrue(evidence.is_file())
+            self.assertEqual(capture.sha256_file(evidence), record["sha256"])
+            text = evidence.read_text(encoding="utf-8")
+            self.assertNotIn("Employer cost appears", text)
+            self.assertNotIn("Synthetic fact", text)
+
+    def test_attempt_evidence_rejects_secret_shaped_observations(self) -> None:
+        ledger = self.ledger()
+        with self.assertRaisesRegex(capture.GateError, "sensitive key"):
+            ledger.record(
+                stage="explorer-recall",
+                attempt=1,
+                outcome="selected",
+                classification="strict-qwen-narrator",
+                observation={"apiToken": "must-not-write"},
+            )
+        self.assertFalse((ledger.output_dir / "attempts").exists())
+
+    def test_private_capture_run_removes_stale_generated_outputs_only(self) -> None:
+        private = self.ROOT / "private-originals"
+        private.mkdir()
+        canonical = private / "alibaba-ecs-overview-raw.png"
+        canonical.write_bytes(b"canonical-source")
+        unrelated = private / "reviewer-credential.json"
+        unrelated.write_text('{"token":"fixture-only"}\n', encoding="utf-8")
+        stale_raw = private / "01-grounded-cross-session-recall-raw.png"
+        stale_raw.write_bytes(b"stale")
+        stale_probe = private / "health.json"
+        stale_probe.write_text('{"status":"stale"}\n', encoding="utf-8")
+        old_attempt = private / "runs" / "old-run" / "attempts" / "attempt.json"
+        old_attempt.parent.mkdir(parents=True)
+        old_attempt.write_text("{}\n", encoding="utf-8")
+        snapshot = self.ROOT / "attempt-snapshots" / "attempt-3.json"
+        snapshot.parent.mkdir()
+        snapshot.write_text('{"status":"preserved"}\n', encoding="utf-8")
+
+        run_dir = capture.prepare_private_capture_run(
+            "20000101T000000Z-00000001",
+            private_root=private,
+            protected_inputs=(canonical, unrelated),
+        )
+        self.assertTrue(run_dir.is_dir())
+        self.assertEqual(canonical.read_bytes(), b"canonical-source")
+        self.assertTrue(unrelated.is_file())
+        self.assertFalse(stale_raw.exists())
+        self.assertFalse(stale_probe.exists())
+        self.assertFalse(old_attempt.exists())
+        self.assertTrue(snapshot.is_file())
+
+        second = capture.prepare_private_capture_run(
+            "20000101T000001Z-00000002",
+            private_root=private,
+            protected_inputs=(canonical, unrelated),
+        )
+        self.assertTrue(second.is_dir())
+        self.assertFalse(run_dir.exists())
+        self.assertTrue(snapshot.is_file())
+
+    def test_private_cleanup_refuses_to_delete_a_declared_input(self) -> None:
+        private = self.ROOT / "private-overlap"
+        protected = private / "runs" / "prior" / "source.png"
+        protected.parent.mkdir(parents=True)
+        protected.write_bytes(b"input")
+        with self.assertRaisesRegex(capture.GateError, "input overlaps"):
+            capture.prepare_private_capture_run(
+                "20000101T000000Z-00000003",
+                private_root=private,
+                protected_inputs=(protected,),
+            )
+        self.assertEqual(protected.read_bytes(), b"input")
+
+    def test_capture_retry_artifacts_refuse_paths_outside_the_project(self) -> None:
+        outside = capture.REPO.parent / f"capture-resilience-must-not-create-{os.getpid()}"
+        self.assertFalse(outside.exists())
+        with self.assertRaisesRegex(capture.GateError, "escaped the repository"):
+            capture.CaptureAttemptLedger("20000101T000000Z-00000004", outside)
+        with self.assertRaisesRegex(capture.GateError, "escaped the repository"):
+            capture.prepare_private_capture_run(
+                "20000101T000000Z-00000005",
+                private_root=outside,
+            )
+        self.assertFalse(outside.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

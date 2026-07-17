@@ -21,6 +21,11 @@ mode, producer invocation/command ids and immutable status/output byte bindings,
 exact-release/model gates, live qwen-vl dry-run/absence, Session-A → fresh-Session-B
 feedback persistence, the exact one-preview/one-delete lifecycle cleanup, the
 honest Defer-only human-control boundary, and the SHA-256 of every approved artifact.
+It also records the bounded, read-only HTTP-200 transient policy, quota ceilings,
+secret-safe per-attempt evidence, and one unambiguous selected attempt for
+Session-B recall, Explorer recall, and the semantic audit. Raw/response evidence
+is isolated to one ignored `demo/private-originals/runs/<UTC-RUN-ID>/`; a failed
+new run invalidates any older PASS manifest before contacting the service.
 
 No screenshot is committed yet; absence is intentional until the verified live
 release is captured and every frame passes the security and rights review.

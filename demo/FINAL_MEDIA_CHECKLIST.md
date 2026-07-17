@@ -128,6 +128,16 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
       `commandId`, plus status/output path, length and SHA-256, measured SRT timing
       source, current model ids, vision/feedback/lifecycle gates and SHA-256 for
       every final.
+- [ ] `CAPTURE_REVIEW.captureRun` records the three-attempt/1s+2s stage-local
+      policy and quota ceilings (12 judge-recall, 12 public-recall, 75
+      judge-semantic), and names exactly one SHA-bound selected attempt for each
+      of Session-B recall, Explorer recall, and semantic audit. No mutation,
+      non-200, malformed, grounding/content, embedding, or truncation result was
+      retried.
+- [ ] All current raw/response/attempt files are under one
+      `demo/private-originals/runs/<UTC-RUN-ID>/`; known legacy fixed outputs and
+      prior capture runs are absent, while canonical inputs and retained
+      `.artifacts` snapshots remain intact.
 - [ ] [`final-media/youtube-thumbnail.png`](./final-media/youtube-thumbnail.png) is
       exactly 1280×720 and [`final-media/memoryagent-demo.en.srt`](./final-media/memoryagent-demo.en.srt)
       is regenerated from final measured windows, not the canonical fallback.

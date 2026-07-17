@@ -43,6 +43,24 @@ The capture exits non-zero unless all of these are true:
   profile. A new screenshot cannot reuse old masks;
 - no file under `demo/private-originals/` is tracked.
 
+Three read-only stages have a deliberately narrow availability policy. Session-B
+recall, Explorer recall, and the protected semantic audit may each make at most
+three stage-local attempts, with 1-second then 2-second backoff. A recall is
+eligible only when an HTTP-200 response exactly matches the documented degraded
+narrator envelope and its stable code is `upstream_rate_limited`,
+`upstream_timeout`, or `upstream_unavailable`. A semantic audit is eligible only
+when an HTTP-200 `partial`/`inconclusive` report is structurally complete, every
+failed pair says exactly `judge unavailable`, embeddings succeeded, and the audit
+was not truncated. The final selected response must still pass every original
+model, grounding, citation, content, contradiction, and safety gate.
+
+This is not a pipeline retry. Mutations, transport failures, non-200 responses,
+redirects, malformed/unknown payloads, grounding failures, unsupported content,
+embedding failures, truncation, and unparseable judge output are attempted once
+and fail closed. Worst-case reserved work is explicit: Session-B recall 3×4=12
+of its 200-unit judge pool, Explorer recall 3×4=12 of its 200-unit public pool,
+and semantic audit 3×25=75 of its 500-unit judge pool.
+
 `/health` and `/ready` are never treated as commit attestation. The exact runtime
 claim comes only from the deployment evidence; live probes independently prove
 models and readiness.
@@ -63,10 +81,14 @@ python scripts/capture_submission_gallery.py --self-test
 The self-test writes only ignored fixtures under `.artifacts/`. It never contacts
 the live service and never creates judge-facing evidence.
 
-Browser process temp/profile/cache paths are redirected to the ignored
-`demo/private-originals/browser-runtime/` directory and removed when capture ends.
-Fixed raw filenames are overwritten, and the gate fails if retained private capture
-scratch exceeds 256 MiB.
+At startup the gate removes only its known legacy generated filenames and prior
+capture `runs/`; canonical Alibaba sources, other private inputs, and retained
+`.artifacts` attempt snapshots are not deletion candidates. Every new raw image,
+scrubbed response, browser temp file, and secret-safe retry record is written under
+`demo/private-originals/runs/<UTC-RUN-ID>/`. Browser scratch is removed when the
+stage ends. The gate also removes an older `CAPTURE_REVIEW.json` before live work,
+so a failed run cannot leave a stale PASS looking current, and it fails if retained
+private capture scratch exceeds 256 MiB.
 
 ## Inputs
 
@@ -178,9 +200,11 @@ Additional outputs:
   compositor;
 - `demo/gallery/CAPTURE_REVIEW.json` — exact runtime/source split, all four model
   ids, vision dry-run/absence, feedback persistence, one-row lifecycle/cleanup
-  gates and SHA-256 for every reviewed deliverable;
+  gates, stage-local retry policy/quota math, every secret-safe attempt record,
+  the uniquely selected attempt and evidence SHA-256 for all three resilient
+  stages, and SHA-256 for every reviewed deliverable;
 - ignored response JSON, raw browser screenshots and the sanitized Alibaba
-  intermediate under `demo/private-originals/`.
+  intermediate under the current `demo/private-originals/runs/<UTC-RUN-ID>/`.
 
 The script synthesizes no voice, publishes nothing, and makes no voice or media
 rights attestation.
@@ -203,6 +227,9 @@ size, and every 16:9 proof frame at 1080p. Confirm that:
   product/region/running-resource context;
 - model ids, numbers, captions and exact-runtime footer agree with
   `CAPTURE_REVIEW.json` and the claim/evidence matrix;
+- `captureRun.selectedAttempts` names exactly one selected attempt for each of
+  `session-b-recall`, `explorer-recall`, and `semantic-audit`; its evidence paths
+  exist in the current run and match the recorded SHA-256 values;
 - the thumbnail's text remains readable on a small YouTube card;
 - the SRT timing matches the actual final MP4, including the browser beat;
 - `demo/private-originals/` remains ignored and unstaged.
