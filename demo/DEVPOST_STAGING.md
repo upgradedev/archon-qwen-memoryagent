@@ -45,10 +45,10 @@ values must remain readable on a small project card.
 | License | **MIT**; confirm GitHub shows it on the repository landing page. |
 | Track/category | **Track 1 — MemoryAgent** |
 | Architecture diagram | Upload [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg). |
-| Organizer deck (strict-union artifact) | If the organizer's separate Qwen flow requests a PPT/PDF, use [`deck/archon-memoryagent-judge-deck.pptx`](./deck/archon-memoryagent-judge-deck.pptx) and [`deck/archon-memoryagent-judge-deck.pdf`](./deck/archon-memoryagent-judge-deck.pdf) only after final exact-release screenshots, layout review and hash verification. Do not upload a placeholder build. |
+| Organizer deck (strict-union artifact) | If the organizer's separate Qwen flow requests a PPT/PDF, use `demo/deck/archon-memoryagent-judge-deck.pptx` and `demo/deck/archon-memoryagent-judge-deck.pdf` only after final exact-release screenshots, layout review and hash verification. Do not upload a placeholder build. |
 | Alibaba/Qwen code proof | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts> |
 | Additional live-deploy code | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh> |
-| Optional blog/social URL | `[PUBLIC_BLOG_OR_SOCIAL_URL]` — must be published and publicly reachable to qualify for the bonus. |
+| Optional public article URL | `[PUBLIC_DEVTO_URL]` — publish the canonical [`BLOG.md`](./BLOG.md) on dev.to and verify it signed out to qualify for the bonus. No LinkedIn post is planned. |
 
 ### Existing-project / competition-window answer
 
@@ -116,8 +116,8 @@ not guess or retain them.
 | Code repository | <https://github.com/upgradedev/archon-qwen-memoryagent> |
 | Alibaba/Qwen code file | <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/src/qwen/client.ts> |
 | Architecture Diagram upload | [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg) |
-| Alibaba Deployment Screenshot upload | [`gallery/10-alibaba-runtime-proof.png`](./gallery/10-alibaba-runtime-proof.png), only after `CAPTURE_REVIEW.json` passes for the exact deployment. |
-| Published Blog or Social Post | `[PUBLIC_BLOG_OR_SOCIAL_URL]`, only after signed-out verification. |
+| Alibaba Deployment Screenshot upload | `demo/gallery/10-alibaba-runtime-proof.png`, only after `CAPTURE_REVIEW.json` passes for the exact deployment. |
+| Published Blog or Social Post | `[PUBLIC_DEVTO_URL]`, using the signed-out-verified canonical dev.to article. |
 | AI tools leveraged | **Qwen Cloud models (qwen-plus, qwen-vl-max, text-embedding-v4), OpenAI Codex, and Anthropic Claude.** |
 | Learning level | **Significant** |
 | Age-of-majority attestation | `[HUMAN LEGAL ATTESTATION REQUIRED]` |

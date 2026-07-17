@@ -9,12 +9,15 @@
 [![Project Story](https://img.shields.io/badge/Project%20Story-Devpost-003e54)](demo/PROJECT_STORY.md)
 <!-- USER: replace with YouTube URL before submit — make the Demo Video badge a link to the uploaded video -->
 
-**Final recording pack:** [`VIDEO_SCRIPT.md`](demo/VIDEO_SCRIPT.md) ·
-[`REAL_MOTION_VIDEO.md`](demo/REAL_MOTION_VIDEO.md) ·
-[`CAPTION_VIDEO_BUILD.md`](demo/CAPTION_VIDEO_BUILD.md) (static base only) ·
-[`VIDEO_RECORDING_CHECKLIST.md`](demo/VIDEO_RECORDING_CHECKLIST.md) ·
-[`BUILD_RECORDING.md`](demo/BUILD_RECORDING.md) ·
-[`FINAL_MEDIA_CHECKLIST.md`](demo/FINAL_MEDIA_CHECKLIST.md). Security and private
+**Documentation map:** judges can start with the
+[`2-minute guide`](docs/JUDGE-GUIDE.md), the
+[`measured evidence`](BENCHMARK.md), and the
+[`16:9 architecture`](demo/final-media/judge-architecture.jpg). Release operators
+use [`FINAL_MEDIA_CHECKLIST.md`](demo/FINAL_MEDIA_CHECKLIST.md) as the single entry
+point; the only publication pipeline is
+[`REAL_MOTION_VIDEO.md`](demo/REAL_MOTION_VIDEO.md), and the checklist links every
+capture, rights, and publication runbook in execution order. Those `demo/*.md` files
+are internal operating guides, not competing project stories. Security and private
 reporting guidance lives in [`SECURITY.md`](SECURITY.md).
 
 > **Track 1 only: MemoryAgent** — an agent with *persistent, queryable memory that retains, recalls, audits, corrects, consolidates, and forgets information across sessions*. This entry is intentionally independent from the separate Autopilot submission: it neither executes accounts-payable actions nor contains an approval workflow; its product boundary is trustworthy long-term memory.
@@ -68,15 +71,22 @@ scanned-image data URL · caller-extracted PDF text · text
               ──▶ Classifier      rule-based doc-type refinement (no LLM)
               ──▶ EventLinker     fuse the payroll triplet into one accurate event
               ──▶ Validator       R1–R4 cross-document consistency checks
-              ──▶ P&L math        employer cost · cash-out · per-employee analytics
+              ──▶ P&L math        currency-separated payroll + invoice analytics
               ──▶ MemoryAgent.ingestEvent()   WRITE the fused event + findings to pgvector
 ```
 
-A single payroll event is told by three documents that each carry a *different part of the truth*: the **bank confirmation** (net cash that left the account), the **payroll register** (the full employer cost, including employer social-security), and the **payslips** (per-employee detail). The bank confirmation alone **understates** the true cost of employing the team. The pipeline fuses all three, computes the accurate P&L, and hands the result to the **unchanged** MemoryAgent to remember.
+A single payroll event is told by three documents that each carry a different slice
+of evidence: the **bank confirmation**, the **payroll register**, and the
+**payslips**. The pipeline reconciles their complementary fields, keeps source
+provenance, computes currency-separated P&L, and hands the result to the
+**unchanged** MemoryAgent to remember.
 
 The pipeline is **supporting cast** — it exists to make the memory demonstrably fed by a real productization path. The agent core (recall, self-audit, consolidation, forgetting) is untouched; `POST /ingest/documents` runs the pipeline and writes through the same `ingestEvent()` the agent already exposed, and `GET /pnl` reads a P&L back **over the memories the agent holds**. Everything stays offline-testable: `qwen-vl-max`/`qwen-plus` are auto-selected only when `DASHSCOPE_API_KEY` is set, and a deterministic Fake extractor drives the whole path in CI (same seam as `FakeEmbedder`/`FakeNarrator`).
 
-The concrete demo memories cover payroll evidence, purchase/sales invoices, validation findings, and narrated insights. The payroll example highlights the **true cost of employing a team**: a bank salary transfer omits employer social-security contributions, so it understates employer cost.
+The concrete demo memories cover source-linked payroll evidence, purchase/sales
+invoices, validation findings, and narrated insights. This financial context is a
+bounded proof surface for the domain-neutral memory and audit core, not the product's
+headline claim.
 
 ## Why this is a MemoryAgent
 
@@ -99,7 +109,9 @@ It also adds a capability most memory demos skip: the agent **audits its own mem
 
 A cross-session agent accumulates facts from many separate write events. Nothing stops two of them from **contradicting**.
 
-Say session A records a payroll event's employer cost at **€18,000**, and a later session B records **€19,000** for the same event. Plain recall just returns whichever ranked higher and stays silent.
+Say session A records one value for an invoice field and a later session records a
+different value for that same field. Plain recall just returns whichever ranked
+higher and stays silent.
 
 `POST /consistency` (`src/memory/consistency.ts`) does not. It scans the agent's own memories, groups them by the record they describe, and flags two things:
 
@@ -154,7 +166,9 @@ Findings, stated honestly:
 - **Hybrid alone doesn't beat the dense condition on top-rank here** — the bounded listwise Qwen re-ranker does on this same fixture.
 - **`reranked-hybrid` wins on top-rank** over dense: MRR **0.883 → 0.911**, nDCG@5 **0.903 → 0.938**, Recall@3 **90.0% → 96.7%**.
 
-Reproducible offline from committed fixtures (no key, no spend), **gated in CI**, and shipped with a **sensitivity control** — a meaning-shuffled retriever that must score near chance, proving the benchmark actually discriminates.
+Reproducible offline from committed fixtures with no live provider call, **gated in
+CI**, and shipped with a **sensitivity control** — a meaning-shuffled retriever that
+must score near chance, proving the benchmark actually discriminates.
 
 Full method + honest caveats: **[BENCHMARK.md](./BENCHMARK.md)**.
 
@@ -305,9 +319,9 @@ Both surfaces — the HTTP routes and the MCP tools / custom skills — go throu
 
 An agent states a fact in natural language. For example:
 
-> *"Payroll event for ByteCraft Software 2026-05: bank cash-out €10,000; true employer cost €15,800."*
+> *"Payroll event for ByteCraft Software 2026-05 reconciled from a source-linked register and bank confirmation."*
 >
-> *"Purchase invoice PINV-771 from Pallas Freight: EUR 3,200; paid amount unknown."*
+> *"Purchase invoice PINV-771 from Pallas Freight: payment status remains unknown."*
 
 Qwen `text-embedding-v4` embeds it. The text, structured metadata, and the 1024-dim vector are then stored in `agent_memory`.
 
@@ -398,7 +412,7 @@ npm run memory:demo
 # 3. Run the HTTP backend
 npm start                       # open http://localhost:9000
 
-# 4. Reproduce the benchmarks (replay committed fixtures — no key, no spend)
+# 4. Reproduce the benchmarks (offline replay; no live provider call)
 npm run bench                   # retrieval: Recall@k / MRR / nDCG (incl. re-rank + shuffled control)
 npm run bench:consistency       # self-audit (rule-based): detection rate + false positives on the control set
 npm run bench:semantic          # self-audit (meaning-level): recall / precision / FP-rate on the labelled semantic corpus
@@ -439,7 +453,7 @@ Once the backend is running, open **`http://localhost:9000/docs`** for the inter
 
 **Local Fakes vs production.** With no `DASHSCOPE_API_KEY`, local development and tests use deterministic Fake clients while still exercising the pgvector path. In `NODE_ENV=production`, Qwen-heavy routes fail closed when only Fakes are available (unless the explicit non-qualifying `ALLOW_FAKE_QWEN=true` override is set), and `/ready` does not report ready. A qualifying live deployment therefore requires real Qwen.
 
-**Auth, tenant isolation, and spend bounds.** The no-login judge path is intentionally limited to the fixed public demo and public-tenant reads. Production mutations, feedback, lifecycle operations, deep readiness, and the semantic audit require `Authorization: Bearer …` or `x-api-key`; the matched credential selects the tenant server-side, so a request cannot choose another tenant. A coarse per-client limiter bounds the complete HTTP surface at **300 requests/minute** by default (`HTTP_RATE_LIMIT_MAX`), including readiness and cheap database reads. Qwen-heavy routes additionally use atomic UTC-daily per-subject/IP plus global **work-unit** pools: recall defaults to **200 / 2,000**, ingest (including seed) to **100 / 500**, semantic audit to **500 / 2,500**, and authenticated deep readiness to **30 / 300**. Work units are disclosed preflight policy weights, not provider billing or transport-attempt counts: REST/MCP recall reserves **4** worst-case logical model operations (query embedding + rerank + draft narration + one bounded citation repair), document ingestion charges a fixed **5 per document** to stop batch amplification, semantic audit reserves its requested bounded pair fan-out, and only the deep-readiness cache-miss/in-flight owner reserves **3** (embedding + narration + bounded citation repair); hits/followers reserve zero. Malformed MCP calls are rejected before reservation. Cheap reads such as count, list, P&L, and field-level audit spend no Qwen work unit. Invalid credentials fail rather than falling back to the public tenant.
+**Auth, tenant isolation, and provider-operation bounds.** The no-login judge path is intentionally limited to the fixed public demo and public-tenant reads. Production mutations, feedback, lifecycle operations, deep readiness, and the semantic audit require `Authorization: Bearer …` or `x-api-key`; the matched credential selects the tenant server-side, so a request cannot choose another tenant. A coarse per-client limiter bounds the complete HTTP surface at **300 requests/minute** by default (`HTTP_RATE_LIMIT_MAX`), including readiness and cheap database reads. Qwen-heavy routes additionally use atomic UTC-daily per-subject/IP plus global **work-unit** pools: recall defaults to **200 / 2,000**, ingest (including seed) to **100 / 500**, semantic audit to **500 / 2,500**, and authenticated deep readiness to **30 / 300**. Work units are disclosed preflight policy weights, not provider billing or transport-attempt counts: REST/MCP recall reserves **4** worst-case logical model operations (query embedding + rerank + draft narration + one bounded citation repair), document ingestion charges a fixed **5 per document** to stop batch amplification, semantic audit reserves its requested bounded pair fan-out, and only the deep-readiness cache-miss/in-flight owner reserves **3** (embedding + narration + bounded citation repair); hits/followers reserve zero. Malformed MCP calls are rejected before reservation. Cheap reads such as count, list, P&L, and field-level audit consume no Qwen work unit. Invalid credentials fail rather than falling back to the public tenant.
 
 **Database least privilege.** `POSTGRES_*` initializes the local bootstrap owner and
 `MIGRATION_DATABASE_URL` is consumed only by the one-shot `db-init` service.
@@ -578,7 +592,7 @@ Because the store is pg-wire, switching between the two is a `DATABASE_URL` swap
 
 This backend's qualifying path runs on **Alibaba Cloud ECS**. Two halves of proof:
 
-**1. Runtime proof image** — only after [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) turns green for the current source candidate, generate the app-specific canonical PNG [`demo/gallery/10-alibaba-runtime-proof.png`](./demo/gallery/10-alibaba-runtime-proof.png) from that verified live deployment. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized composite; never reuse another entry's proof. Keep raw console captures only in ignored `demo/private-originals/`.
+**1. Runtime proof image** — only after [`deploy/DEPLOY_STATE.md`](./deploy/DEPLOY_STATE.md) turns green for the current source candidate, generate the app-specific canonical PNG at `demo/gallery/10-alibaba-runtime-proof.png` from that verified live deployment. It must show the MemoryAgent ECS process/container, `/ready`, `/health`, and this app's HTTPS URL in one sanitized composite; never reuse another entry's proof. Keep raw console captures only in ignored `demo/private-originals/`.
 
 ```text
 $ aliyun ecs DescribeInstances --RegionId ap-southeast-1 --InstanceIds "['<redacted-instance-id>']"
@@ -603,7 +617,7 @@ Full proof doc with every service mapping: [`demo/ALIBABA_PROOF.md`](./demo/ALIB
 
 ## Testing & CI
 
-The authoritative test and coverage values are the current CI artifacts, not a hand-copied count in this document. Qwen/Alibaba credentials are not needed for offline CI; deterministic Fakes and committed fixtures exercise the model seams without external spend, while PostgreSQL integration slices run when `DATABASE_URL` is supplied.
+The authoritative test and coverage values are the current CI artifacts, not a hand-copied count in this document. Qwen/Alibaba credentials are not needed for offline CI; deterministic Fakes and committed fixtures exercise the model seams without external provider calls, while PostgreSQL integration slices run when `DATABASE_URL` is supplied.
 
 `scripts/test-matrix.ts` is the single source of truth for the test files in every tier. The npm scripts and hosted c8 job use the same runner; a docs/supply-chain fitness test fails if a test file is unregistered, duplicated, or if CI bypasses the canonical 80% statements/branches/functions/lines gate. The coverage job supplies real pgvector, applies the schema, and verifies the DML-only runtime role before running unit, integration, security, and E2E suites serially under c8.
 
@@ -612,10 +626,10 @@ The authoritative test and coverage values are the current CI artifacts, not a h
 | **Unit** | `tests/unit/*` | Embedder + narrator (Qwen canned + Fake), memory logic, **retrieval primitives** (BM25, RRF, MMR, hybrid, **re-rank**), **IR metrics**, **consolidation + forgetting**, **self-audit consistency** (contradiction + absence detection, precision on a control set), and the **MCP server + custom-skills layer** (`mcp.test.ts` drives the server over the real MCP protocol via the SDK in-memory transport; `skills.test.ts` covers the dispatcher + qwen-plus function-calling loop) — all over `InMemoryStore`, no infra. |
 | **Integration** | `tests/integration/*` | Real pgvector SQL and pipeline writes: `::vector` insert, `<=>` cosine recall, filters, count, hybrid dense+FTS fusion, idempotency, and consolidate → supersede → forget. These tests skip explicitly when no real DB is supplied. |
 | **E2E** | `tests/e2e/*` | **Cross-session persistence** (session A writes + tears down, session B recalls) plus a broad **offline journey suite** (`full-journey.test.ts` + http / mcp / templates / robustness): seed → recall → cited answer → rule-audit → semantic-audit → MCP round-trip → P&L → provenance, and the error/edge journeys (empty store, no-contradiction, judge-guide chips). Exact executed/skipped counts come only from the final immutable CI artifact. |
-| **Security (pen-test)** | `tests/security/*` | Automated app-security suite over the real HTTP + MCP surface: **authorization + daily-spend budget** (429 when exhausted), **prompt-injection resistance** (a genuine contradiction is still flagged despite an injected "report consistent" instruction — the read-only audit is unswayable), **MCP tool-boundary / excessive-agency** (reads never mutate; unknown tools fail safe; no prototype pollution), **sensitive-data exposure** (no stack/path/secret leaks), and **store-injection** (a `DROP TABLE` payload and NaN/Inf embeddings stay inert). Runs as the `pen-test` CI job; the SQL-parameterization case runs against real pgvector. |
+| **Security (pen-test)** | `tests/security/*` | Automated app-security suite over the real HTTP + MCP surface: **authorization + daily provider-operation quota** (429 when exhausted), **prompt-injection resistance** (a genuine contradiction is still flagged despite an injected "report consistent" instruction — the read-only audit is unswayable), **MCP tool-boundary / excessive-agency** (reads never mutate; unknown tools fail safe; no prototype pollution), **sensitive-data exposure** (no stack/path/secret leaks), and **store-injection** (a `DROP TABLE` payload and NaN/Inf embeddings stay inert). Runs as the `pen-test` CI job; the SQL-parameterization case runs against real pgvector. |
 | **Production image supply chain** | [`.github/workflows/supply-chain.yml`](./.github/workflows/supply-chain.yml); [`docs/SUPPLY_CHAIN.md`](./docs/SUPPLY_CHAIN.md) | Builds and constrains the exact production image, emits retained Syft/SPDX 2.3/CycloneDX SBOMs, then scans the sealed inventory with byte-pinned Grype tooling and a byte-pinned advisory snapshot. Every high/critical finding fails, including no-fix findings; there is no current allowlist. Results are dated evidence, not a security certification. |
 | **Benchmark gates** | `bench/*` | Retrieval regression/discrimination on the 32-memory/15-query fixture; 11/11 developer-labelled gold EUR-token hits and 10/11 complete EUR-labelled amount traceability; developer-authored field/semantic regression sets; the 48-pair synthetic semantic stability gate; and structural + declared-policy conformance checks. Re-rank and pinned Mem0 deltas are reported, not generalized. |
-| **Load / performance** | `load/recall-load.js` (k6); [published live result](./load/RESULTS_2026-07-15.md) | Drives concurrent `/health` + `/recall` + `/consistency` and asserts **p95 latency + error-rate SLOs** as k6 thresholds (the run fails on a regression). Two profiles: an **offline smoke** that runs on **every push** via the `load` CI job (boots the backend on deterministic Fakes against a real pgvector, seeds, then holds tight local SLOs — free, no spend), and a manual, arrival-rate-bounded `load-test` workflow that exercises the **live box** (real Qwen) without overrunning its production HTTP or Qwen quotas. |
+| **Load / performance** | `load/recall-load.js` (k6); [published live result](./load/RESULTS_2026-07-15.md) | Drives concurrent `/health` + `/recall` + `/consistency` and asserts **p95 latency + error-rate SLOs** as k6 thresholds (the run fails on a regression). Two profiles: an **offline smoke** that runs on **every push** via the `load` CI job (boots the backend on deterministic Fakes against a real pgvector, seeds, then holds tight local SLOs with no external model call), and a manual, arrival-rate-bounded `load-test` workflow that exercises the **live box** (real Qwen) without overrunning its production HTTP or Qwen quotas. |
 
 CI stages:
 
@@ -623,8 +637,8 @@ CI stages:
 2. **dep-audit** — `npm audit` (fails on high/critical).
 3. **build-test** — typecheck → schema apply (stands up real pgvector) → unit → integration → e2e → offline demo smoke.
 4. **coverage** — `npm run coverage` runs the canonical unit + integration + security + E2E matrix serially under c8 against real pgvector and gates statements, branches, functions, and lines at ≥ 80%.
-5. **benchmark** — retrieval regression + discrimination, literal gold-EUR-token/traceability checks, field and semantic regression sets, the 48-pair online synthetic semantic evidence set, scale/lifecycle invariants, and contradiction-resolution policy conformance. All offline gates replay committed fixtures with no key or spend.
-6. **pen-test** — `npm run test:security` (authz + daily-spend budget, prompt-injection resistance, MCP tool-boundary, sensitive-data exposure, SQL-parameterization against real pgvector).
+5. **benchmark** — retrieval regression + discrimination, literal gold-EUR-token/traceability checks, field and semantic regression sets, the 48-pair online synthetic semantic evidence set, scale/lifecycle invariants, and contradiction-resolution policy conformance. All offline gates replay committed fixtures without a live provider call.
+6. **pen-test** — `npm run test:security` (authz + daily provider-operation quota, prompt-injection resistance, MCP tool-boundary, sensitive-data exposure, SQL-parameterization against real pgvector).
 7. **load** — boots the backend offline, seeds, runs the bounded k6 smoke; the p95 + error-rate **SLO thresholds gate the job**.
 8. **readiness** — `npm run readiness -- --gate`: the weighted rubric completeness (≥ 95%) **and** the new **assurance dimension** (security / load / e2e layers all wired) must both be green.
 9. **CodeQL** (`.github/workflows/codeql.yml`) — SAST for the TypeScript source.

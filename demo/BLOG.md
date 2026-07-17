@@ -33,11 +33,11 @@ memory starts to **disagree with itself**.
 
 A cross-session agent accumulates facts from many separate write events, over
 days, across processes. Nothing stops two of those writes from recording the same
-record two different ways: in the original synthetic demo, one session records
-`INV-5521.amount` at €8,400 and a later session records €8,900 for the same field. A plain vector store does the worst
-possible thing here — it silently returns whichever one happened to rank higher,
-and never tells you the two ever conflicted. Your agent is now confidently wrong,
-and you have no way to know.
+record two different ways: in the original synthetic demo, separate sessions assign
+different values to the same `INV-5521.amount` field. A plain vector store does the
+worst possible thing here — it silently returns whichever one happened to rank
+higher, and never tells you the two ever conflicted. Your agent is now confidently
+wrong, and you have no way to know.
 
 **Archon MemoryAgent** is our entry for the MemoryAgent track, built on Qwen
 (`text-embedding-v4` + `qwen-plus`) with a pgvector memory layer, running live on
@@ -123,8 +123,8 @@ they are not presented here as clean release evidence.)
 
 ## It's measured, offline, and reproducible
 
-Claims about memory quality are cheap. The deterministic claims below are
-reproducible from committed fixtures with no API key or spend and are gated in CI:
+Memory-quality claims need evidence. The deterministic claims below are reproducible
+from committed fixtures without a live provider call and are gated in CI:
 
 **Retrieval.** On real `text-embedding-v4` embeddings, over a frozen, diverse,
 hand-labelled corpus, our `reranked-hybrid` retriever (dense + lexical fused with
@@ -142,7 +142,7 @@ The dense condition is an explicit, reproducible single-vector cosine control,
 similar to the plain similarity mode documented by LangChain's
 `VectorStoreRetriever`. It is not a product head-to-head or a claim about every
 system's current defaults.
-(We were honest where honesty cost us: hybrid *alone* does **not** beat a modern
+(The less flattering result matters too: hybrid *alone* does **not** beat a modern
 embedder on top-rank ordering on a clean corpus — that's why we added bounded
 Qwen listwise reranking, and reported the null result rather than tuning the corpus
 back toward duplicates.) A meaning-shuffled control retriever collapses to near
@@ -185,7 +185,7 @@ and it's a gated test, not a slide.
 
 The shipped financial proof has two explicit inputs: a document pipeline that fuses
 a payroll register, bank confirmation, and payslips; and a strict JSON path for
-purchase/sales invoices. Over those memories it reports payroll cost, purchases,
+purchase/sales invoices. Over those memories it reports source-linked payroll totals, purchases,
 sales, known/unknown cash, and net profit **per currency**. If currencies are mixed,
 top-level monetary totals are `null` and `by_currency` carries independent totals.
 Payroll without supported currency evidence is counted as unknown and excluded

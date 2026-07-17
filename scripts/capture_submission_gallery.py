@@ -2499,8 +2499,8 @@ def render_youtube_thumbnail(field_audit_image: Path, output: Path) -> None:
     draw.text((61, 397), "Cross-session contradiction", font=font(29, bold=True), fill="#c0d5cc")
     rounded(draw, (58, 456, 305, 551), "#16251f", radius=22, outline="#637c71", width=2)
     rounded(draw, (332, 456, 579, 551), "#17372a", radius=22, outline="#35d399", width=2)
-    draw.text((181, 504), "€8,400", anchor="mm", font=font(46, bold=True), fill="#f6fff9")
-    draw.text((455, 504), "€8,900", anchor="mm", font=font(46, bold=True), fill="#86efc1")
+    draw.text((181, 504), "SESSION A", anchor="mm", font=font(34, bold=True), fill="#f6fff9")
+    draw.text((455, 504), "SESSION B", anchor="mm", font=font(34, bold=True), fill="#86efc1")
     draw.text((318, 583), "RECOMMEND · DON'T REWRITE", anchor="mm", font=font(23, bold=True), fill="#a8c0b6")
 
     # A crisp crop of the real final field-audit composite anchors the right side.

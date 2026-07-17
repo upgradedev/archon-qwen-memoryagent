@@ -63,8 +63,8 @@ upload metadata but does not authorize publication.
 | 0:00–0:13 | Title, live URL, Track 1 | Conflict stakes and one-line product answer. |
 | 0:13–0:32 | Sanitized exact-runtime-SHA release card, `/health`, `/ready`, qwen-vl canary | Commit provenance stays separate from readiness; original synthetic two-PNG dry-run reports `qwen-vl-max`, one fused event, zero writes and zero residue. |
 | 0:32–0:51 | `demo/final-media/judge-architecture.jpg` | Trust boundary, Qwen, pgvector, bounded-listwise reranked hybrid recall, read-only audit/human resolution, and portable REST/MCP/pg-wire seams. |
-| 0:51–1:13 | Session A write/disconnect, fresh Session B cited recall | `€14,600` true employer cost versus `€10,800` bank outflow; dense score is exposed only for this human-readable proof while product default remains hybrid. |
-| 1:13–1:35 | Original synthetic `INV-5521`, field self-audit, human-control frame | `€8,400` versus `€8,900`, recency recommendation, no silent mutation; live Defer only with zero API/write and Accept/Override unexercised. |
+| 0:51–1:13 | Session A write/disconnect, fresh Session B cited recall | A prior-session synthetic fact returns in a grounded answer with numbered citations; dense score is exposed only for this human-readable proof while product default remains hybrid. |
+| 1:13–1:35 | Original synthetic `INV-5521`, field self-audit, human-control frame | The same field differs across sessions; both provenance records stay visible, the declared recency recommendation is explicit, and nothing is silently mutated. Live proof exercises Defer only with zero API/write; Accept/Override remain unexercised. |
 | 1:35–1:53 | Feedback-persistence proof | Session-A stored correction and separately authenticated fresh Session-B cited application; persisted state, not weight learning. |
 | 1:53–2:10 | Cropped authenticated semantic result plus four-tool MCP card | “Pays on time” versus “chronically late”; hide the credential/request header and distinguish authenticated HTTP from trusted-local stdio. |
 | 2:10–2:22 | Authenticated one-row lifecycle preview and confirmation | Preview one feedback-superseded candidate, delete one with audit, protected state unchanged, zero marker residue. |
@@ -113,7 +113,7 @@ English captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
 - [ ] Lifecycle: exactly one synthetic candidate previewed and one deleted; protected seed/correction unchanged and cleanup residue zero.
 - [ ] Architecture: use the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg)
       for video/custom architecture upload; upload the generated 3:2
-      [`gallery/07-qwen-memoryagent-architecture.png`](./gallery/07-qwen-memoryagent-architecture.png)
+      `demo/gallery/07-qwen-memoryagent-architecture.png`
       to the Devpost gallery, not a screenshot of raw Mermaid. Keep
       [`../docs/architecture.png`](../docs/architecture.png) only as the dense technical appendix.
 - [ ] Live proof: `/ready` and `/health` showing ready + real Qwen model ids.
@@ -138,15 +138,17 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
       `demo/private-originals/runs/<UTC-RUN-ID>/`; known legacy fixed outputs and
       prior capture runs are absent, while canonical inputs and retained
       `.artifacts` snapshots remain intact.
-- [ ] [`final-media/youtube-thumbnail.png`](./final-media/youtube-thumbnail.png) is
-      exactly 1280×720 and [`final-media/memoryagent-demo.en.srt`](./final-media/memoryagent-demo.en.srt)
+- [ ] `demo/final-media/youtube-thumbnail.png` is
+      exactly 1280×720 and `demo/final-media/memoryagent-demo.en.srt`
       is regenerated from final measured windows, not the canonical fallback.
 
 ## 3. Public posts
 
 - [ ] Publish the technical article from [`BLOG.md`](./BLOG.md); remove its publisher-only HTML checklist, resolve only public video/Devpost placeholders, and keep its absolute architecture image URL and Qwen Cloud build journey intact.
 - [ ] Open the published article, architecture image, live CTA, repository CTA, and optional video/Devpost links in a signed-out/private browser; require every page to load without a login or access request.
-- [ ] Publish at least one social post from [`POST_DRAFTS.md`](./POST_DRAFTS.md).
+- [ ] Publish the canonical [`BLOG.md`](./BLOG.md) on dev.to and verify the final
+      article, architecture image, live link, repository link, and public video link
+      signed out. No separate social-network post is required for this release.
 - [ ] Confirm each post is public in an incognito window.
 - [ ] Add the public blog/social URL to the Devpost submission for the optional bonus.
 
@@ -181,8 +183,8 @@ operator sheet and stop on Devpost's final step without clicking **Submit projec
       <https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh>.
 - [ ] Architecture: upload the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg).
 - [ ] Organizer deck: if a separate Qwen submission flow requests PPT/PDF, attach
-      [`deck/archon-memoryagent-judge-deck.pptx`](./deck/archon-memoryagent-judge-deck.pptx)
-      and [`deck/archon-memoryagent-judge-deck.pdf`](./deck/archon-memoryagent-judge-deck.pdf)
+      `demo/deck/archon-memoryagent-judge-deck.pptx`
+      and `demo/deck/archon-memoryagent-judge-deck.pdf`
       only after final exact-release screenshots and layout/hash review.
 - [ ] Public video: paste the URL recorded above.
 - [ ] Blog/social: paste the public URL recorded above.

@@ -20,7 +20,7 @@ So the guiding question became: *not just how does an agent remember, but how do
 
 Every fused financial event, validation finding, and narrated insight is embedded with **Qwen `text-embedding-v4`** and written to a **pgvector** store. On any later run — a different session, process, or container — the agent **recalls the relevant prior facts by meaning** and grounds a **Qwen `qwen-plus`** answer in them, citing the exact memories it used.
 
-It exposes a small HTTP surface: public-tenant `/recall`, `/pnl`, and `/consistency`; authenticated tenant-scoped `/ingest`, `/ingest/invoice`, `/ingest/documents`, `/feedback`, `/consistency/semantic`, `/consolidate`, and `/forget`; plus `/docs` and `/ready`. Qwen-spending routes have per-subject/IP plus global daily quotas. Document ingestion has a protected `dryRun` that executes extraction, linking, validation, and P&L, reports the extractor models, and writes no memory. Lifecycle calls preview by default and require `confirm=true` to change state.
+It exposes a small HTTP surface: public-tenant `/recall`, `/pnl`, and `/consistency`; authenticated tenant-scoped `/ingest`, `/ingest/invoice`, `/ingest/documents`, `/feedback`, `/consistency/semantic`, `/consolidate`, and `/forget`; plus `/docs` and `/ready`. Provider-backed routes have per-subject/IP plus global daily work-unit quotas. Document ingestion has a protected `dryRun` that executes extraction, linking, validation, and P&L, reports the extractor models, and writes no memory. Lifecycle calls preview by default and require `confirm=true` to change state.
 
 Four ideas make the memory *strong*, not merely present:
 
@@ -84,7 +84,7 @@ Higher importance wins; ties break on source authority; remaining ties break on 
 
 ### Offline-first engineering
 
-Every external dependency has an injectable seam. With no `DASHSCOPE_API_KEY`, local/CI runs use deterministic Fake providers, so the pgvector write-and-recall path and committed-fixture benchmarks run with **zero cloud credentials and zero model spend**. Production is different by design: Qwen-heavy routes fail closed with Fake providers and `/ready` requires real Qwen.
+Every external dependency has an injectable seam. With no `DASHSCOPE_API_KEY`, local/CI runs use deterministic Fake providers, so the pgvector write-and-recall path and committed-fixture benchmarks run with **zero cloud credentials and no live provider call**. Production is different by design: Qwen-heavy routes fail closed with Fake providers and `/ready` requires real Qwen.
 
 The final capture gate is equally fail-closed. It sends an original synthetic payroll-register + bank-confirmation PNG pair through live `qwen-vl-max` in protected `dryRun`, requires response-reported model provenance and one fused event, and proves zero writes by both unchanged tenant count and exact-marker absence. It also stores Session-A feedback, requires a fresh Session-B recall to cite the correction, previews exactly one feedback-superseded retention candidate, deletes exactly one with an audited confirmation, verifies protected state, and scrubs the unique marker.
 

@@ -8,6 +8,7 @@ from http import client as httpclient
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import ssl
 import sys
@@ -466,7 +467,6 @@ class CaptionTimelineTests(unittest.TestCase):
         )
         routed = supporting + (
             "README.md",
-            "docs/BUILD_PLAN.md",
             "demo/MEDIA_CAPTURE_RUNBOOK.md",
             "demo/gallery/README.md",
             "demo/RIGHTS_RELEASE_CHECKLIST.md",
@@ -543,8 +543,9 @@ class CaptionTimelineTests(unittest.TestCase):
 
     def test_captions_retain_every_material_claim_boundary(self) -> None:
         captions = " ".join(beat.caption for beat in builder.BEATS).lower()
-        self.assertIn("14,600 workforce cost versus 10,800 bank outflow", captions)
-        self.assertNotIn("15,800 workforce cost versus 10,000 bank outflow", captions)
+        self.assertIn("fresh session b recalls a prior-session fact with numbered citations", captions)
+        self.assertIn("amount field differs across sessions", captions)
+        self.assertNotRegex(captions, r"(?:€|eur|euros?|\b8,?400\b|\b8,?900\b|\b10,?800\b|\b14,?600\b)")
         for lock in (
             "original synthetic",
             "two-png",
@@ -573,6 +574,23 @@ class CaptionTimelineTests(unittest.TestCase):
             "alternative-only",
         ):
             self.assertIn(lock, captions)
+
+    def test_publication_copy_keeps_amounts_in_evidence_not_marketing(self) -> None:
+        public_paths = (
+            "demo/BLOG.md",
+            "demo/DEVPOST_STAGING.md",
+            "demo/PROJECT_STORY.md",
+            "demo/SUBMISSION.md",
+            "demo/VIDEO_PUBLICATION_PACKET.md",
+            "demo/VIDEO_SCRIPT.md",
+            "demo/thumbnail.svg",
+        )
+        copy = "\n".join((ROOT / relative).read_text(encoding="utf-8") for relative in public_paths)
+        self.assertNotRegex(copy, re.compile(r"€\s*(?:8[,.]?400|8[,.]?900)|\b(?:8[,.]?400|8[,.]?900)\s+euros?\b", re.I))
+        self.assertNotRegex(copy, re.compile(r"hidden[\s-]+costs?|\bno (?:api )?key.{0,20}\bspend\b|\bzero model spend\b", re.I))
+        thumbnail = (ROOT / "demo" / "thumbnail.svg").read_text(encoding="utf-8")
+        self.assertIn("VALUE A", thumbnail)
+        self.assertIn("VALUE B", thumbnail)
 
     def test_production_gate_contract_is_explicit(self) -> None:
         self.assertEqual(builder.REQUIRED_BOOLEAN_GATES["exactDeploymentEvidence"], True)

@@ -8,7 +8,7 @@ submission evidence.
   recording path. Its first line is a machine-checked **DO NOT RECORD OR PUBLISH**
   guard.
 - The canonical final video is reserved at
-  [`../final-media/memoryagent-demo.mp4`](../final-media/memoryagent-demo.mp4) and is
+  `demo/final-media/memoryagent-demo.mp4` and is
   valid only after the exact-deploy, rights, duration, caption, and signed-out
   publication gates pass.
 
