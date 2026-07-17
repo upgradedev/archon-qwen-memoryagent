@@ -35,11 +35,16 @@ DEFAULT_MANIFEST = ".artifacts/final-video/memoryagent-live-interaction.manifest
 DEFAULT_POSTER = ".artifacts/final-video/memoryagent-live-interaction-poster.png"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 FORBIDDEN_POSITIONING = re.compile(r"hidden|ika|efka|mydata|greek|greece|αφμ|aade", re.IGNORECASE)
-PRIMARY_QUESTION_SOURCE = ROOT / "src" / "demo-data.ts"
-PRIMARY_QUESTION_DECLARATION = re.compile(
-    r"export\s+const\s+DEMO_PRIMARY_RECALL_QUESTION\s*=\s*"
-    r"((?:\"(?:\\.|[^\"\\])*\"\s*(?:\+\s*)?)+);",
+CAPTURE_QUESTION_SOURCE = ROOT / "scripts" / "capture_submission_gallery.py"
+CAPTURE_QUESTION_DECLARATION = re.compile(
+    r"CANONICAL_RECALL_QUESTION\s*=\s*\(\s*"
+    r"((?:\"(?:\\.|[^\"\\])*\"\s*)+)\)",
     re.MULTILINE,
+)
+EXPECTED_CAPTURE_QUESTION = (
+    "Using only the retrieved memory, return exactly one sentence that states the true employer cost "
+    "for Northwind Trading in 2026-05 and includes citation marker [1]. Mention no other amounts, "
+    "ratios, employee counts, or calculations."
 )
 
 
@@ -108,32 +113,30 @@ def production_evidence(path: Path, expected_sha: str, base_url: str) -> dict[st
     return payload
 
 
-def canonical_primary_question() -> tuple[str, str]:
-    """Read the tracked TypeScript source of truth without importing TS at runtime."""
-    source = project_path(PRIMARY_QUESTION_SOURCE, "canonical question source", exists=True)
+def reviewed_capture_question() -> tuple[str, str]:
+    """Read the tracked capture-question source without importing it or making live calls."""
+    source = project_path(CAPTURE_QUESTION_SOURCE, "capture question source", exists=True)
     current_bytes = source.read_bytes()
     head = subprocess.run(
-        ["git", "-C", str(ROOT), "show", "HEAD:src/demo-data.ts"],
+        ["git", "-C", str(ROOT), "show", "HEAD:scripts/capture_submission_gallery.py"],
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    require(head.returncode == 0, "cannot read canonical question source from final source HEAD")
-    require(head.stdout == current_bytes, "src/demo-data.ts differs from final source HEAD")
+    require(head.returncode == 0, "cannot read capture question source from final source HEAD")
+    require(head.stdout == current_bytes, "capture_submission_gallery.py differs from final source HEAD")
     text = current_bytes.decode("utf-8")
-    match = PRIMARY_QUESTION_DECLARATION.search(text)
-    require(match is not None, "DEMO_PRIMARY_RECALL_QUESTION declaration is missing or non-canonical")
+    match = CAPTURE_QUESTION_DECLARATION.search(text)
+    require(match is not None, "CANONICAL_RECALL_QUESTION declaration is missing or non-canonical")
     literals = re.findall(r'\"(?:\\.|[^\"\\])*\"', match.group(1))
-    require(literals, "DEMO_PRIMARY_RECALL_QUESTION contains no quoted text")
+    require(literals, "CANONICAL_RECALL_QUESTION contains no quoted text")
     try:
         question = "".join(json.loads(literal) for literal in literals)
     except json.JSONDecodeError as exc:
-        raise CaptureError("DEMO_PRIMARY_RECALL_QUESTION contains an invalid string literal") from exc
+        raise CaptureError("CANONICAL_RECALL_QUESTION contains an invalid string literal") from exc
     require(
-        question
-        == "Using only the retrieved memory, state the true employer cost for Northwind Trading in 2026-05 "
-        "and include citation marker [1] in the sentence.",
-        "canonical primary question is not the reviewed citation-explicit question",
+        question == EXPECTED_CAPTURE_QUESTION,
+        "capture question is not the reviewed one-sentence citation-explicit question",
     )
     return question, hashlib.sha256(current_bytes).hexdigest()
 
@@ -321,7 +324,7 @@ def capture(
         require(evidence.get("exactRuntimeSource") == expected_sha, "fixture evidence SHA mismatch")
     else:
         evidence = production_evidence(evidence_path, expected_sha, base_url)
-        canonical_question, canonical_source_sha = canonical_primary_question()
+        canonical_question, canonical_source_sha = reviewed_capture_question()
         require(relative(output).startswith(".artifacts/final-video/"), "raw live footage must stay under .artifacts/final-video")
     for target, label in ((output, "output"), (manifest_path, "manifest"), (poster, "poster")):
         require(replace or not target.exists(), f"refusing to replace existing {relative(target)} without --replace")
@@ -385,7 +388,7 @@ def capture(
         "durableReviewerWritesCreated": False,
         "publicSeed": "idempotent canonical demo seed" if not fixture else "fixture only",
         "canonicalQuestionSource": None if fixture else {
-            "path": "src/demo-data.ts",
+            "path": "scripts/capture_submission_gallery.py",
             "sha256": canonical_source_sha,
             "question": canonical_question,
         },

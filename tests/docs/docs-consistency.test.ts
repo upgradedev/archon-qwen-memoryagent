@@ -174,10 +174,12 @@ test("CHECK 1d — release-evidence docs match the executable strict/fallback co
   assert.match(videoBuilder, /"exactDeployEvidenceMode"/);
 });
 
-test("CHECK 1e — canonical live-recall evidence stays bounded and wording-identical", () => {
+test("CHECK 1e — live-recall evidence stays bounded, grounded, and capture-consistent", () => {
   const captureScript = readText("scripts/capture_submission_gallery.py");
   const browserCapture = readText("scripts/capture_web.py");
+  const liveRecorder = readText("demo/tools/record_live_motion.py");
   const judgeGuide = readText("docs/JUDGE-GUIDE.md");
+  const captureQuestion = pythonConcatenatedString(captureScript, "CANONICAL_RECALL_QUESTION");
 
   assert.equal(
     DEMO_TEMPLATES[0]?.q,
@@ -185,15 +187,19 @@ test("CHECK 1e — canonical live-recall evidence stays bounded and wording-iden
     "the first Explorer chip must be the canonical recall question",
   );
   assert.equal(
-    pythonConcatenatedString(captureScript, "CANONICAL_RECALL_QUESTION"),
-    DEMO_PRIMARY_RECALL_QUESTION,
-    "submission capture question drifted from the first Explorer chip",
-  );
-  assert.equal(
     pythonConcatenatedString(browserCapture, "CANONICAL_RECALL_QUESTION"),
-    DEMO_PRIMARY_RECALL_QUESTION,
-    "browser capture question drifted from the first Explorer chip",
+    captureQuestion,
+    "browser capture question drifted from the reviewed submission capture question",
   );
+  assert.match(
+    captureQuestion,
+    /^Using only the retrieved memory, return exactly one sentence .* citation marker \[1\]\./,
+    "capture question must retain the one-sentence citation-explicit grounding contract",
+  );
+  assert.match(captureQuestion, /Mention no other amounts, ratios, employee counts, or calculations\.$/);
+  assert.doesNotMatch(captureQuestion, /14[,.]?600/, "capture question must not contain the answer");
+  assert.match(liveRecorder, /CAPTURE_QUESTION_SOURCE = ROOT \/ "scripts" \/ "capture_submission_gallery\.py"/);
+  assert.match(liveRecorder, /question == EXPECTED_CAPTURE_QUESTION/);
   assert.ok(
     judgeGuide.replace(/\s+/g, " ").includes(DEMO_PRIMARY_RECALL_QUESTION),
     "judge guide must show the canonical question verbatim",

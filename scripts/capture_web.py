@@ -36,8 +36,9 @@ from repo_paths import inside_repo
 BASE = os.environ.get("DEMO_BASE_URL", "https://memory.43.106.13.19.sslip.io").rstrip("/")
 COMPANY = os.environ.get("WEB_COMPANY", "Northwind Trading")
 CANONICAL_RECALL_QUESTION = (
-    "Using only the retrieved memory, state the true employer cost for Northwind Trading in 2026-05 "
-    "and include citation marker [1] in the sentence."
+    "Using only the retrieved memory, return exactly one sentence that states the true employer cost "
+    "for Northwind Trading in 2026-05 and includes citation marker [1]. Mention no other amounts, "
+    "ratios, employee counts, or calculations."
 )
 QUESTION = os.environ.get("WEB_QUESTION", CANONICAL_RECALL_QUESTION)
 

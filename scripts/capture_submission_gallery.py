@@ -77,8 +77,9 @@ PRIMARY_OUTPUTS = (
 )
 
 CANONICAL_RECALL_QUESTION = (
-    "Using only the retrieved memory, state the true employer cost for Northwind Trading in 2026-05 "
-    "and include citation marker [1] in the sentence."
+    "Using only the retrieved memory, return exactly one sentence that states the true employer cost "
+    "for Northwind Trading in 2026-05 and includes citation marker [1]. Mention no other amounts, "
+    "ratios, employee counts, or calculations."
 )
 VALID_GROUNDING_RESULTS = frozenset({("passed", 1), ("repaired", 2)})
 
@@ -412,13 +413,36 @@ def classify_narrator_stage(payload: Any, http_status: int) -> tuple[str, str, d
         isinstance(degradation_code, str)
         and degradation_code in ALLOWLISTED_NARRATOR_TRANSIENT_CODES
     )
+    degradation_grounding_failure = (
+        isinstance(degradation_code, str)
+        and degradation_code in {
+            "grounding_invalid_or_missing_citation",
+            "grounding_unsupported_numeric_claim",
+        }
+    )
+    degradation_class = (
+        "allowlisted-upstream"
+        if degradation_allowlisted
+        else "grounding-failure"
+        if degradation_grounding_failure
+        else "unexpected-narrator-failure"
+        if isinstance(degradation_code, str) and degradation_code == "unexpected_narrator_failure"
+        else "none"
+        if degradation_code is None
+        else "unknown"
+    )
     summary = {
         "httpStatus": http_status,
         "payloadShape": "object",
         "modelClass": "expected" if model_id == EXPECTED_NARRATOR else "degraded" if model_id == "degraded" else "other",
         "groundingClass": grounding_result[0] if grounding_result in VALID_GROUNDING_RESULTS else "missing-or-invalid",
         "groundingAttempts": grounding_result[1] if grounding_result in VALID_GROUNDING_RESULTS else None,
-        "degradationClass": "allowlisted-upstream" if degradation_allowlisted else "none" if degradation_code is None else "other",
+        "degradationClass": degradation_class,
+        "degradationAttempts": (
+            payload.get("degradationAttempts")
+            if _strict_int(payload.get("degradationAttempts"))
+            else None
+        ),
         "hitCount": _list_count(payload.get("hits")),
         "citationCount": _list_count(payload.get("citations")),
     }
