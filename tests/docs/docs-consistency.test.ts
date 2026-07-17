@@ -171,6 +171,10 @@ test("CHECK 1d — release-evidence docs match the executable strict/fallback co
   assert.match(runbook, /EXACT_DEPLOY_SUCCESS memory=<SHA> autopilot=<SHA>/);
   assert.match(captureScript, /service_workers="block"/);
   assert.match(captureScript, /route_web_socket/);
+  assert.match(captureScript, /repo_context = browser\.new_context/);
+  assert.match(captureScript, /repo_context\.route\("\*\*\/\*", guard_repo_request\)/);
+  assert.doesNotMatch(captureScript, /repo_page = context\.new_page/);
+  assert.match(captureScript, /request\.url\.rstrip\("\/"\) == repo_url\.rstrip\("\/"\)/);
   assert.match(videoBuilder, /"exactDeployEvidenceMode"/);
 });
 

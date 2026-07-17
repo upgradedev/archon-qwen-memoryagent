@@ -59,6 +59,8 @@ DEFAULT_BASE_URL = "https://memory.43.106.13.19.sslip.io"
 PINNED_LIVE_HOST = "memory.43.106.13.19.sslip.io"
 PINNED_LIVE_PORT = 443
 DEFAULT_REPO_URL = "https://github.com/upgradedev/archon-qwen-memoryagent"
+PINNED_REPO_HOST = "github.com"
+PINNED_REPO_ASSET_HOSTS = frozenset({"github.githubassets.com", "avatars.githubusercontent.com"})
 EXPECTED_EMBEDDER = "text-embedding-v4"
 EXPECTED_NARRATOR = "qwen-plus"
 EXPECTED_VISION = "qwen-vl-max"
@@ -2022,17 +2024,63 @@ def browser_capture(
             observed_at=observed_at,
         )
 
-        # 11 · public repository landing page.  API facts are validated below;
-        # the browser capture is the judge-readable visual context.
-        repo_page = context.new_page()
+        # 11 · public repository landing page. API facts are validated below;
+        # the browser capture is judge-readable visual context. Keep it in a fresh,
+        # credential-isolated context: the live context is deliberately pinned to
+        # the MemoryAgent origin and must never be relaxed for a second site.
+        repo_context = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            device_scale_factor=1,
+            locale="en-US",
+            color_scheme="dark",
+            service_workers="block",
+        )
+
+        def guard_repo_request(route: Any) -> None:
+            request = route.request
+            parsed = urlparse.urlparse(request.url)
+            host = (parsed.hostname or "").lower()
+            secure_public_host = (
+                parsed.scheme == "https"
+                and parsed.username is None
+                and parsed.password is None
+                and (parsed.port or 443) == 443
+                and host in ({PINNED_REPO_HOST} | PINNED_REPO_ASSET_HOSTS)
+            )
+            if request.is_navigation_request():
+                exact_repo_navigation = (
+                    request.redirected_from is None
+                    and request.url.rstrip("/") == repo_url.rstrip("/")
+                )
+                if secure_public_host and exact_repo_navigation:
+                    route.continue_()
+                else:
+                    route.abort("blockedbyclient")
+                return
+            if secure_public_host:
+                route.continue_()
+            else:
+                route.abort("blockedbyclient")
+
+        repo_context.route("**/*", guard_repo_request)
+        repo_context.route_web_socket(
+            "**/*",
+            lambda websocket: websocket.close(code=1008, reason="network destination not permitted"),
+        )
+        repo_page = repo_context.new_page()
         repo_page.set_default_timeout(90_000)
-        repo_page.goto(repo_url, wait_until="domcontentloaded")
-        repo_page.locator("body").wait_for()
-        require("archon-qwen-memoryagent" in repo_page.title().lower(), "public repository landing page did not load")
-        raw_repo = private_output_path("11-public-repository-raw.png")
-        repo_page.screenshot(path=str(raw_repo), animations="disabled")
-        results["repoRaw"] = raw_repo
-        repo_page.close()
+        try:
+            repo_navigation = repo_page.goto(repo_url, wait_until="domcontentloaded")
+            require(repo_navigation is not None, "public repository navigation returned no response")
+            require(repo_navigation.request.redirected_from is None, "public repository navigation attempted a redirect")
+            require(repo_page.url.rstrip("/") == repo_url.rstrip("/"), "public repository navigation left the pinned URL")
+            repo_page.locator("body").wait_for()
+            require("archon-qwen-memoryagent" in repo_page.title().lower(), "public repository landing page did not load")
+            raw_repo = private_output_path("11-public-repository-raw.png")
+            repo_page.screenshot(path=str(raw_repo), animations="disabled")
+            results["repoRaw"] = raw_repo
+        finally:
+            repo_context.close()
 
         require(not console_errors, "Explorer emitted browser-console errors during canonical capture")
         context.close()
