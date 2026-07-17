@@ -804,6 +804,22 @@ class ReleaseBoundaryTests(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
+    def test_post_deploy_allowlist_adds_only_exact_non_runtime_capture_paths(self) -> None:
+        for path in (
+            "scripts/capture_web.py",
+            "tests/docs/docs-consistency.test.ts",
+        ):
+            self.assertTrue(capture.allowed_post_deploy_path(path), path)
+        for path in (
+            "scripts/capture_web.py/extra",
+            "scripts/capture_web.py.bak",
+            "tests/docs/docs-consistency.test.ts/extra",
+            "tests/docs/other.test.ts",
+            "src/server.ts",
+            "package.json",
+        ):
+            self.assertFalse(capture.allowed_post_deploy_path(path), path)
+
 
 class CaptureTransientResilienceTests(unittest.TestCase):
     ROOT = ROOT / ".artifacts" / "capture-transient-resilience-unit-test"

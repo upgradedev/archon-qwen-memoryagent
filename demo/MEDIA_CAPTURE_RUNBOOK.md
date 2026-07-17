@@ -18,7 +18,10 @@ The capture exits non-zero unless all of these are true:
   the provider-truncation fallback is accepted only when the app marker itself is
   terminal and the independent deployment status is terminal `Success`/exit `0`;
 - the deployed SHA is an ancestor of current `origin/main`, and every later path is
-  submission-only according to the script's explicit allowlist;
+  submission-only according to the script's explicit allowlist. Beyond `demo/**` and
+  `docs/**`, the capture-only `scripts/capture_web.py` and exact CI-only
+  `tests/docs/docs-consistency.test.ts` exceptions are literal paths; prefix lookalikes,
+  every `src/**` path and package/deployment inputs remain blocked;
 - `/health` reports `text-embedding-v4`, `qwen-plus`, a non-Fake judge and 1,024
   dimensions;
 - `/ready` proves database, Qwen configuration and reviewer authentication ready;
