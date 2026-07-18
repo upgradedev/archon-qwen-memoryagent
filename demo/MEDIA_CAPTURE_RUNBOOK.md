@@ -62,7 +62,20 @@ redirects, malformed/unknown payloads, grounding failures, unsupported content,
 embedding failures, truncation, and unparseable judge output are attempted once
 and fail closed. Worst-case reserved work is explicit: Session-B recall 3×4=12
 of its 200-unit judge pool, Explorer recall 3×4=12 of its 200-unit public pool,
-and semantic audit 3×25=75 of its 500-unit judge pool.
+and the bounded semantic audit 3×1=3 of its 500-unit judge pool. The capture
+intercepts that semantic POST and requires the exact JSON body
+`{"company":"Northwind Trading","kind":"insight","maxPairs":1}`. It rejects
+missing, altered, or additional fields, including a capture-only similarity
+threshold. The `similarityThreshold: 0.5` used by an offline E2E fixture is tuned
+only for `FakeEmbedder`; the live Explorer and capture retain the production
+threshold.
+
+Every successfully parsed semantic HTTP response is written before classification to the
+ignored, run-scoped `demo/private-originals/runs/<run-id>/` diagnostics. Those
+private files retain the response needed to diagnose a fail-closed rejection.
+Attempt ledgers and final sanitized evidence contain only counters and fixed-enum
+error classes; they never contain memory IDs, statements, raw model output, or
+provider error text.
 
 The live stage order is also a quota-safety invariant. The Session-B proof and
 the complete Explorer recall/semantic/browser gate run before the two-document

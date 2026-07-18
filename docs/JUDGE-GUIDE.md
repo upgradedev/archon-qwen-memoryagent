@@ -53,7 +53,7 @@ Expected field-level result: a contradiction for `INV-5521`, values `8400` and `
 
 ## 30 seconds more: authenticated meaning-level audit
 
-The semantic route is intentionally protected because it invokes the heavier Qwen judge. In the Explorer, paste the dedicated Devpost reviewer credential into the password-type **Reviewer token (protected audit/feedback)** field, keep the demo company selected, and click **Run semantic audit**. Do not publish or screenshot the credential. Swagger's **Authorize** control is an alternative. If a terminal is necessary, use an interactive no-echo prompt so the value is absent from shell history and curl's command-line arguments:
+The semantic route is intentionally protected because it invokes the heavier Qwen judge. In the Explorer, paste the dedicated Devpost reviewer credential into the password-type **Reviewer token (protected audit/feedback)** field, keep the demo company selected, and click **Run bounded Qwen insight scan**. The button visibly scopes the request to at most one eligible, highest-similarity `insight` pair (`maxPairs: 1`), so one click reserves one semantic work unit. Do not publish or screenshot the credential. Swagger's **Authorize** control is an alternative. If a terminal is necessary, use an interactive no-echo prompt so the value is absent from shell history and curl's command-line arguments:
 
 ```bash
 BASE=https://memory.43.106.13.19.sslip.io
@@ -64,11 +64,11 @@ printf '\n'
 curl -fsS -X POST "$BASE/consistency/semantic" \
   -H @<(printf 'authorization: Bearer %s\n' "$TOKEN") \
   -H 'content-type: application/json' \
-  -d '{"company":"Northwind Trading","kind":"insight"}'
+  -d '{"company":"Northwind Trading","kind":"insight","maxPairs":1}'
 unset TOKEN
 ```
 
-The fixed demo contains *"always pays on time"* and *"chronically late"*. The response should expose a read-only semantic contradiction with model/completion provenance. The committed offline labelled benchmark measures the deterministic offline judge at **90% recall, 100% precision, and 0 false positives**; those figures are not presented as live-Qwen accuracy.
+The fixed demo contains *"always pays on time"* and *"chronically late"*. The bounded scan ranks eligible pairs by similarity, asks Qwen to judge at most the highest-ranked pair, and the fixed seed should expose its read-only semantic contradiction with model/completion provenance. Do not add `similarityThreshold: 0.5` to this live request. That threshold appears only in an offline E2E fixture built around `FakeEmbedder`; the live Explorer keeps the production threshold. The committed offline labelled benchmark measures the deterministic offline judge at **90% recall, 100% precision, and 0 false positives**; those figures are not presented as live-Qwen accuracy.
 
 The same credential may be used to inspect authenticated tenant-scoped mutations such as `/ingest/invoice`, `/feedback`, `/consolidate`, and `/forget`. Lifecycle endpoints preview by default and require `confirm=true` before changing state.
 

@@ -10,7 +10,7 @@ Session B is a fresh client with only a question: what did it truly cost to empl
 
 Now the differentiator: a memory that audits itself. Two sessions wrote one record with two values. On the pinned Mem0 object, no separately named public method matched our disclosed contradiction-and-resolution `dir()` filter; that narrow observation says nothing about internal, differently named, or newer behavior. Archon takes an explicit read-only path that preserves both writes and recommends which to trust, with provenance, a rule, and a rationale.
 
-It even audits meaning, not just fields: notes that a vendor pays on time, then is chronically late, share no number to compare, so an authenticated semantic pass asks the configured Qwen judge if they contradict. Four core memory operations are also exposed as typed MCP tools; Streamable HTTP is authenticated and tenant-scoped.
+It even audits meaning, not just fields: notes that a vendor pays on time, then is chronically late, share no number to compare. The visible authenticated demo scan asks the configured Qwen judge about at most one eligible, highest-similarity insight pair. Four core memory operations are also exposed as typed MCP tools; Streamable HTTP is authenticated and tenant-scoped.
 
 And it is measured on frozen fixtures: five of five field issues detected with zero false positives; four of four declared-policy cases conform; retrieval Recall at three rises from ninety to ninety-six point seven percent; all eleven answers contain their labelled gold figure, and ten of eleven have complete euro-figure traceability.
 

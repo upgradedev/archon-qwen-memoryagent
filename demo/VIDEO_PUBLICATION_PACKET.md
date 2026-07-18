@@ -23,7 +23,8 @@ authorize or perform publication.
 > The demo shows one verified Alibaba Cloud ECS deployment using real Qwen models:
 > text-embedding-v4 for 1,024-dimensional memory embeddings, qwen-plus for grounded
 > narration and one bounded listwise rerank, a separately health-visible configured
-> Qwen semantic judge, and qwen-vl-max for protected document vision. PostgreSQL +
+> Qwen semantic judge, and qwen-vl-max for protected document vision. The semantic
+> demo visibly scans at most one eligible, highest-similarity insight pair. PostgreSQL +
 > pgvector stores durable memory. `/health` and `/ready` evidence model configuration
 > and service readiness; exercised provider execution is evidenced separately
 > by the exact-deploy record and canaries shown in the video. The vision canary is an

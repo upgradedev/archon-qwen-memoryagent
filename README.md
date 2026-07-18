@@ -22,7 +22,7 @@ reporting guidance lives in [`SECURITY.md`](SECURITY.md).
 
 > **Track 1 only: MemoryAgent.** This is an agent with *persistent, queryable memory that retains, recalls, audits, corrects, consolidates, and forgets information across sessions*. This entry is intentionally independent from the separate Autopilot submission: it neither executes accounts-payable actions nor contains an approval workflow; its product boundary is trustworthy long-term memory.
 
-> **Live:** [`https://memory.43.106.13.19.sslip.io`](https://memory.43.106.13.19.sslip.io). Open the URL for the memory explorer (public recall + field audit + P&L) and click **Run demo** once to seed and submit the canonical bounded recall automatically. Judges can paste the dedicated Devpost reviewer credential into the password-type **Reviewer token (protected audit/feedback)** field to run the protected semantic audit; the credential is never published in this repo.
+> **Live:** [`https://memory.43.106.13.19.sslip.io`](https://memory.43.106.13.19.sslip.io). Open the URL for the memory explorer (public recall + field audit + P&L) and click **Run demo** once to seed and submit the canonical bounded recall automatically. Judges can paste the dedicated Devpost reviewer credential into the password-type **Reviewer token (protected audit/feedback)** field, then click **Run bounded Qwen insight scan**. That visible judge path checks at most one eligible, highest-similarity `insight` pair (`maxPairs: 1`); the credential is never published in this repo.
 
 > **Judges:** [`docs/JUDGE-GUIDE.md`](docs/JUDGE-GUIDE.md) is a 2-minute click path. It shows a cross-session contradiction, its read-only recommendation, and the separate authenticated human Accept / Override / Defer loop.
 
@@ -465,7 +465,7 @@ or database creation. The long-lived backend receives only its runtime
 for every production redeploy, requires `CROSS_APP_DATABASE_NAME` and an ACL/authentication
 denial against the neighbouring app database before deployment proceeds.
 
-The Explorer exposes a password-type **Reviewer token (protected audit/feedback)** field and a **Run semantic audit** button for the protected judge path. Paste only the dedicated credential supplied in Devpost testing instructions; clear it before screenshots/recording cuts and never place it in source, URLs, posts, or public video descriptions. The entrant must verify the form field's actual visibility and rotate/revoke the low-privilege credential after judging.
+The Explorer exposes a password-type **Reviewer token (protected audit/feedback)** field and a **Run bounded Qwen insight scan** button for the protected judge path. The UI sends the selected company, `kind: "insight"`, and `maxPairs: 1`, then labels the result as an at-most-one-pair scan. This judge-facing bound is narrower than the general semantic API/MCP default and reserves one semantic work unit per attempt. Paste only the dedicated credential supplied in Devpost testing instructions; clear it before screenshots/recording cuts and never place it in source, URLs, posts, or public video descriptions. The entrant must verify the form field's actual visibility and rotate/revoke the low-privilege credential after judging.
 
 ### Resilience
 

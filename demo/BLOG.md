@@ -106,8 +106,11 @@ embeds each memory with the same `text-embedding-v4` recall path, keeps only
 same-subject pairs by cosine, then asks the configured `QWEN_JUDGE_MODEL` online
 whether they directly contradict (`qwen-plus` is the rollback baseline; a candidate
 is eligible only after the versioned promotion gate). Offline, it uses a deterministic
-polarity/negation heuristic so the audit still runs in CI with no key. The online judge **fails
-closed**: any error or unparseable reply returns an explicit `inconclusive` result
+polarity/negation heuristic so the audit still runs in CI with no key. In the live
+Explorer, the judge sees the scope before running it: at most one eligible,
+highest-similarity `insight` pair with `maxPairs: 1`. The broader API remains
+caller-bounded. The online judge **fails closed**: any error or unparseable reply
+returns an explicit `inconclusive` result
 with error metadata; it never masquerades as a clean no-conflict result or invents a
 contradiction. It reuses the **same read-only resolution ladder** and, like the
 rule-based path, **never mutates memory**. It runs *alongside* the field-level

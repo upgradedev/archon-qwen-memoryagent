@@ -979,12 +979,12 @@ class CaptureTransientResilienceTests(unittest.TestCase):
     @staticmethod
     def semantic_success() -> dict[str, object]:
         return {
-            "totalMemories": 3,
-            "audited": 3,
-            "candidatePairs": 2,
-            "compared": 2,
-            "modelCalls": 2,
-            "judged": 2,
+            "totalMemories": 2,
+            "audited": 2,
+            "candidatePairs": 1,
+            "compared": 1,
+            "modelCalls": 1,
+            "judged": 1,
             "failed": 0,
             "embeddingFailed": 0,
             "truncated": False,
@@ -998,12 +998,12 @@ class CaptureTransientResilienceTests(unittest.TestCase):
     @staticmethod
     def semantic_transient(reason: str = "judge unavailable") -> dict[str, object]:
         return {
-            "totalMemories": 3,
-            "audited": 3,
-            "candidatePairs": 2,
-            "compared": 2,
-            "modelCalls": 2,
-            "judged": 1,
+            "totalMemories": 2,
+            "audited": 2,
+            "candidatePairs": 1,
+            "compared": 1,
+            "modelCalls": 1,
+            "judged": 0,
             "failed": 1,
             "embeddingFailed": 0,
             "truncated": False,
@@ -1044,6 +1044,78 @@ class CaptureTransientResilienceTests(unittest.TestCase):
         self.assertEqual(selected["status"], "complete")
         self.assertEqual(sleeps, [1.0])
         self.assertEqual([row["outcome"] for row in ledger.records], ["retryable-transient", "selected"])
+
+    def test_canonical_semantic_request_is_exact_and_threshold_free(self) -> None:
+        expected = {"company": "Northwind Trading", "kind": "insight", "maxPairs": 1}
+        self.assertEqual(capture.CANONICAL_SEMANTIC_REQUEST, expected)
+        capture.validate_canonical_semantic_request(dict(expected))
+
+        invalid = (
+            {"company": "Northwind Trading", "kind": "insight"},
+            {**expected, "maxPairs": 2},
+            {**expected, "maxPairs": True},
+            {**expected, "maxPairs": 1.0},
+            {**expected, "similarityThreshold": 0.5},
+            {**expected, "company": "Other Company"},
+            {**expected, "kind": "fact"},
+            [expected],
+        )
+        for body in invalid:
+            with self.subTest(body=body), self.assertRaises(capture.GateError):
+                capture.validate_canonical_semantic_request(body)
+
+    def test_failed_semantic_response_is_private_before_classification(self) -> None:
+        payload = self.semantic_transient("unparseable judge response")
+        payload["semanticContradictions"] = [{"memories": [{"content": "private model content"}]}]
+        ledger = self.ledger()
+
+        def classifier(value: object, status: int) -> tuple[str, str, dict[str, object]]:
+            self.assertTrue((self.ROOT / "04-semantic-audit-response-attempt-01.json").is_file())
+            return capture.classify_semantic_stage(value, status)
+
+        with mock.patch.object(capture, "_ACTIVE_PRIVATE_OUTPUT_DIR", self.ROOT):
+            returned = capture.run_stage_local_retry(
+                stage="semantic-audit",
+                operation=lambda: (payload, 200),
+                classifier=classifier,
+                ledger=ledger,
+                sleeper=lambda _delay: self.fail("non-retryable semantic response slept"),
+                response_recorder=capture.write_private_semantic_response,
+            )
+
+        self.assertIs(returned, payload)
+        private_text = (self.ROOT / "04-semantic-audit-response-attempt-01.json").read_text(encoding="utf-8")
+        self.assertIn("memory-1", private_text)
+        self.assertIn("unparseable judge response", private_text)
+        self.assertIn("private model content", private_text)
+        self.assertEqual(
+            (self.ROOT / "04-semantic-audit-response.json").read_text(encoding="utf-8"),
+            private_text,
+        )
+
+        public_path = ROOT / ledger.records[0]["path"]
+        public_text = public_path.read_text(encoding="utf-8")
+        self.assertNotIn("memory-1", public_text)
+        self.assertNotIn("unparseable judge response", public_text)
+        self.assertNotIn("private model content", public_text)
+        self.assertEqual(ledger.records[0]["observation"]["errorClasses"], ["unparseable-response"])
+        self.assertEqual(ledger.records[0]["outcome"], "rejected-no-retry")
+
+    def test_semantic_public_error_classes_are_fixed_enums(self) -> None:
+        expected = {
+            "judge unavailable": "judge-unavailable",
+            "unparseable judge response": "unparseable-response",
+            "statement exceeds judge input limit": "input-limit",
+            "private arbitrary provider text": "other",
+        }
+        for reason, error_class in expected.items():
+            with self.subTest(reason=reason):
+                _decision, _classification, observation = capture.classify_semantic_stage(
+                    self.semantic_transient(reason),
+                    200,
+                )
+                self.assertEqual(observation["errorClasses"], [error_class])
+                self.assertNotIn(reason, json.dumps(observation))
 
     def test_transient_exhaustion_is_bounded_and_fail_closed(self) -> None:
         ledger = self.ledger()
@@ -1176,7 +1248,7 @@ class CaptureTransientResilienceTests(unittest.TestCase):
         expected_max = {
             "session-b-recall": 12,
             "explorer-recall": 12,
-            "semantic-audit": 75,
+            "semantic-audit": 3,
         }
         self.assertEqual(len(capture.STAGE_LOCAL_BACKOFF_SECONDS), capture.STAGE_LOCAL_MAX_ATTEMPTS - 1)
         for stage, quota in capture.STAGE_LOCAL_RETRY_QUOTA.items():
@@ -1222,6 +1294,24 @@ class CaptureTransientResilienceTests(unittest.TestCase):
                 observation={"apiToken": "must-not-write"},
             )
         self.assertFalse((ledger.output_dir / "attempts").exists())
+
+    def test_semantic_attempt_evidence_rejects_raw_ids_and_error_text(self) -> None:
+        for observation in (
+            {"httpStatus": 200, "payloadShape": "object", "memoryIds": ["private-id"]},
+            {"httpStatus": 200, "payloadShape": "object", "errorClasses": ["raw provider text"]},
+            {"httpStatus": 200, "payloadShape": "raw provider text"},
+        ):
+            with self.subTest(observation=observation):
+                ledger = self.ledger()
+                with self.assertRaises(capture.GateError):
+                    ledger.record(
+                        stage="semantic-audit",
+                        attempt=1,
+                        outcome="selected",
+                        classification="strict-complete-semantic-audit",
+                        observation=observation,
+                    )
+                self.assertFalse((ledger.output_dir / "attempts").exists())
 
     def test_private_capture_run_removes_stale_generated_outputs_only(self) -> None:
         private = self.ROOT / "private-originals"

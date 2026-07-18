@@ -54,8 +54,10 @@ reusable beyond this financial proof without claiming unmeasured production scal
   reusing the same read-only
   resolution ladder and **never mutating**. The HTTP route is authenticated and
   quota-bounded; the same operation is reachable over authenticated HTTP MCP
-  (`audit_memory` with `semantic: true`) and seeded into the live demo. What we can
-  show is narrower: a working mechanism, a live demo, and a labelled offline
+  (`audit_memory` with `semantic: true`) and seeded into the live demo. The Explorer
+  makes its judge-facing scope explicit: it scans at most one eligible, highest-similarity
+  `insight` pair with `maxPairs: 1`. What we can show is narrower: a working
+  mechanism, a live demo, and a labelled offline
   regression set. Its offline 90% recall/100% precision figures describe the deterministic judge.
 - **Feedback and forgetting**: authenticated feedback protects a correct memory or
   atomically supersedes an incorrect one. The final live gate stores a Session-A

@@ -83,6 +83,11 @@ CANONICAL_RECALL_QUESTION = (
     "for Northwind Trading in 2026-05 and includes citation marker [1]. Mention no other amounts, "
     "ratios, employee counts, or calculations."
 )
+CANONICAL_SEMANTIC_REQUEST = {
+    "company": "Northwind Trading",
+    "kind": "insight",
+    "maxPairs": 1,
+}
 VALID_GROUNDING_RESULTS = frozenset({("passed", 1), ("repaired", 2)})
 
 # HTTP-200, read-only stage resilience.  These retries are intentionally separate
@@ -95,7 +100,7 @@ STAGE_LOCAL_BACKOFF_SECONDS = (1.0, 2.0)
 STAGE_LOCAL_RETRY_QUOTA = {
     "session-b-recall": {"pool": "judge-recall", "workUnitsPerAttempt": 4, "limit": 200},
     "explorer-recall": {"pool": "public-recall", "workUnitsPerAttempt": 4, "limit": 200},
-    "semantic-audit": {"pool": "judge-semantic", "workUnitsPerAttempt": 25, "limit": 500},
+    "semantic-audit": {"pool": "judge-semantic", "workUnitsPerAttempt": 1, "limit": 500},
 }
 REQUIRED_STAGE_LOCAL_PROVENANCE = tuple(STAGE_LOCAL_RETRY_QUOTA)
 ALLOWLISTED_NARRATOR_TRANSIENT_CODES = frozenset({
@@ -114,6 +119,27 @@ ATTEMPT_CLASSIFICATIONS = frozenset({
     "request-or-parse-failure",
     "strict-complete-semantic-audit",
     "strict-qwen-narrator",
+})
+SEMANTIC_ERROR_CLASSES = frozenset({
+    "input-limit",
+    "judge-unavailable",
+    "malformed-error",
+    "other",
+    "unparseable-response",
+})
+SEMANTIC_PUBLIC_OBSERVATION_KEYS = frozenset({
+    "compared",
+    "embeddingFailed",
+    "errorClasses",
+    "failed",
+    "findingCount",
+    "httpStatus",
+    "judgeUnavailableErrorCount",
+    "judged",
+    "otherErrorCount",
+    "payloadShape",
+    "statusClass",
+    "truncated",
 })
 CANONICAL_PRIVATE_SOURCE_NAMES = frozenset({
     "alibaba-ecs-overview-raw.png",
@@ -197,6 +223,83 @@ def _list_count(value: Any) -> int | None:
     return len(value) if isinstance(value, list) else None
 
 
+def validate_canonical_semantic_request(value: Any) -> None:
+    """Require the captured Explorer POST to use the one-pair demo scope."""
+
+    require(isinstance(value, dict), "Explorer semantic request body is not JSON")
+    require(
+        set(value) == set(CANONICAL_SEMANTIC_REQUEST)
+        and value.get("company") == CANONICAL_SEMANTIC_REQUEST["company"]
+        and value.get("kind") == CANONICAL_SEMANTIC_REQUEST["kind"]
+        and _strict_int(value.get("maxPairs"))
+        and value.get("maxPairs") == CANONICAL_SEMANTIC_REQUEST["maxPairs"],
+        "Explorer semantic request body is not the exact bounded canonical scope",
+    )
+
+
+def semantic_error_class(error: Any) -> str:
+    """Map private semantic failure details to a fixed public-safe enum."""
+
+    if not isinstance(error, dict) or not isinstance(error.get("reason"), str):
+        return "malformed-error"
+    return {
+        "judge unavailable": "judge-unavailable",
+        "unparseable judge response": "unparseable-response",
+        "statement exceeds judge input limit": "input-limit",
+    }.get(error["reason"], "other")
+
+
+def validate_semantic_public_observation(value: dict[str, Any]) -> None:
+    """Prevent raw semantic content or identifiers from entering public evidence."""
+
+    require(
+        set(value).issubset(SEMANTIC_PUBLIC_OBSERVATION_KEYS),
+        "semantic attempt evidence contains a non-sanitized field",
+    )
+    require(
+        value.get("payloadShape") in {"object", "non-object", "unavailable"},
+        "semantic attempt evidence contains an invalid payload class",
+    )
+    http_status = value.get("httpStatus")
+    require(
+        http_status is None or (_strict_int(http_status) and 100 <= http_status <= 599),
+        "semantic attempt evidence contains an invalid HTTP status",
+    )
+    if "statusClass" in value:
+        require(
+            value["statusClass"] in {"complete", "partial", "inconclusive", "other"},
+            "semantic attempt evidence contains an invalid status class",
+        )
+    for key in (
+        "compared",
+        "embeddingFailed",
+        "failed",
+        "findingCount",
+        "judgeUnavailableErrorCount",
+        "judged",
+        "otherErrorCount",
+    ):
+        if key in value:
+            require(
+                value[key] is None or (_strict_int(value[key]) and value[key] >= 0),
+                "semantic attempt evidence contains an invalid counter",
+            )
+    if "truncated" in value:
+        require(
+            value["truncated"] is None or type(value["truncated"]) is bool,
+            "semantic attempt evidence contains an invalid truncation class",
+        )
+    error_classes = value.get("errorClasses")
+    require(
+        error_classes is None
+        or (
+            isinstance(error_classes, list)
+            and all(error_class in SEMANTIC_ERROR_CLASSES for error_class in error_classes)
+        ),
+        "semantic attempt evidence contains a non-enum error class",
+    )
+
+
 def _safe_evidence_value(value: Any) -> None:
     """Reject secret-shaped attempt evidence before it reaches disk."""
 
@@ -276,6 +379,8 @@ class CaptureAttemptLedger:
                 },
                 "capture rejected outcome has a retryable classification",
             )
+        if stage == "semantic-audit":
+            validate_semantic_public_observation(observation)
         backoff = (
             STAGE_LOCAL_BACKOFF_SECONDS[attempt - 1]
             if outcome == "retryable-transient"
@@ -518,6 +623,11 @@ def classify_semantic_stage(payload: Any, http_status: int) -> tuple[str, str, d
         "embeddingFailed": payload.get("embeddingFailed") if _strict_int(payload.get("embeddingFailed")) else None,
         "truncated": payload.get("truncated") if type(payload.get("truncated")) is bool else None,
         "findingCount": _list_count(findings),
+        "errorClasses": (
+            sorted({semantic_error_class(error) for error in errors})
+            if isinstance(errors, list)
+            else None
+        ),
         "judgeUnavailableErrorCount": (
             sum(1 for error in errors if isinstance(error, dict) and error.get("reason") == "judge unavailable")
             if isinstance(errors, list)
@@ -529,6 +639,11 @@ def classify_semantic_stage(payload: Any, http_status: int) -> tuple[str, str, d
             else None
         ),
     }
+    require(
+        summary["errorClasses"] is None
+        or all(error_class in SEMANTIC_ERROR_CLASSES for error_class in summary["errorClasses"]),
+        "semantic public error classification escaped its fixed enum",
+    )
     counters_valid = all(_strict_int(value) and value >= 0 for value in (compared, judged, failed, model_calls))
     collections_valid = isinstance(errors, list) and isinstance(embedding_errors, list) and isinstance(findings, list)
     strict_complete = (
@@ -595,6 +710,7 @@ def run_stage_local_retry(
     classifier: Callable[[Any, int], tuple[str, str, dict[str, Any]]],
     ledger: CaptureAttemptLedger,
     sleeper: Callable[[float], None] = time.sleep,
+    response_recorder: Callable[[int, Any], None] | None = None,
 ) -> Any:
     """Retry only classifier-approved HTTP-200 read results, never requests generically."""
 
@@ -613,6 +729,11 @@ def run_stage_local_retry(
             if isinstance(exc, GateError):
                 raise
             raise GateError(f"{stage} request or response parsing failed without retry") from exc
+        if response_recorder is not None:
+            # This intentionally runs before classification and strict-success
+            # assertions.  A completed HTTP response must remain diagnosable even
+            # when the fail-closed contract rejects it or retry attempts exhaust.
+            response_recorder(attempt, payload)
         decision, classification, observation = classifier(payload, http_status)
         require(decision in {"selected", "retryable", "rejected"}, "capture retry classifier returned an invalid decision")
         exhausted = decision == "retryable" and attempt == STAGE_LOCAL_MAX_ATTEMPTS
@@ -1061,6 +1182,16 @@ def scrub_json(value: Any) -> Any:
 def write_private_json(name: str, value: Any) -> None:
     path = private_output_path(name)
     path.write_text(json.dumps(scrub_json(value), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def write_private_semantic_response(attempt: int, value: Any) -> None:
+    """Retain each full response privately before any semantic success gate."""
+
+    require(1 <= attempt <= STAGE_LOCAL_MAX_ATTEMPTS, "semantic response attempt is out of bounds")
+    write_private_json(f"04-semantic-audit-response-attempt-{attempt:02d}.json", value)
+    # Keep the established diagnostic name as an always-current pointer while
+    # preserving every bounded attempt separately for post-failure diagnosis.
+    write_private_json("04-semantic-audit-response.json", value)
 
 
 def request_json(
@@ -1950,6 +2081,7 @@ def browser_capture(
             ) as pending:
                 page.locator("#semanticBtn").click()
             semantic_response = pending.value
+            validate_canonical_semantic_request(semantic_response.request.post_data_json)
             if semantic_response.status != 200:
                 return None, semantic_response.status
             return semantic_response.json(), semantic_response.status
@@ -1960,6 +2092,7 @@ def browser_capture(
                 operation=semantic_audit_operation,
                 classifier=classify_semantic_stage,
                 ledger=attempt_ledger,
+                response_recorder=write_private_semantic_response,
             )
         finally:
             page.locator("#judgeToken").fill("")
@@ -1995,7 +2128,6 @@ def browser_capture(
             expected_sha=expected_sha,
             observed_at=observed_at,
         )
-        write_private_json("04-semantic-audit-response.json", semantic)
         results["semanticAudit"] = semantic
 
         # 05 · render the real reviewer-tenant decision controls, then exercise
@@ -2667,12 +2799,12 @@ def capture_resilience_self_test(root: Path) -> None:
     def semantic_result(*, transient: bool) -> dict[str, Any]:
         failed = 1 if transient else 0
         return {
-            "totalMemories": 3,
-            "audited": 3,
-            "candidatePairs": 2,
-            "compared": 2,
-            "modelCalls": 2,
-            "judged": 2 - failed,
+            "totalMemories": 2,
+            "audited": 2,
+            "candidatePairs": 1,
+            "compared": 1,
+            "modelCalls": 1,
+            "judged": 1 - failed,
             "failed": failed,
             "embeddingFailed": 0,
             "truncated": False,
@@ -2703,12 +2835,20 @@ def capture_resilience_self_test(root: Path) -> None:
         sleeper=lambda _delay: None,
     )
     semantic_outcomes = [semantic_result(transient=True), semantic_result(transient=False)]
+    semantic_recorded: list[tuple[int, Any]] = []
     run_stage_local_retry(
         stage="semantic-audit",
         operation=lambda: (semantic_outcomes.pop(0), 200),
         classifier=classify_semantic_stage,
         ledger=ledger,
         sleeper=lambda _delay: None,
+        response_recorder=lambda attempt, payload: semantic_recorded.append((attempt, payload)),
+    )
+    require(
+        [attempt for attempt, _payload in semantic_recorded] == [1, 2]
+        and semantic_recorded[0][1]["status"] == "partial"
+        and semantic_recorded[1][1]["status"] == "complete",
+        "semantic pre-classification response recording self-test failed",
     )
     provenance = ledger.review_provenance()
     require(
@@ -2754,6 +2894,47 @@ def capture_resilience_self_test(root: Path) -> None:
         ),
         "capture retry quota-bound self-test failed",
     )
+    require(
+        STAGE_LOCAL_RETRY_QUOTA["semantic-audit"]["workUnitsPerAttempt"] == 1
+        and STAGE_LOCAL_RETRY_QUOTA["semantic-audit"]["workUnitsPerAttempt"] * STAGE_LOCAL_MAX_ATTEMPTS == 3,
+        "bounded semantic capture quota self-test failed",
+    )
+    validate_canonical_semantic_request(dict(CANONICAL_SEMANTIC_REQUEST))
+    rejected_scope = False
+    try:
+        validate_canonical_semantic_request({"company": "Northwind Trading", "kind": "insight"})
+    except GateError:
+        rejected_scope = True
+    require(rejected_scope, "canonical semantic request self-test accepted an unbounded request")
+
+    rejected_public_detail = False
+    try:
+        validate_semantic_public_observation({
+            "httpStatus": 200,
+            "payloadShape": "object",
+            "memoryIds": ["private-memory-id"],
+        })
+    except GateError:
+        rejected_public_detail = True
+    require(rejected_public_detail, "semantic public evidence self-test accepted raw memory IDs")
+
+    for reason, expected_class, expected_decision in (
+        ("judge unavailable", "judge-unavailable", "retryable"),
+        ("unparseable judge response", "unparseable-response", "rejected"),
+        ("statement exceeds judge input limit", "input-limit", "rejected"),
+        ("private arbitrary provider text", "other", "rejected"),
+    ):
+        payload = semantic_result(transient=True)
+        payload["errors"][0]["reason"] = reason
+        decision, _classification, observation = classify_semantic_stage(payload, 200)
+        serialized_observation = json.dumps(observation, ensure_ascii=False)
+        require(
+            decision == expected_decision
+            and observation["errorClasses"] == [expected_class]
+            and reason not in serialized_observation
+            and "memory-1" not in serialized_observation,
+            "semantic fixed-enum public evidence self-test failed",
+        )
 
     private_fixture = root / "private-originals"
     private_fixture.mkdir()

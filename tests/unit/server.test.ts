@@ -987,7 +987,18 @@ test("GET / serves the memory explorer as HTML (200, text/html)", async () => {
   assert.match(res.body, /id="judgeToken"/);
   assert.match(res.body, /id="semanticBtn"/);
   assert.match(res.body, /headers\.authorization = 'Bearer ' \+ token/);
-  assert.match(res.body, /\/consistency\/semantic/);
+  assert.match(
+    res.body,
+    /const semanticBody = company\s*\? \{ company, kind: 'insight', maxPairs: 1 \}\s*: \{ kind: 'insight', maxPairs: 1 \};/,
+    "the Explorer semantic scan must scope Qwen judging to one insight pair while preserving an optional company filter",
+  );
+  assert.match(
+    res.body,
+    /api\('POST', '\/consistency\/semantic', semanticBody\)/,
+    "the Explorer must send the bounded semantic request body",
+  );
+  assert.match(res.body, /Run bounded Qwen insight scan/);
+  assert.match(res.body, /up to one highest-similarity eligible insight pair/i);
   // Judge-visible resolution loop is real, not decorative: a Session A/B
   // provenance timeline drives authenticated, idempotent /feedback mutations.
   assert.match(res.body, /SESSION/);

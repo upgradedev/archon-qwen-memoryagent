@@ -23,7 +23,9 @@ August 11, 2026 at 2:00 PM PDT.
       `reconciled=false`, `events=0`), and Northwind P&L shows one EUR bucket,
       zero unknown-currency records, employer cost `14600`, revenue `42700`, and
       net profit `28100`.
-- [ ] Protected semantic audit works with the reviewer token.
+- [ ] **Run bounded Qwen insight scan** works with the reviewer token and its
+      intercepted request is exactly
+      `{"company":"Northwind Trading","kind":"insight","maxPairs":1}`.
 - [ ] Browser console is clean and the final repository changes are pushed to `main`.
 - [ ] [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
       `104a002820607c754d857473877da28b69ebb44d` as exact-deployed and
@@ -66,7 +68,7 @@ upload metadata but does not authorize publication.
 | 0:51–1:13 | Session A write/disconnect, fresh Session B cited recall | A prior-session synthetic fact returns in a grounded answer with numbered citations; dense score is exposed only for this human-readable proof while product default remains hybrid. |
 | 1:13–1:35 | Original synthetic `INV-5521`, field self-audit, human-control frame | The same field differs across sessions; both provenance records stay visible, the declared recency recommendation is explicit, and nothing is silently mutated. Live proof exercises Defer only with zero API/write; Accept/Override remain unexercised. |
 | 1:35–1:53 | Feedback-persistence proof | Session-A stored correction and separately authenticated fresh Session-B cited application; persisted state, not weight learning. |
-| 1:53–2:10 | Cropped authenticated semantic result plus four-tool MCP card | “Pays on time” versus “chronically late”; hide the credential/request header and distinguish authenticated HTTP from trusted-local stdio. |
+| 1:53–2:10 | Cropped authenticated bounded-insight result plus four-tool MCP card | “Pays on time” versus “chronically late”; keep the visible at-most-one eligible pair scope, hide the credential/request header and distinguish authenticated HTTP from trusted-local stdio. |
 | 2:10–2:22 | Authenticated one-row lifecycle preview and confirmation | Preview one feedback-superseded candidate, delete one with audit, protected state unchanged, zero marker residue. |
 | 2:22–2:42 | One prepared evidence card | 5/5 field issues with 0 FP; 4/4 policy conformance; deterministic semantic 90% recall/100% precision/0 FP; MRR 0.883→0.911 and Recall@3 90.0%→96.7%. Keep fixture labels/caveats visible. |
 | 2:42–2:52 | Sanitized MemoryAgent-only Alibaba proof, then repo/MIT end card | Active ECS + self-hosted pgvector topology, public TLS URL, real Qwen model ids, and one-line portable-product close. |
@@ -108,7 +110,10 @@ English captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md).
 - [ ] Grounded recall: answer plus numbered citations in the same frame.
 - [ ] Feedback persistence: Session-A stored correction plus fresh Session-B cited application; label persistence, not weight learning.
 - [ ] Field self-audit: `INV-5521`, both values, and the recency recommendation visible.
-- [ ] Semantic self-audit: meaning-level pair and read-only resolution visible; clear/crop out the **Reviewer token (protected audit/feedback)** field and all auth details.
+- [ ] Semantic self-audit: **Run bounded Qwen insight scan**, the at-most-one
+      eligible pair scope, and read-only resolution are visible;
+      clear/crop out the **Reviewer token (protected audit/feedback)** field and
+      all auth details.
 - [ ] Qwen-VL canary: original synthetic payroll-register + bank-confirmation PNG pair, response-reported `qwen-vl-max`, one fused event, zero writes, unchanged count and exact-prefix absence.
 - [ ] Lifecycle: exactly one synthetic candidate previewed and one deleted; protected seed/correction unchanged and cleanup residue zero.
 - [ ] Architecture: use the canonical 16:9 [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg)
@@ -129,7 +134,7 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
       source, current model ids, vision/feedback/lifecycle gates and SHA-256 for
       every final.
 - [ ] `CAPTURE_REVIEW.captureRun` records the three-attempt/1s+2s stage-local
-      policy and quota ceilings (12 judge-recall, 12 public-recall, 75
+      policy and quota ceilings (12 judge-recall, 12 public-recall, 3
       judge-semantic), and names exactly one SHA-bound selected attempt for each
       of Session-B recall, Explorer recall, and semantic audit. No mutation,
       non-200, malformed, grounding/content, embedding, or truncation result was
