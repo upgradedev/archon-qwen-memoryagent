@@ -38,6 +38,19 @@ const workflowFiles = readdirSync(join(ROOT, ".github", "workflows"))
   .sort();
 const workflows = workflowFiles.map((name) => ({ name, text: readText(`.github/workflows/${name}`) }));
 
+const MUTABLE_KEYSERVER_FLOW_MARKERS = [
+  ["apt-key", /(?:^|[^A-Za-z0-9_-])apt-key(?=$|[^A-Za-z0-9_-])/i],
+  ["--keyserver", /(?:^|[^A-Za-z0-9_-])--keyserver(?=$|[^A-Za-z0-9_-])/i],
+  ["--recv-keys", /(?:^|[^A-Za-z0-9_-])--recv-keys?(?=$|[^A-Za-z0-9_-])/i],
+] as const;
+
+const mutableKeyserverFlowViolations = (source: string, text: string) =>
+  text.split(/\r?\n/).flatMap((line, index) =>
+    MUTABLE_KEYSERVER_FLOW_MARKERS
+      .filter(([, pattern]) => pattern.test(line))
+      .map(([marker]) => `${source}:${index + 1}:${marker}`),
+  );
+
 test("CHECK 4a — every external GitHub Action is pinned to its verified release commit", () => {
   let usesCount = 0;
   for (const { name, text } of workflows) {
@@ -120,7 +133,20 @@ test("CHECK 4c — every pgvector service and k6 installer is immutable and chec
   const compose = readText("docker-compose.yml");
   assert.ok(compose.includes(`image: ${PGVECTOR_IMAGE}`), "active production Compose pgvector image must be digest-pinned");
   assert.ok(!all.includes("apt-get install -y k6"), "k6 must not come from a mutable apt repository");
-  assert.ok(!all.includes("keyserver.ubuntu.com"), "k6 installation must not depend on a mutable keyserver flow");
+  assert.deepEqual(
+    mutableKeyserverFlowViolations("workflows", all),
+    [],
+    "workflow installation must not use apt-key or mutable remote keyserver retrieval",
+  );
+  const maliciousKeyserverFixture =
+    "sudo apt-key adv --keyserver hkps://attacker.invalid --recv-keys DEADBEEF";
+  assert.deepEqual(mutableKeyserverFlowViolations("malicious-fixture", maliciousKeyserverFixture), [
+    "malicious-fixture:1:apt-key",
+    "malicious-fixture:1:--keyserver",
+    "malicious-fixture:1:--recv-keys",
+  ]);
+  const legitimateOfflineKeyFixture = 'gpg --batch --import "$TOOLS_DIR/k6-release-key.asc"';
+  assert.deepEqual(mutableKeyserverFlowViolations("legitimate-control", legitimateOfflineKeyFixture), []);
   assert.ok(!all.includes("dl.k6.io/deb"), "k6 installation must not depend on the mutable apt channel");
 
   for (const rel of [".github/workflows/ci.yml", ".github/workflows/load-test.yml"]) {

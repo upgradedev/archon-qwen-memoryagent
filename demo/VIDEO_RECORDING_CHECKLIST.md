@@ -23,8 +23,11 @@ video-specific; the screenshots, posts, and Devpost fields remain in
       by the candidate and must not be inferred from endpoint readiness.
 - [ ] Re-run public `/health`, `/ready`, and OpenAPI checks. Verify real Qwen model
       ids and every required route; do not record a degraded or stale box.
-- [ ] Run the protected semantic path once with the reviewer credential without
-      echoing it. Clear the credential from the UI immediately afterward.
+- [ ] Click **Run bounded Qwen insight scan** once with the reviewer credential and
+      confirm the result labels an at-most-one eligible `insight` pair scan. The request
+      must use `maxPairs: 1`; do not add the offline FakeEmbedder fixture's
+      `similarityThreshold: 0.5`. Do not echo the credential, and clear it from the
+      UI immediately afterward.
 - [ ] Use a clean browser profile at 1440×900 or larger, 100% zoom, no personal tabs,
       bookmarks, password-manager popups, extensions, notifications, or account avatar.
 - [ ] Use the only canonical publication pipeline in

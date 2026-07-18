@@ -6,7 +6,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import {
   Extractor,
   ExtractionOutputError,
@@ -56,44 +57,58 @@ function triplet(company = "ByteCraft", period = "2026-05"): RawDocument[] {
 // wording is "off-bank employment cost". (The core PayrollEvent type's
 // `off_bank_cost` field name is not a "hidden" phrase and is never matched.)
 //
-// Scope is the WHOLE repo (README, web/src, bench, docs, deploy, load, demo
-// transcripts, src, tests …), walked on the filesystem — not just pipeline
-// source — so a leak anywhere fails CI. node_modules / dist / coverage / .git /
-// build output and binary or video assets are skipped. Exactly two files
-// legitimately embed the forbidden strings as *guard definitions* and are
-// excluded by path: this test itself and scripts/capture_live.sh.
+// Scope is every Git-tracked public text/source file (README, web/src, bench,
+// docs, deploy, load, demo transcripts, src, tests …), not just pipeline source,
+// so a publishable leak anywhere fails CI. Ignored private evidence, protected
+// worktrees and build/dependency output are deliberately outside the public
+// positioning contract. Exactly two tracked files legitimately embed the
+// forbidden strings as guard definitions and are excluded by path: this test
+// itself and scripts/capture_live.sh.
 test("positioning guard: all repo text/source uses universal terms only", () => {
   const forbidden =
     /\b(ika|efka|mydata|greek|greece|aade)\b|αφμ|payroll[- ]?gap|hidden[\s_-]+(workforce|payroll|employer|employment|cost|€|eur)/i;
-  const EXCLUDE_DIRS = new Set([
-    "node_modules", ".git", "dist", "coverage", "build", ".next", ".vercel", ".turbo",
-  ]);
   const TEXT_EXT = new Set([
     ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".md", ".html", ".txt", ".sh", ".css", ".yml", ".yaml",
   ]);
   // Files that legitimately embed the forbidden strings because they DEFINE the
   // guard (the regex source / an equivalent shell allow-list).
   const EXCLUDE_FILES = new Set(["tests/unit/pipeline.test.ts", "scripts/capture_live.sh"]);
+  const offendersIn = (rel: string, text: string) => {
+    const found: string[] = [];
+    text.split(/\r?\n/).forEach((line, index) => {
+      const match = forbidden.exec(line);
+      if (match) found.push(`${rel}:${index + 1}  "${match[0]}"`);
+    });
+    return found;
+  };
+  assert.deepEqual(
+    offendersIn("tracked-malicious-fixture.md", "The report exposes a hidden cost."),
+    ['tracked-malicious-fixture.md:1  "hidden cost"'],
+    "a tracked positioning regression must remain detectable",
+  );
+  assert.deepEqual(
+    offendersIn("tracked-legitimate-control.md", "The report exposes off-bank employment cost."),
+    [],
+    "the adopted universal wording must remain allowed",
+  );
+
+  const trackedFiles = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
+    .split("\0")
+    .filter(Boolean);
+  assert.ok(
+    trackedFiles.every((rel) => !rel.startsWith(".artifacts/") && !rel.startsWith("demo/private-originals/")),
+    "ignored private evidence unexpectedly entered the tracked public scan",
+  );
 
   const offenders: string[] = [];
-  const walk = (dir: string) => {
-    for (const ent of readdirSync(dir, { withFileTypes: true })) {
-      const rel = dir === "." ? ent.name : `${dir}/${ent.name}`; // POSIX-style, OS-agnostic
-      if (ent.isDirectory()) {
-        if (!EXCLUDE_DIRS.has(ent.name)) walk(rel);
-        continue;
-      }
-      if (!ent.isFile() || EXCLUDE_FILES.has(rel)) continue;
-      const dot = ent.name.lastIndexOf(".");
-      if (!TEXT_EXT.has(dot >= 0 ? ent.name.slice(dot) : "")) continue;
-      // Line-by-line: `\s` in the pattern must not span a newline into the next line.
-      readFileSync(rel, "utf8").split(/\r?\n/).forEach((line, i) => {
-        const m = forbidden.exec(line);
-        if (m) offenders.push(`${rel}:${i + 1}  "${m[0]}"`);
-      });
-    }
-  };
-  walk(".");
+  for (const rel of trackedFiles) {
+    if (EXCLUDE_FILES.has(rel)) continue;
+    const name = rel.slice(rel.lastIndexOf("/") + 1);
+    const dot = name.lastIndexOf(".");
+    if (!TEXT_EXT.has(dot >= 0 ? name.slice(dot) : "")) continue;
+    // Line-by-line: `\s` in the pattern must not span a newline into the next line.
+    offenders.push(...offendersIn(rel, readFileSync(rel, "utf8")));
+  }
   assert.equal(offenders.length, 0, `forbidden positioning terms found:\n${offenders.join("\n")}`);
 });
 

@@ -35,8 +35,10 @@ Replace the placeholder in Devpost itself, never in a local or tracked file:
 > **Protected semantic audit and lifecycle**<br>
 > Dedicated low-privilege reviewer token: `{{ENTER_DIRECTLY_IN_CONFIRMED_PRIVATE_FIELD}}`<br>
 > In the Explorer, enter the token in the password-type field labeled
-> **Reviewer token (protected audit/feedback)** and click **Run semantic audit**.
-> The fixed demo compares “always pays on time” with “chronically late” and returns
+> **Reviewer token (protected audit/feedback)** and click
+> **Run bounded Qwen insight scan**. The visible request checks at most one
+> eligible, highest-similarity `insight` pair (`maxPairs: 1`). The fixed demo compares
+> “always pays on time” with “chronically late” and returns
 > the configured Qwen judge's read-only result with
 > completion/model provenance. Clear the field immediately after use. The same
 > credential can inspect tenant-scoped feedback, conflict resolution,

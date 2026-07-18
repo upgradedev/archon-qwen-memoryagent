@@ -274,7 +274,7 @@
         <div class="row">
           <button id="askBtn" type="submit" data-tour="recall">Recall</button>
           <button id="auditBtn" class="secondary" type="button" data-tour="audit">Run self-audit</button>
-          <button id="semanticBtn" class="secondary" type="button">Run semantic audit</button>
+          <button id="semanticBtn" class="secondary" type="button">Run bounded Qwen insight scan</button>
           <button id="demoBtn" class="secondary" type="button" data-tour="demo">Run demo</button>
           <span id="status"></span>
         </div>
@@ -937,15 +937,23 @@
       const company = $('company').value.trim();
       if (!$('judgeToken').value.trim()) {
         $('status').className = 'err';
-        $('status').textContent = 'Paste the private judge token to run the Qwen semantic audit.';
+        $('status').textContent = 'Paste the private judge token to run the bounded Qwen insight scan.';
         return;
       }
-      const btn = $('semanticBtn'); btn.disabled = true; statusBusy('Running semantic audit…');
+      const btn = $('semanticBtn'); btn.disabled = true;
+      statusBusy('Scanning up to one highest-similarity eligible insight pair with Qwen…');
       try {
         await ensureSeeded();
-        const report = await api('POST', '/consistency/semantic', company ? { company } : {});
+        const semanticBody = company
+          ? { company, kind: 'insight', maxPairs: 1 }
+          : { kind: 'insight', maxPairs: 1 };
+        const report = await api('POST', '/consistency/semantic', semanticBody);
         const wrap = $('result'); wrap.innerHTML = '';
-        renderSemanticAudit(wrap, report, 'bounded Qwen scan' + (company ? ' · ' + company : ''));
+        renderSemanticAudit(
+          wrap,
+          report,
+          'bounded Qwen insight scan · up to one highest-similarity eligible pair' + (company ? ' · ' + company : ''),
+        );
         $('status').textContent = '';
       } catch (e) {
         $('status').className = 'err'; $('status').textContent = 'Semantic audit failed: ' + e.message;
