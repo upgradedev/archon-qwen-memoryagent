@@ -2,48 +2,55 @@
 
 Updated: **2026-07-18**. This is the authoritative hardened live-release contract. It intentionally omits instance IDs, security-group IDs, key paths, database usernames, and every secret.
 
-<!-- MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha=8c906abb7c7878ffd1c7c175daaf77f943bdcaed -->
+<!-- MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha=cfd485de1dd01473c8d6be91521e5560d8e8313e -->
 
 > **Status: EXACT DEPLOYED — runtime release gate is GREEN; final media capture is pending.**
 > <https://memory.43.106.13.19.sslip.io>
 >
 > Exact deployed runtime source:
-> [`8c906abb7c7878ffd1c7c175daaf77f943bdcaed`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/8c906abb7c7878ffd1c7c175daaf77f943bdcaed)
-> (`main`, merging PR #84). Project-contained exact-deploy attempt 25 finished with
+> [`cfd485de1dd01473c8d6be91521e5560d8e8313e`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/cfd485de1dd01473c8d6be91521e5560d8e8313e)
+> (`main`, merging PR #86). Project-contained exact-deploy attempt 26 finished with
 > Alibaba Cloud Assistant terminal status `Success`, exit code `0`, and the
 > SHA-bound application marker
-> `EXACT_APP_DEPLOY_OK app=memoryagent sha=8c906abb7c7878ffd1c7c175daaf77f943bdcaed`.
+> `EXACT_APP_DEPLOY_OK app=memoryagent sha=cfd485de1dd01473c8d6be91521e5560d8e8313e`.
 > The bounded provider output ended after that terminal application marker, so the
 > retained status/output pair is validated under the reviewed
 > `terminal-success-truncated-output` evidence mode; it is not reconstructed or
-> hand-edited evidence. The decoded output is `10,390` bytes with SHA-256
-> `cc148136feaab8c1eb734578d4163801ddfe69224cad97399d89b1b643416df8`;
+> hand-edited evidence. The decoded output is `10,515` bytes with SHA-256
+> `b0cd6de2e3b97523ae9384e4d58943d2d187611ef71500aa57efdd4357fe7819`;
 > the sanitized status JSON SHA-256 is
-> `8e0d9907bb61202d103416b8d18121561706c9502e1ae6d559b2c25e73e7728e`.
+> `5a43c436d8439c47983ff9df7674cb0416260a5cd725a4638febfa0c96c20733`.
 >
 > The controller verified immutable GitHub checkout, pinned image build,
 > schema/grants, the non-superuser runtime role, cross-application database denial,
 > real-Qwen health/readiness, an ingest → grounded recall round trip, zero-residue
 > cleanup, and public HTTPS. The shipped Explorer now sends the canonical
-> evidence-scoped question with `company=Northwind Trading` and `limit=3`; final
-> gallery/video capture must bind to this exact SHA and deployment evidence.
+> evidence-scoped recall with `company=Northwind Trading` and `limit=3`, plus the
+> bounded semantic audit with `company=Northwind Trading`, `kind=insight`, and
+> `maxPairs=1`; final gallery/video capture must bind to this exact SHA and
+> deployment evidence.
 >
 > Previous live runtime-source commit
+> [`8c906abb7c7878ffd1c7c175daaf77f943bdcaed`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/8c906abb7c7878ffd1c7c175daaf77f943bdcaed)
+> passed exact deploy attempt 25 under the same reviewed truncated-output evidence
+> mode. The older
 > [`104a002820607c754d857473877da28b69ebb44d`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/104a002820607c754d857473877da28b69ebb44d)
-> passed exact deploy attempt 22 under the same reviewed truncated-output evidence
-> mode. The still-earlier
+> passed exact deploy attempt 22, and the still-earlier
 > [`e4b208a63e1768409e5b94fe305a3672c4c96dcd`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/e4b208a63e1768409e5b94fe305a3672c4c96dcd)
 > passed exact deploy attempt 8, including checkout/build, schema/grants, DML-only
 > runtime identity, cross-application database denial, `/health`, `/ready`, a
 > real-embedding ingest → grounded recall → cleanup smoke, public TLS checks, and v4
 > seed reconciliation. That evidence is retained as **historical topology and release
-> evidence only**; neither historical pair attests current runtime `8c906abb…`.
+> evidence only**; none of those historical releases attests current runtime
+> `cfd485de…`.
 >
 > Attempt 24 is retained only as a failed pre-deployment diagnostic: the MemoryAgent
 > exact checkout succeeded, then the shared controller stopped because its bound
 > Autopilot SHA was stale. Attempt 25 bound the verified current docs/test-only
 > Autopilot main `c7a108a9f7194e770154512d58cc92173587a6a2` with
-> `skipAutopilotDeploy=true`. It did not deploy or mutate Autopilot public surfaces.
+> `skipAutopilotDeploy=true`. Attempt 26 used the same verified Autopilot binding
+> and skip flag while deploying only MemoryAgent. Neither attempt deployed or
+> mutated Autopilot public surfaces.
 >
 > Repository `main` may advance beyond that runtime-source SHA through reviewed
 > non-runtime evidence, CI/test-harness, documentation, sanitized submission-media,
@@ -55,7 +62,7 @@ Updated: **2026-07-18**. This is the authoritative hardened live-release contrac
 > no `src/**`, dependency-lock, Docker/compose, database-schema, deploy-script or
 > deployment-workflow delta. It never made `a2c6bcc…` the deployed source. Later
 > runtime-affecting descendants have now passed the exact deployment recorded
-> above. After `8c906abb…`,
+> above. After `cfd485de…`,
 > permitted submission-pack paths are `README.md`, `SECURITY.md`, `deploy/DEPLOY_STATE.md`,
 > `demo/**`, `docs/**`, `.github/workflows/demo-video.yml`,
 > `scripts/capture_live.sh`, `scripts/captions.txt`, and
@@ -65,7 +72,7 @@ Updated: **2026-07-18**. This is the authoritative hardened live-release contrac
 > and are not copied into the final runtime image or executed by the deployed service.
 > The docs-consistency test is likewise never packaged into production. None changes
 > the exact runtime-source claim. Before capture, verify that
-> `8c906abb…` is an ancestor of `origin/main` and inspect every later changed path.
+> `cfd485de…` is an ancestor of `origin/main` and inspect every later changed path.
 > Any new path outside that allowlist—or any application, dependency, schema,
 > container, runtime/deployment-workflow or deploy-script delta—requires review and,
 > when runtime-affecting, a new exact deploy plus a refreshed record here.
@@ -278,7 +285,7 @@ read -rsp 'Private Devpost reviewer token: ' JUDGE_TOKEN; printf '\n'
 curl -fsS -X POST "$BASE/consistency/semantic" \
   -H @<(printf 'Authorization: Bearer %s\n' "$JUDGE_TOKEN") \
   -H 'content-type: application/json' \
-  -d '{"company":"Northwind Trading","kind":"insight"}' \
+  -d '{"company":"Northwind Trading","kind":"insight","maxPairs":1}' \
   | jq '{ok,completion,semanticContradictions}'
 unset JUDGE_TOKEN
 ```
@@ -289,7 +296,7 @@ Run the protected command only in Bash with tracing disabled (`set +x`). Crop/cl
 
 A release is judge-ready only when all of the following are true:
 
-1. This file records `8c906abb7c7878ffd1c7c175daaf77f943bdcaed`
+1. This file records `cfd485de1dd01473c8d6be91521e5560d8e8313e`
    (or a later explicitly reviewed runtime candidate) as exact deployed and
    live-verified. **This condition is currently true.**
 2. HTTPS is public, but backend `9000` and PostgreSQL `5432` are not.
