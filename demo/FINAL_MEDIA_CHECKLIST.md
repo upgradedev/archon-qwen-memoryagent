@@ -28,11 +28,12 @@ August 11, 2026 at 2:00 PM PDT.
       `{"company":"Northwind Trading","kind":"insight","maxPairs":1}`.
 - [ ] Browser console is clean and the final repository changes are pushed to `main`.
 - [ ] [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-      `104a002820607c754d857473877da28b69ebb44d` as exact-deployed and
-      live-verified. Do not check the
+      `cfd485de1dd01473c8d6be91521e5560d8e8313e` as exact-deployed and
+      live-verified by attempt 26 under the reviewed
+      `terminal-success-truncated-output` mode. Do not check the
       box from `/health` or `/ready` alone, and redeploy after any later runtime delta.
-- [ ] `git merge-base --is-ancestor 104a002820607c754d857473877da28b69ebb44d origin/main` passes, then
-      `git diff --name-only 104a002820607c754d857473877da28b69ebb44d..origin/main`
+- [ ] `git merge-base --is-ancestor cfd485de1dd01473c8d6be91521e5560d8e8313e origin/main` passes, then
+      `git diff --name-only cfd485de1dd01473c8d6be91521e5560d8e8313e..origin/main`
       contains only the post-candidate submission-pack allowlist recorded in
       [`DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). Any new runtime-affecting path
       requires review and redeployment.

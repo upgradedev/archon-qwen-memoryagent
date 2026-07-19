@@ -7,7 +7,8 @@ controlling; field labels can change. Do not enter a secret, Qwen Cloud account 
 country, or other personal data into this public repository.
 
 **Release status:** [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-`104a002…` as exact-deployed/live-verified. Do not upload final media until its
+`cfd485de…` as exact-deployed/live-verified by attempt 26 under the reviewed
+`terminal-success-truncated-output` mode. Do not upload final media until its
 `CAPTURE_REVIEW.json` also passes for that exact SHA and retained controller
 status/output; endpoint health alone is not source attestation.
 

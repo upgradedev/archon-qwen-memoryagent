@@ -23,11 +23,12 @@ unrelated provider-compatible proxy.
 ## Runtime provenance — exact current source deployed
 
 Exact MemoryAgent runtime source
-[`104a002820607c754d857473877da28b69ebb44d`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/104a002820607c754d857473877da28b69ebb44d)
-passed project-contained exact-deploy attempt 22 on 2026-07-16. The controller
-verified immutable checkout, pinned image build, schema/grants, DML-only runtime
-identity, cross-application denial, real-Qwen health/readiness, a grounded recall
-round trip, zero-residue cleanup and public HTTPS. Its retained provider output ends
+[`cfd485de1dd01473c8d6be91521e5560d8e8313e`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/cfd485de1dd01473c8d6be91521e5560d8e8313e)
+is live-verified from project-contained exact-deploy attempt 26 on 2026-07-18. The
+controller verified immutable checkout, pinned image build, schema/grants, the
+non-superuser runtime role, cross-application denial, real-Qwen health/readiness, a
+grounded recall round trip, zero-residue cleanup and public HTTPS. Its retained
+provider output ends
 at the SHA-bound `EXACT_APP_DEPLOY_OK` marker while the Alibaba Cloud Assistant
 status is terminal `Success` with exit code `0`; the reviewed evidence mode is
 therefore `terminal-success-truncated-output`, not a reconstructed aggregate marker.

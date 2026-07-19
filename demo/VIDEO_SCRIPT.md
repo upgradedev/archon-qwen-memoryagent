@@ -12,8 +12,9 @@ footage, but its assembled MP4 is only a candidate: it does not replace the exac
 architecture, evidence, and Alibaba proof beats required below.
 
 Record only while [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-the final verified 40-character source SHA. Current exact runtime source `104a002…`
-passed project-contained exact-deploy attempt 22; final media must bind its retained
+the final verified 40-character source SHA. Current exact runtime source `cfd485de…`
+is live-verified from project-contained exact-deploy attempt 26 under the reviewed
+`terminal-success-truncated-output` mode; final media must bind its retained
 controller status/output and SHA, not infer source from endpoint health. A later
 repository HEAD is acceptable only when every change stays inside the stated
 submission-pack allowlist; any runtime-affecting delta requires another exact deploy.

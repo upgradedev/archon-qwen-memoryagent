@@ -9,7 +9,7 @@ This is a claim audit for **Track 1: MemoryAgent** only. The Autopilot entry has
 | Public source repository | <https://github.com/upgradedev/archon-qwen-memoryagent> | Ready after final changes are pushed |
 | Detectable open-source license | Root [`LICENSE`](../LICENSE) | Ready (MIT) |
 | Alibaba/Qwen code proof | [`src/qwen/client.ts`](../src/qwen/client.ts) and [`ALIBABA_PROOF.md`](./ALIBABA_PROOF.md) | Ready |
-| Working Alibaba deployment | [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md), project-contained controller evidence, public `/health` + `/ready` | **Ready for current runtime source:** `104a002…` passed exact-deploy attempt 22; final media capture remains pending and must bind to that evidence |
+| Working Alibaba deployment | [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md), project-contained controller evidence, public `/health` + `/ready` | **Ready for current runtime source:** `cfd485de…` is live-verified from attempt 26 under the reviewed `terminal-success-truncated-output` mode; final media capture remains pending and must bind to that evidence |
 | Architecture diagram | [`docs/judge-architecture.svg`](../docs/judge-architecture.svg) / [`final-media/judge-architecture.jpg`](./final-media/judge-architecture.jpg) | Ready |
 | Organizer PPT/PDF deck (strict-union artifact) | `demo/deck/archon-memoryagent-judge-deck.pptx` + matching PDF | **Pending final exact-release screenshots and layout/hash review; never upload a placeholder build** |
 | Text description + track | [`SUBMISSION.md`](./SUBMISSION.md) and [`PROJECT_STORY.md`](./PROJECT_STORY.md) | Ready |
@@ -52,8 +52,9 @@ The README leads with the differentiator, the judge guide separates public and a
 2. The Mem0 evidence supports only the pinned version/configuration and disclosed `dir()`/search probe. The honest conclusion is retrieval parity plus no separately named contradiction/resolution method matched there—not absence of internal/differently named behavior or universal superiority.
 3. Payroll source documents are the implemented vision/text pipeline. Purchase/sales invoices use a strict JSON endpoint. Orders, receipts, general bank statements, EBITDA, and sales targets are outside the shipped claim.
 4. Public seed and recall are quota-bounded; protected features require the dedicated judge credential. The final video must show both paths without exposing it.
-5. Exact runtime source `104a002…` passed the project-contained deployment controller.
-   Final media still requires a fresh SHA-bound capture review, including public and
+5. Exact runtime source `cfd485de…` is live-verified from attempt 26 under the
+   reviewed `terminal-success-truncated-output` evidence mode. Final media still
+   requires a fresh SHA-bound capture review, including public and
    protected journeys; endpoint health alone does not attest a commit or media file.
 6. The human-control gallery frame intentionally proves **Defer only** with zero API
    call and zero mutation. Accept/Override are protected product actions with separate
@@ -63,7 +64,7 @@ The README leads with the differentiator, the judge guide separates public and a
 ## Final verdict
 
 The source and exact-runtime release gate are **green** for
-`104a002820607c754d857473877da28b69ebb44d`. Remaining gates are SHA-bound gallery
+`cfd485de1dd01473c8d6be91521e5560d8e8313e`. Remaining gates are SHA-bound gallery
 and video capture, public media/post hosting, platform fields, eligibility/rights
 sign-off, judging-window monitoring and—only after separate entrant authorization—the
 eventual submission receipt. Deadline: **2026-07-20, 2:00 PM PDT**.

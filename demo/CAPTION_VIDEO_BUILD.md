@@ -65,15 +65,15 @@ Pass that JSON to the one-command final capture gate documented in
 
 ```bash
 python scripts/capture_submission_gallery.py \
-  --expected-sha 104a002820607c754d857473877da28b69ebb44d \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-22.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-22.json \
+  --expected-sha cfd485de1dd01473c8d6be91521e5560d8e8313e \
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-26.txt \
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-26.json \
   --reviewer-credential-json .artifacts/devpost/memory-reviewer-credential.json \
   --alibaba-raw demo/private-originals/alibaba-ecs-overview-raw.png \
   --caption-windows .artifacts/final-caption-video/caption_windows.json
 ```
 
-The runtime SHA and attempt-22 evidence paths above are the exact values locked by
+The runtime SHA and attempt-26 evidence paths above are the exact values locked by
 the current green deployment record. Do not substitute a later SHA or evidence pair
 unless `DEPLOY_STATE.md` is refreshed by another successful exact deployment.
 
@@ -84,9 +84,9 @@ After a human has reviewed all gallery/proof frames and the capture gate has wri
 
 ```bash
 python demo/tools/build_caption_video.py \
-  --expected-sha 104a002820607c754d857473877da28b69ebb44d \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-22.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-22.json \
+  --expected-sha cfd485de1dd01473c8d6be91521e5560d8e8313e \
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-26.txt \
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-26.json \
   --check-only
 ```
 
