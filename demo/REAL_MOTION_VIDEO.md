@@ -36,10 +36,10 @@ digital silence, SRT bounds, evidence hashes and independent post-build re-verif
 
 ## Final production run
 
-The exact deployed runtime and matching attempt-22 evidence are already locked:
+The exact deployed runtime and matching attempt-26 evidence are already locked:
 
 ```powershell
-$sha = '104a002820607c754d857473877da28b69ebb44d'
+$sha = 'cfd485de1dd01473c8d6be91521e5560d8e8313e'
 
 python demo/tools/record_live_motion.py `
   --expected-sha $sha `
@@ -47,8 +47,8 @@ python demo/tools/record_live_motion.py `
 
 python demo/tools/build_real_motion_submission.py `
   --expected-sha $sha `
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-22.txt `
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-22.json `
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-26.txt `
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-26.json `
   --replace
 
 python demo/tools/compose_real_motion_video.py --verify-only

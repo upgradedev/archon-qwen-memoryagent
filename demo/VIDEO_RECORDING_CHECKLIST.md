@@ -11,11 +11,12 @@ video-specific; the screenshots, posts, and Devpost fields remain in
       hosted on YouTube, Vimeo, or Youku.
 - [ ] Confirm `origin/main` is the intended submission source and
       [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-      `104a002820607c754d857473877da28b69ebb44d` as exact-deployed and
-      live-verified. A later
+      `cfd485de1dd01473c8d6be91521e5560d8e8313e` as exact-deployed and
+      live-verified under the reviewed `terminal-success-truncated-output` mode.
+      Endpoint health alone is insufficient evidence. A later
       runtime-affecting commit is a hard stop until another exact deployment.
-- [ ] Confirm `104a002820607c754d857473877da28b69ebb44d` is an ancestor of `origin/main`, then inspect
-      `git diff --name-only 104a002820607c754d857473877da28b69ebb44d..origin/main`.
+- [ ] Confirm `cfd485de1dd01473c8d6be91521e5560d8e8313e` is an ancestor of `origin/main`, then inspect
+      `git diff --name-only cfd485de1dd01473c8d6be91521e5560d8e8313e..origin/main`.
       Every later path must remain within the explicit submission-pack allowlist in
       `DEPLOY_STATE.md`; any new runtime-affecting delta requires another redeploy.
 - [ ] Exercise selected-company P&L in the live Explorer and confirm its request and

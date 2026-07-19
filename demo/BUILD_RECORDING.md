@@ -63,8 +63,9 @@ or the final real-motion manifest/QA cannot be independently re-verified.
 
 1. Confirm the default branch and live runtime evidence are aligned with
    [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). The required recording
-   runtime candidate is `104a002820607c754d857473877da28b69ebb44d`, explicitly
-   recorded there as exact-deployed/live-verified. Submission-pack-only descendants
+   runtime candidate is `cfd485de1dd01473c8d6be91521e5560d8e8313e`, explicitly
+   recorded there as exact-deployed/live-verified under the reviewed
+   `terminal-success-truncated-output` evidence mode. Submission-pack-only descendants
    may move repository HEAD after that candidate; any runtime descendant is a hard
    stop until another exact deploy.
 2. Run the secret-safe pre-recording checks in

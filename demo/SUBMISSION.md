@@ -74,9 +74,12 @@ reusable beyond this financial proof without claiming unmeasured production scal
   separately named contradiction/resolution method matched the disclosed `dir()`
   probe. Zep is cited rather than claimed as a run. The differentiator is a portable,
   explainable, read-only audit plus explicit human resolution.
-- **What the release proves**: exact source `104a002…` passed the
-  project-contained deployment controller. A separately published earlier exact
-  release completed a live, read-only k6 ramp with 342 requests, 42 grounded Qwen
+- **What the release proves**: exact source `cfd485de…` is live-verified from
+  project-contained attempt 26. Alibaba Cloud Assistant finished successfully with
+  exit code `0`. Its retained log ends at the SHA-bound application marker rather
+  than the aggregate final marker, so this is verified success with a truncated
+  provider log. A separately published
+  earlier exact release completed a live, read-only k6 ramp with 342 requests, 42 grounded Qwen
   recalls and zero HTTP failures; that modest profile is stability evidence, not a
   saturation or maximum-capacity claim. Exact test/coverage totals come only from the
   submitted commit's immutable CI artifact.
