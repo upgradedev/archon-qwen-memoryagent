@@ -33,6 +33,7 @@ import {
 } from "../../src/demo-data.js";
 import { InMemoryStore, type StoredMemory } from "../../src/memory/store.js";
 import { FakeEmbedder, type Embedder } from "../../src/memory/embeddings.js";
+import { DEFAULT_FIELD_AUDIT_MEMORIES } from "../../src/agents/memory-agent.js";
 import { FakeNarrator } from "../../src/agents/narrator.js";
 import { UI_HTML } from "../../src/ui.js";
 import { consumeTwoTierQuota, InMemoryDailyQuotaBackend } from "../../src/server/quota.js";
@@ -1056,7 +1057,7 @@ test("document OpenAPI schema states that PDF input is caller-extracted text, no
   assert.match(rawDocumentSchema.properties.content.description, /image data URL\/base64/i);
 });
 
-test("review decision planner targets every non-selected value for 3-value accept and override", () => {
+test("review decision planner flattens every active carrier and supports legacy values", () => {
   const source = UI_HTML.match(/function planHumanDecision[\s\S]*?(?=\n\s*async function applyHumanDecision)/)?.[0];
   assert.ok(source, "planHumanDecision must remain present in the shipped UI");
   const plan = Function(`"use strict"; return (${source});`)() as (
@@ -1066,21 +1067,34 @@ test("review decision planner targets every non-selected value for 3-value accep
   ) => { selectedMemoryId: string; targetMemoryIds: string[] };
   const contradiction = {
     values: [
-      { memoryId: "session-a", value: 8900 },
-      { memoryId: "session-b", value: 8400 },
-      { memoryId: "session-c", value: 9100 },
+      {
+        memoryId: "session-a",
+        carrierMemoryIds: ["session-a-duplicate", "session-a"],
+        value: 8900,
+      },
+      { memoryId: "session-b", carrierMemoryIds: ["session-b"], value: 8400 },
+      { memoryId: "session-c", carrierMemoryIds: ["session-c"], value: 9100 },
     ],
     resolution: { recommendedMemoryId: "session-a" },
   };
   assert.deepEqual(plan("accept", contradiction, "session-a"), {
     selectedMemoryId: "session-a",
-    targetMemoryIds: ["session-b", "session-c"],
+    targetMemoryIds: ["session-a-duplicate", "session-b", "session-c"],
   });
   assert.deepEqual(plan("override", contradiction, "session-c"), {
     selectedMemoryId: "session-c",
-    targetMemoryIds: ["session-a", "session-b"],
+    targetMemoryIds: ["session-a", "session-a-duplicate", "session-b"],
   });
   assert.throws(() => plan("override", contradiction, "session-a"), /non-recommended/);
+
+  const legacyContradiction = {
+    ...contradiction,
+    values: contradiction.values.map(({ carrierMemoryIds: _carrierMemoryIds, ...value }) => value),
+  };
+  assert.deepEqual(plan("accept", legacyContradiction, "session-a"), {
+    selectedMemoryId: "session-a",
+    targetMemoryIds: ["session-b", "session-c"],
+  });
 });
 
 test("reviewer feedback ids retain decision identity when subject text exceeds the 128-character cap", () => {
@@ -1338,9 +1352,15 @@ test("GET /openapi.json returns 200 and documents the core routes", async () => 
   assert.equal(spec.openapi?.startsWith("3."), true);
   assert.equal(spec.info?.title, "Archon MemoryAgent API");
   // The onRoute capture must have picked up every registered handler.
-  for (const path of ["/health", "/ready", "/ready/deep", "/recall", "/feedback", "/ingest", "/ingest/invoice", "/ingest/documents", "/pnl", "/memory/list", "/demo/seed", "/memory/count", "/consistency", "/consistency/semantic", "/consolidate", "/forget"]) {
+  for (const path of ["/health", "/ready", "/ready/deep", "/recall", "/feedback", "/resolve-conflict", "/ingest", "/ingest/invoice", "/ingest/documents", "/pnl", "/memory/list", "/demo/seed", "/memory/count", "/consistency", "/consistency/semantic", "/consolidate", "/forget"]) {
     assert.ok(spec.paths?.[path], `spec should document ${path}`);
   }
+  assert.equal(
+    spec.paths?.["/resolve-conflict"]?.post?.requestBody?.content?.["application/json"]?.schema
+      ?.properties?.targetMemoryIds?.maxItems,
+    DEFAULT_FIELD_AUDIT_MEMORIES - 1,
+    "the write contract must accept a flattened target set from the complete bounded audit",
+  );
   // The raw-spec meta-route is hidden from the rendered spec.
   assert.equal(spec.paths?.["/openapi.json"], undefined);
 });

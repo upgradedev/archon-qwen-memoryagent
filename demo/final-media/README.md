@@ -23,6 +23,10 @@ The canonical real-motion production and QA commands are in
   real-motion checks, and every human item in `../FINAL_MEDIA_CHECKLIST.md` pass.
 - `memoryagent-demo.en.srt` — exact ten-beat measured captions. The final builder
   refuses any byte/timing mismatch with the burned 5,160-frame timeline.
+- The inert, tracked [`../caption-timeline.json`](../caption-timeline.json) is the
+  single caption/timing source for both capture preflight and video rendering.
+  Capture reads the ignored measured windows once, binds their SHA-256 in
+  `CAPTURE_REVIEW.json`, and refuses any difference before a live model call.
 - `memoryagent-demo.manifest.json` — required real-motion cryptographic build record:
   exact runtime/source heads, upstream/downstream hashes, measured codecs/duration,
   silent-audio peak, timeline, live-interaction binding, and claim locks.

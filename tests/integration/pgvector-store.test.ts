@@ -341,15 +341,28 @@ test("PgVectorStore resolves a 3-way conflict transactionally, replays retries, 
 
   const ids = await Promise.all([
     seed("INV-PG-3WAY", 100, "a"),
-    seed("INV-PG-3WAY", 200, "b"),
+    seed("INV-PG-3WAY", 100, "b"),
     seed("INV-PG-3WAY", 300, "c"),
   ]);
+  const finding = (await agent.auditConsistency({ tenantId, company: "Atomic Resolution Co" }))
+    .contradictions.find((candidate) =>
+      candidate.subject === "INV-PG-3WAY" && candidate.attribute === "amount"
+    )!;
+  assert.deepEqual(
+    finding.values.find((value) => value.value === 100)?.carrierMemoryIds,
+    [ids[0]!, ids[1]!].sort(),
+  );
+  const selected = ids[2]!;
+  const targets = [...new Set(finding.values.flatMap((value) => value.carrierMemoryIds))]
+    .filter((id) => id !== selected)
+    .sort();
+  assert.deepEqual(targets, [ids[0]!, ids[1]!].sort());
   const decisionId = `decision-${randomUUID()}`;
-  const first = await agent.resolveConflict("INV-PG-3WAY", "amount", ids[2]!, [ids[0]!, ids[1]!], { tenantId, decisionId });
-  const retry = await agent.resolveConflict("INV-PG-3WAY", "amount", ids[2]!, [ids[1]!, ids[0]!], { tenantId, decisionId });
+  const first = await agent.resolveConflict("INV-PG-3WAY", "amount", selected, targets, { tenantId, decisionId });
+  const retry = await agent.resolveConflict("INV-PG-3WAY", "amount", selected, [...targets].reverse(), { tenantId, decisionId });
   assert.deepEqual(retry, first);
   assert.equal(await store.count("Atomic Resolution Co", tenantId), 3, "atomic selection creates no correction row");
-  assert.deepEqual((await store.listForAudit({ tenantId, company: "Atomic Resolution Co" })).map((row) => row.id), [ids[2]!]);
+  assert.deepEqual((await store.listForAudit({ tenantId, company: "Atomic Resolution Co" })).map((row) => row.id), [selected]);
 
   await store.clear();
   const raceIds = await Promise.all([

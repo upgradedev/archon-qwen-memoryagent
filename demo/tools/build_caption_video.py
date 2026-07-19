@@ -97,84 +97,111 @@ class Beat:
     treatment: str = "proof"
 
 
+CAPTION_CONTRACT_REL = "demo/caption-timeline.json"
+
+
+def load_caption_contract() -> tuple[ProjectFileSnapshot, tuple[tuple[int, int, str], ...]]:
+    """Read the inert, tracked timeline once; no executable module is imported."""
+    try:
+        snapshot = read_project_file_once(CAPTION_CONTRACT_REL, "caption timeline contract")
+        raw = json.loads(snapshot.text())
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("caption timeline contract is not stable valid UTF-8 JSON") from exc
+    if not isinstance(raw, list) or len(raw) != 10:
+        raise RuntimeError("caption timeline contract must contain exactly ten rows")
+
+    rows: list[tuple[int, int, str]] = []
+    previous_end = 0
+    for index, row in enumerate(raw, start=1):
+        if not isinstance(row, list) or len(row) != 3:
+            raise RuntimeError(f"caption timeline row {index} has the wrong shape")
+        start, end, caption = row
+        if type(start) is not int or type(end) is not int or not isinstance(caption, str) or not caption.strip():
+            raise RuntimeError(f"caption timeline row {index} has invalid fields")
+        if start != previous_end or end <= start:
+            raise RuntimeError(f"caption timeline row {index} is not frame-contiguous")
+        if caption != caption.strip():
+            raise RuntimeError(f"caption timeline row {index} has surrounding whitespace")
+        rows.append((start, end, caption))
+        previous_end = end
+    if rows[0][0] != 0 or rows[-1][1] != EXPECTED_TOTAL_SECONDS:
+        raise RuntimeError("caption timeline contract does not cover the exact 172-second final")
+    return snapshot, tuple(rows)
+
+
+CAPTION_CONTRACT_SNAPSHOT, CAPTION_CONTRACT = load_caption_contract()
+
+
+def beat_from_contract(
+    number: int,
+    title: str,
+    visuals: tuple[str, ...],
+    labels: tuple[str, ...] = (),
+    *,
+    treatment: str = "proof",
+) -> Beat:
+    start, end, caption = CAPTION_CONTRACT[number - 1]
+    return Beat(number, title, end - start, caption, visuals, labels, treatment)
+
+
 BEATS: tuple[Beat, ...] = (
-    Beat(
+    beat_from_contract(
         1,
         "Stakes + Track 1",
-        13,
-        "Persistent memory can preserve yesterday's mistake. Archon MemoryAgent recalls, cites, audits, corrects, consolidates, and forgets across sessions.",
         (PROOF_RELS[0],),
         treatment="title",
     ),
-    Beat(
+    beat_from_contract(
         2,
         "Exact live proof + Qwen vision",
-        19,
-        "Exact release evidence proves source; readiness proves real models. Original synthetic two-PNG qwen-vl-max dry-run: one fused event, zero writes or residue - not raw-PDF parsing.",
         (PROOF_RELS[8], PROOF_RELS[7]),
         ("Live /health + /ready", "Original synthetic qwen-vl-max dry-run"),
     ),
-    Beat(
+    beat_from_contract(
         3,
         "Architecture + bounded scale path",
-        19,
-        "Tenant-scoped REST, MCP, and pg-wire seams surround Qwen plus pgvector. Active topology is Alibaba Cloud ECS; Function Compute and RDS are alternative-only.",
         (ARCHITECTURE_REL,),
         ("Evidence -> Qwen -> pgvector -> cited answer -> human decision",),
     ),
-    Beat(
+    beat_from_contract(
         4,
         "Cross-session memory",
-        22,
-        "Original synthetic Northwind data: a fresh Session B recalls a prior-session fact with numbered citations. This proof shows pure cosine; the product default remains hybrid.",
         (PROOF_RELS[0],),
         ("Fresh session · grounded cited recall",),
     ),
-    Beat(
+    beat_from_contract(
         5,
         "Read-only self-audit + human control",
-        22,
-        "INV-5521 is original synthetic data whose amount field differs across sessions. Audit keeps both values visible and recommends without rewriting. Live control proves Defer only: zero API call or write; Accept and Override remain unexercised.",
         (PROOF_RELS[2], PROOF_RELS[4]),
         ("Read-only field audit", "Live Defer only · zero mutation"),
     ),
-    Beat(
+    beat_from_contract(
         6,
         "Feedback persists across sessions",
-        18,
-        "Session A stores explicit reviewer feedback; a fresh authenticated Session B recalls, cites, and applies it. Durable persisted state - not training, autonomous learning, or a model-weight update.",
         (PROOF_RELS[1],),
         ("Session A correction · fresh Session B cited application",),
     ),
-    Beat(
+    beat_from_contract(
         7,
         "Meaning-level audit + MCP",
-        17,
-        "Original synthetic vendor claims: Qwen checks opposed meaning. The live mechanism is separate from the offline 90% fixture. Four typed MCP tools share one core; HTTP is authenticated, stdio trusted-local.",
         (PROOF_RELS[3], PROOF_RELS[6]),
         ("Authenticated Qwen meaning audit", "Shared core · four typed MCP tools"),
     ),
-    Beat(
+    beat_from_contract(
         8,
         "Timely forgetting",
-        12,
-        "Preview selects exactly one feedback-superseded synthetic candidate; confirm deletes exactly one with audit. Protected memories stay unchanged and marker residue is zero. This is not an age-expired row.",
         (PROOF_RELS[5],),
         ("Preview 1 · delete 1 · protect state · residue 0",),
     ),
-    Beat(
+    beat_from_contract(
         9,
         "Evidence, not hype",
-        20,
-        "Developer-labelled synthetic and offline fixtures - not production accuracy or independent evaluation. No universal superiority claim.",
         (),
         treatment="evidence",
     ),
-    Beat(
+    beat_from_contract(
         10,
         "Alibaba + public-source close",
-        10,
-        "Verified active topology: Alibaba Cloud ECS plus self-hosted pgvector. Function Compute and RDS remain alternatives. Public MIT source.",
         (PROOF_RELS[9], PROOF_RELS[10]),
         ("MemoryAgent-only Alibaba proof", "Public repository · MIT"),
     ),
@@ -245,6 +272,7 @@ class ValidatedInputs:
     deployment_output: ProjectFileSnapshot
     deployment_status: ProjectFileSnapshot
     architecture_source: ProjectFileSnapshot
+    caption_contract: ProjectFileSnapshot
     artifact_files: dict[str, ProjectFileSnapshot]
 
 
@@ -566,6 +594,26 @@ def validate_capture_review(
         and "canonical-unmeasured" not in timing_source,
         "capture review subtitle timing is not measured",
     )
+    subtitle_timeline = review.get("subtitleTimeline")
+    require(isinstance(subtitle_timeline, dict), "capture review has no immutable subtitle timeline binding")
+    canonical_record = subtitle_timeline.get("canonicalContract")
+    require(isinstance(canonical_record, dict), "capture review has no canonical subtitle contract record")
+    require(
+        canonical_record.get("path") == CAPTION_CONTRACT_SNAPSHOT.relative_path
+        and canonical_record.get("sha256") == CAPTION_CONTRACT_SNAPSHOT.sha256
+        and canonical_record.get("size") == CAPTION_CONTRACT_SNAPSHOT.size,
+        "capture review canonical subtitle contract does not match the tracked read-once bytes",
+    )
+    measured_record = subtitle_timeline.get("measuredInput")
+    require(isinstance(measured_record, dict), "capture review has no measured subtitle input binding")
+    require(
+        isinstance(measured_record.get("path"), str)
+        and SHA256.fullmatch(str(measured_record.get("sha256", "")).lower()) is not None
+        and type(measured_record.get("size")) is int
+        and measured_record.get("size") > 0,
+        "capture review measured subtitle input binding is invalid",
+    )
+    require(subtitle_timeline.get("matchesCanonicalContract") is True, "capture review subtitle input did not match the canonical contract")
 
     raw_artifacts = review.get("artifacts")
     require(isinstance(raw_artifacts, dict), "capture review has no artifact hash inventory")
@@ -729,9 +777,11 @@ def validate_inputs(
     )
     claim_matrix_path = project_path(CLAIM_MATRIX_REL, "claim/evidence matrix", must_exist=True)
     builder_source = snapshot_project_file("demo/tools/build_caption_video.py", "caption video builder")
+    caption_contract_snapshot = CAPTION_CONTRACT_SNAPSHOT
     claim_matrix_snapshot = snapshot_project_file(claim_matrix_path, "claim/evidence matrix")
     if production_mode:
         ensure_snapshot_matches_head(builder_source, "caption video builder")
+        ensure_snapshot_matches_head(caption_contract_snapshot, "caption timeline contract")
         ensure_snapshot_matches_head(claim_matrix_snapshot, "claim/evidence matrix")
         ensure_snapshot_matches_head(deploy_state_snapshot, "deployment state")
         ensure_snapshot_matches_head(architecture_source, "architecture source")
@@ -758,6 +808,7 @@ def validate_inputs(
         deployment_status=deployment_status_snapshot,
         claim_matrix=claim_matrix_snapshot,
         architecture_source=architecture_source,
+        caption_contract=caption_contract_snapshot,
         artifact_files=artifact_files,
     )
 
@@ -1162,6 +1213,11 @@ def build_video(
             },
         },
         "timeline": {
+            "canonicalContract": {
+                "path": inputs.caption_contract.relative_path,
+                "sha256": inputs.caption_contract.sha256,
+                "size": inputs.caption_contract.size,
+            },
             "fps": FPS,
             "strictLimitSeconds": STRICT_LIMIT_SECONDS,
             "plannedDurationSeconds": total_seconds,
@@ -1397,6 +1453,19 @@ def self_test(*, full_duration: bool = False) -> int:
             "rasterSha256": artifact_hashes[ARCHITECTURE_REL],
         },
         "subtitleTimingSource": "measured-caption-windows",
+        "subtitleTimeline": {
+            "canonicalContract": {
+                "path": CAPTION_CONTRACT_SNAPSHOT.relative_path,
+                "sha256": CAPTION_CONTRACT_SNAPSHOT.sha256,
+                "size": CAPTION_CONTRACT_SNAPSHOT.size,
+            },
+            "measuredInput": {
+                "path": ".artifacts/caption-video-selftest/measured-windows.json",
+                "sha256": "0" * 64,
+                "size": 1,
+            },
+            "matchesCanonicalContract": True,
+        },
         "artifacts": artifact_hashes,
     }
     capture_review.write_text(json.dumps(review_payload, indent=2) + "\n", encoding="utf-8")

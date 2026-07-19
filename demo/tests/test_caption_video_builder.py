@@ -531,6 +531,88 @@ class CaptionTimelineTests(unittest.TestCase):
             )
         self.assertEqual("\n".join(blocks).encode("utf-8"), builder.expected_srt().encode("utf-8"))
 
+    def test_capture_preflight_accepts_only_the_tracked_final_video_timeline(self) -> None:
+        canonical = builder.caption_windows()
+        canonical_bytes = json.dumps(canonical).encode("utf-8")
+        canonical_snapshot = capture.ProjectFileSnapshot(
+            path=ROOT / "demo" / "caption-timeline.json",
+            relative_path="demo/caption-timeline.json",
+            data=canonical_bytes,
+            sha256=hashlib.sha256(canonical_bytes).hexdigest(),
+            size=len(canonical_bytes),
+        )
+        measured_snapshot = capture.ProjectFileSnapshot(
+            path=ROOT / ".artifacts" / "ignored-canonical-windows.json",
+            relative_path=".artifacts/ignored-canonical-windows.json",
+            data=canonical_bytes,
+            sha256=hashlib.sha256(canonical_bytes).hexdigest(),
+            size=len(canonical_bytes),
+        )
+        self.assertEqual(
+            capture.validate_canonical_caption_windows(measured_snapshot, canonical_snapshot),
+            capture.normalize_caption_windows(canonical, "canonical test timeline"),
+        )
+        self.assertIsNone(
+            capture.validate_production_caption_inputs(
+                caption_windows=".artifacts/ignored-canonical-windows.json",
+                allow_canonical_fallback=False,
+                video_manifest=None,
+                web_narration=None,
+            )
+        )
+
+        stale = [list(row) for row in canonical]
+        stale[3][2] = "Stale pre-humanization caption copy"
+        stale_bytes = json.dumps(stale).encode("utf-8")
+        stale_snapshot = capture.ProjectFileSnapshot(
+            path=ROOT / ".artifacts" / "ignored-stale-windows.json",
+            relative_path=".artifacts/ignored-stale-windows.json",
+            data=stale_bytes,
+            sha256=hashlib.sha256(stale_bytes).hexdigest(),
+            size=len(stale_bytes),
+        )
+        with self.assertRaisesRegex(
+            capture.GateError,
+            "do not exactly match the canonical ten-beat final-video timeline",
+        ):
+            capture.validate_canonical_caption_windows(stale_snapshot, canonical_snapshot)
+
+        output = ROOT / ".artifacts" / "caption-snapshot-contract-test.srt"
+        try:
+            with mock.patch.object(
+                capture,
+                "parse_measured_windows",
+                side_effect=AssertionError("snapshot-backed emission must not reopen the input path"),
+            ):
+                capture.emit_srt(
+                    output,
+                    measured_windows=measured_snapshot,
+                    allow_canonical_fallback=False,
+                    video_manifest=None,
+                    web_narration=None,
+                )
+            self.assertEqual(output.read_text(encoding="utf-8"), builder.expected_srt())
+        finally:
+            output.unlink(missing_ok=True)
+
+    def test_canonical_capture_rejects_legacy_eleventh_beat_before_file_reads(self) -> None:
+        argv = [
+            "--expected-sha", "0" * 40,
+            "--deployment-output", ".artifacts/deploy.txt",
+            "--deployment-status", ".artifacts/deploy.json",
+            "--alibaba-raw", ".artifacts/alibaba.png",
+            "--caption-windows", ".artifacts/caption-windows.json",
+            "--video-manifest", ".artifacts/video-manifest.json",
+            "--web-narration", ".artifacts/web-narration.txt",
+        ]
+        with mock.patch.object(
+            capture,
+            "snapshot_project_file",
+            side_effect=AssertionError("legacy caption inputs must fail before project-file reads"),
+        ) as snapshot:
+            self.assertEqual(capture.main(argv), 2)
+        snapshot.assert_not_called()
+
     def test_every_canonical_proof_frame_is_used_and_hash_required(self) -> None:
         used = {visual for beat in builder.BEATS for visual in beat.visuals}
         self.assertEqual(set(builder.PROOF_RELS) - used, set())

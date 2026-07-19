@@ -78,9 +78,14 @@ export interface Contradiction {
   type: "contradiction";
   subject: string; // the record all these memories describe
   attribute: string; // the metadata field they disagree on
-  // Each distinct value and the memory (write event) that carries it.
+  // Each distinct value bucket and one traceable representative write event.
+  // `memoryId`, `value`, `sourceRef`, and `createdAt` always come from that SAME
+  // representative carrier. `carrierMemoryIds` is the complete, deterministic
+  // set of active writes in the bucket; retaining `memoryId` preserves the
+  // original response contract for older clients.
   values: Array<{
     memoryId: string;
+    carrierMemoryIds: string[];
     sourceRef: string | null;
     value: unknown;
     createdAt: string;
@@ -154,6 +159,22 @@ function valuesAgree(a: unknown, b: unknown, tol: number): boolean {
     return String(a) === String(b);
   }
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// Tolerance is not transitive (0≈0.4 and 0.4≈0.8 does not imply 0≈0.8), so a
+// greedy bucket depends on which carrier arrives first unless inputs are
+// canonicalized. Numeric values sort by magnitude; other supported scalars sort
+// by type + JSON form. Write timestamp/id complete the deterministic tie-break.
+function compareAttributeValues(a: unknown, b: unknown): number {
+  if (typeof a === "number" && typeof b === "number") {
+    if (Object.is(a, b)) return 0;
+    if (Number.isNaN(a)) return 1;
+    if (Number.isNaN(b)) return -1;
+    return a < b ? -1 : 1;
+  }
+  const aKey = `${typeof a}:${JSON.stringify(a)}`;
+  const bKey = `${typeof b}:${JSON.stringify(b)}`;
+  return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
 }
 
 // Comparable attributes of a memory: its flat metadata entries minus the
@@ -360,17 +381,43 @@ export function auditConsistency(
       if (carriers.length < 2) continue;
       // Do the carriers disagree? Cluster into distinct values.
       const distinct: Array<{ value: unknown; carriers: typeof carriers }> = [];
-      for (const c of carriers) {
+      const orderedCarriers = [...carriers].sort((a, b) => {
+        const byValue = compareAttributeValues(a.value, b.value);
+        if (byValue !== 0) return byValue;
+        return a.m.createdAt < b.m.createdAt
+          ? -1
+          : a.m.createdAt > b.m.createdAt
+            ? 1
+            : a.m.id < b.m.id
+              ? -1
+              : a.m.id > b.m.id
+                ? 1
+                : 0;
+      });
+      for (const c of orderedCarriers) {
         const bucket = distinct.find((d) => valuesAgree(d.value, c.value, tol));
         if (bucket) bucket.carriers.push(c);
         else distinct.push({ value: c.value, carriers: [c] });
       }
       if (distinct.length < 2) continue; // all agree → consistent
 
-      const resolution = resolveContradiction(
+      const policyResolution = resolveContradiction(
         distinct.map((d) => ({ value: d.value, memories: d.carriers.map((c) => c.m) })),
         opts.kindAuthority ?? DEFAULT_KIND_AUTHORITY
       );
+      const selectedCarrier = distinct
+        .flatMap((d) => d.carriers)
+        .find((carrier) => carrier.m.id === policyResolution.recommendedMemoryId);
+      if (!selectedCarrier) {
+        throw new Error("consistency resolver selected a memory outside the contradiction");
+      }
+      // Numeric-tolerance buckets may contain close but non-identical values.
+      // Bind the public recommendation to the exact value asserted by the
+      // selected memory instead of leaking the bucket's first carrier value.
+      const resolution: Resolution = {
+        ...policyResolution,
+        recommendedValue: selectedCarrier.value,
+      };
 
       contradictions.push({
         type: "contradiction",
@@ -378,19 +425,34 @@ export function auditConsistency(
         attribute: attr,
         values: distinct
           .map((d) => {
-            // Representative write event per distinct value (earliest write).
-            const rep = [...d.carriers].sort((a, b) =>
-              a.m.createdAt < b.m.createdAt ? -1 : a.m.createdAt > b.m.createdAt ? 1 : 0
-            )[0]!;
+            // The UI requires the recommendation to be one of these public
+            // representatives so a human can trace and act on it. Importance or
+            // authority may intentionally select an older carrier; preserve that
+            // exact winner. Non-winning buckets use their latest carrier, which
+            // is also the representative evaluated by the recency rule.
+            const recommended = d.carriers.find(
+              (carrier) => carrier.m.id === resolution.recommendedMemoryId
+            );
+            const latest = latestOf(d.carriers.map((carrier) => carrier.m));
+            const rep = recommended ?? d.carriers.find((carrier) => carrier.m.id === latest.id)!;
             return {
               memoryId: rep.m.id,
+              carrierMemoryIds: [...new Set(d.carriers.map((carrier) => carrier.m.id))].sort(),
               sourceRef: rep.m.sourceRef,
-              value: d.value,
+              value: rep.value,
               createdAt: rep.m.createdAt,
             };
           })
           .sort((a, b) =>
-            a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0
+            a.createdAt < b.createdAt
+              ? -1
+              : a.createdAt > b.createdAt
+                ? 1
+                : a.memoryId < b.memoryId
+                  ? -1
+                  : a.memoryId > b.memoryId
+                    ? 1
+                    : 0
           ),
         resolution,
       });

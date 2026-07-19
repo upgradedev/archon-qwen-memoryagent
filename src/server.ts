@@ -49,7 +49,7 @@ import {
   type RecallHit,
 } from "./memory/store.js";
 import { defaultReranker, type Reranker } from "./memory/rerank.js";
-import { MemoryAgent } from "./agents/memory-agent.js";
+import { DEFAULT_FIELD_AUDIT_MEMORIES, MemoryAgent } from "./agents/memory-agent.js";
 import { MAX_MEMORY_BATCH } from "./memory/memory.js";
 import { UI_HTML } from "./ui.js";
 import type { PayrollEvent } from "./types.js";
@@ -1473,8 +1473,10 @@ export async function buildServer(deps: ServerDeps = {}) {
             attribute: { type: "string", minLength: 1, maxLength: 256 },
             selectedMemoryId: { type: "string", format: "uuid" },
             targetMemoryIds: {
-              type: "array", minItems: 1, maxItems: 100, uniqueItems: true,
+              type: "array", minItems: 1, maxItems: DEFAULT_FIELD_AUDIT_MEMORIES - 1, uniqueItems: true,
               items: { type: "string", format: "uuid" },
+              description:
+                "Every active non-selected carrier ID, flattened across all distinct value buckets.",
             },
             reason: { type: "string", minLength: 1, maxLength: 500 },
           },
