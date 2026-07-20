@@ -50,8 +50,9 @@ python -m py_compile demo/tools/build_local_narration.py demo/tools/build_eleven
 python -m unittest discover -s demo/tests -p 'test_caption_video_builder.py' -v
 python demo/tools/build_local_narration.py --self-test
 # Production narration uses voice pNInz6obpgDQGcFmaJgB with
-# eleven_multilingual_v2, is generated once by canonical-elevenlabs-narration.yml
-# on main, then downloaded unchanged into .artifacts/final-narration/.
+# eleven_multilingual_v2. Beats 1-5 are recovered from failed run 29731821217;
+# the workflow synthesizes only beats 6-10, then downloads the verified bundle
+# unchanged into .artifacts/final-narration/.
 python demo/tools/build_caption_video.py --self-test
 python demo/tools/build_caption_video.py --full-self-test
 python demo/tools/build_caption_video.py `

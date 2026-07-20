@@ -52,6 +52,12 @@ CANONICAL_ELEVENLABS_VOICE_NAME = "Adam (pNInz6obpgDQGcFmaJgB)"
 CANONICAL_ELEVENLABS_MODEL_ID = "eleven_multilingual_v2"
 CANONICAL_ELEVENLABS_OUTPUT_FORMAT = "pcm_24000"
 CANONICAL_ELEVENLABS_SEED_BASE = 20260720
+CANONICAL_ELEVENLABS_RECOVERY_RUN_ID = 29731821217
+CANONICAL_ELEVENLABS_RECOVERY_AFTER_UNIX = 1784539947
+CANONICAL_ELEVENLABS_RECOVERY_BEFORE_UNIX = 1784539964
+CANONICAL_ELEVENLABS_RECOVERED_BEATS = (1, 2, 3, 4, 5)
+CANONICAL_ELEVENLABS_LIVE_BEATS = (6, 7, 8, 9, 10)
+MAX_ELEVENLABS_TIME_FIT_RATIO = 1.35
 SAMPLE_RATE = 48_000
 CHANNELS = 2
 SAMPLE_WIDTH = 2
@@ -541,6 +547,20 @@ def elevenlabs_request_contract(
         "requestCount": len(windows),
         "retryCount": 0,
         "fallback": None,
+        "executionPlan": {
+            "recoveryRunId": CANONICAL_ELEVENLABS_RECOVERY_RUN_ID,
+            "recoveryAfterUnixInclusive": CANONICAL_ELEVENLABS_RECOVERY_AFTER_UNIX,
+            "recoveryBeforeUnixExclusive": CANONICAL_ELEVENLABS_RECOVERY_BEFORE_UNIX,
+            "historyRecoveredBeats": list(CANONICAL_ELEVENLABS_RECOVERED_BEATS),
+            "liveSynthesisBeats": list(CANONICAL_ELEVENLABS_LIVE_BEATS),
+            "liveRequestCount": len(CANONICAL_ELEVENLABS_LIVE_BEATS),
+        },
+        "timingPolicy": {
+            "algorithm": "linear-pcm-duration-fit-v1",
+            "providerSpeed": 1.0,
+            "maxCompressionRatio": MAX_ELEVENLABS_TIME_FIT_RATIO,
+            "truncationAllowed": False,
+        },
         "voiceSettings": {
             "stability": 0.55,
             "similarity_boost": 0.75,
@@ -574,13 +594,19 @@ def elevenlabs_generation_evidence(
     decoded = [
         {
             "beatNumber": segment["beatNumber"],
+            "acquisition": segment["acquisition"],
+            "providerPcmSha256": segment["providerPcmSha256"],
+            "providerPcmBytes": segment["providerPcmBytes"],
             "canonicalPcmSha256": segment["sourcePcmSha256"],
             "canonicalPcmBytes": segment["sourcePcmBytes"],
+            "timeFitApplied": segment["timeFitApplied"],
+            "timeFitRatio": segment["timeFitRatio"],
+            "historyItemIdSha256": segment["historyItemIdSha256"],
         }
         for segment in segments
     ]
     return {
-        "evidenceType": "elevenlabs-api-generation-record-v1",
+        "evidenceType": "elevenlabs-api-generation-record-v2",
         "assurance": ELEVENLABS_PROVENANCE_ASSURANCE,
         "generatorSource": _elevenlabs_generator_source_record(),
         "synthesisRequest": request,
@@ -779,22 +805,35 @@ def validate_narration_bundle(
     stereo_samples, _audio_params = _samples_from_wave(audio_snapshot.data)
     for number, ((start, end, text), segment) in enumerate(zip(active_windows, segments), start=1):
         require(isinstance(segment, dict), f"local narration segment {number} is invalid")
+        expected_segment_fields = {
+            "beatNumber",
+            "startSeconds",
+            "endSeconds",
+            "textSha256",
+            "sourceFrames",
+            "sourceDurationSeconds",
+            "placedStartFrame",
+            "placedEndFrame",
+            "truncated",
+            "peakS16",
+            "sourcePcmSha256",
+            "sourcePcmBytes",
+        }
+        if active_generator == GENERATOR_ID:
+            expected_segment_fields.update(
+                {
+                    "acquisition",
+                    "providerFrames",
+                    "providerDurationSeconds",
+                    "providerPcmSha256",
+                    "providerPcmBytes",
+                    "timeFitApplied",
+                    "timeFitRatio",
+                    "historyItemIdSha256",
+                }
+            )
         require(
-            set(segment)
-            == {
-                "beatNumber",
-                "startSeconds",
-                "endSeconds",
-                "textSha256",
-                "sourceFrames",
-                "sourceDurationSeconds",
-                "placedStartFrame",
-                "placedEndFrame",
-                "truncated",
-                "peakS16",
-                "sourcePcmSha256",
-                "sourcePcmBytes",
-            },
+            set(segment) == expected_segment_fields,
             f"local narration segment {number} is incomplete or has unrecognized claims",
         )
         require(segment.get("beatNumber") == number, f"local narration segment {number} number is stale")
@@ -821,6 +860,34 @@ def validate_narration_bundle(
             and segment.get("sourcePcmBytes") == expected_pcm_binding["sourcePcmBytes"],
             f"local narration segment {number} source PCM binding is stale",
         )
+        if active_generator == GENERATOR_ID:
+            provider_frames = segment.get("providerFrames")
+            require(type(provider_frames) is int and provider_frames >= source_frames, f"ElevenLabs segment {number} provider frame count is invalid")
+            _same_number(segment.get("providerDurationSeconds"), provider_frames / SAMPLE_RATE, f"segment {number} provider duration")
+            require(segment.get("providerPcmBytes") == provider_frames * SAMPLE_WIDTH, f"ElevenLabs segment {number} provider PCM size is invalid")
+            require(
+                isinstance(segment.get("providerPcmSha256"), str)
+                and len(segment["providerPcmSha256"]) == 64
+                and all(char in "0123456789abcdef" for char in segment["providerPcmSha256"]),
+                f"ElevenLabs segment {number} provider PCM hash is invalid",
+            )
+            expected_fit = provider_frames > source_frames
+            require(segment.get("timeFitApplied") is expected_fit, f"ElevenLabs segment {number} time-fit disclosure is stale")
+            fit_ratio = provider_frames / source_frames
+            _same_number(segment.get("timeFitRatio"), fit_ratio, f"segment {number} time-fit ratio")
+            require(fit_ratio <= MAX_ELEVENLABS_TIME_FIT_RATIO, f"ElevenLabs segment {number} exceeds the maximum time-fit ratio")
+            expected_acquisition = "history-recovery" if number in CANONICAL_ELEVENLABS_RECOVERED_BEATS else "live-synthesis"
+            require(segment.get("acquisition") == expected_acquisition, f"ElevenLabs segment {number} acquisition is stale")
+            history_hash = segment.get("historyItemIdSha256")
+            if expected_acquisition == "history-recovery":
+                require(
+                    isinstance(history_hash, str)
+                    and len(history_hash) == 64
+                    and all(char in "0123456789abcdef" for char in history_hash),
+                    f"ElevenLabs segment {number} history binding is invalid",
+                )
+            else:
+                require(history_hash is None, f"ElevenLabs segment {number} has an unexpected history binding")
 
     generation_evidence = payload.get("generationEvidence")
     require(isinstance(generation_evidence, dict), "local narration manifest has no generation evidence")

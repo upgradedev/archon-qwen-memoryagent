@@ -60,8 +60,9 @@ complete these attestations for the entrant.
   visuals and live interaction. No external font file is copied or embedded;
   Pillow's bundled default is rasterized into the frames.
 - [ ] The canonical ElevenLabs voice id `pNInz6obpgDQGcFmaJgB`, model
-      `eleven_multilingual_v2`, request count, no-retry/no-fallback contract and decoded
-      PCM bindings match the narration manifest. The authorized entrant approved paid-plan
+      `eleven_multilingual_v2`, exact five-item history recovery, five-request completion,
+      no-per-beat-retry/no-fallback contract, bounded time-fit and decoded PCM bindings
+      match the narration manifest. The authorized entrant approved paid-plan
       credit use and public competition/promotional publication and accepts the explicit
       provider synthetic-voice disclosure.
 - [ ] Before any public upload, the user has explicitly confirmed that narration

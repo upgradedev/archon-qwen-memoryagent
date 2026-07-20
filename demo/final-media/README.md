@@ -33,7 +33,8 @@ self-tests when all three variables are unset.
   [`../REAL_MOTION_VIDEO.md`](../REAL_MOTION_VIDEO.md): it renders the static caption
   composition only as an intermediate scratch base, then inserts SHA-bound genuine
   browser interaction. It uses the explicitly disclosed, entrant-approved ElevenLabs
-  voice/model pair, with no fallback voice, human voice, or third-party music.
+  voice/model pair, exact five-item history recovery, five-request completion and bounded
+  deterministic time-fit, with no fallback voice, human voice, or third-party music.
   Digital silence is rejected. The exact narration WAV and JSON manifest are created
   under ignored `.artifacts/final-narration/` by
   [`../tools/build_local_narration.py`](../tools/build_local_narration.py). The final

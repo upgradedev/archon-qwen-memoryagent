@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from array import array
 import importlib.util
+import json
 import os
 from pathlib import Path
 import sys
@@ -73,6 +74,11 @@ class ElevenLabsNarrationTests(unittest.TestCase):
         self.assertEqual(contract["requestCount"], 10)
         self.assertEqual(contract["retryCount"], 0)
         self.assertIsNone(contract["fallback"])
+        self.assertEqual(contract["executionPlan"]["historyRecoveredBeats"], [1, 2, 3, 4, 5])
+        self.assertEqual(contract["executionPlan"]["liveSynthesisBeats"], [6, 7, 8, 9, 10])
+        self.assertEqual(contract["executionPlan"]["liveRequestCount"], 5)
+        self.assertFalse(contract["timingPolicy"]["truncationAllowed"])
+        self.assertEqual(contract["timingPolicy"]["maxCompressionRatio"], 1.35)
         self.assertEqual(contract["voiceId"], "pNInz6obpgDQGcFmaJgB")
         self.assertEqual(contract["modelId"], "eleven_multilingual_v2")
         self.assertEqual(sum(row["characters"] for row in contract["segments"]), 2004)
@@ -128,6 +134,95 @@ class ElevenLabsNarrationTests(unittest.TestCase):
         self.assertEqual(target[0], source[0])
         self.assertEqual(target[1], 0)
         self.assertEqual(stats["clippedSamples"], 0)
+
+    def test_time_fit_is_deterministic_bounded_and_never_truncates(self) -> None:
+        maximum = core.SAMPLE_RATE * 2
+        source = array("h", [2500, -2500] * (maximum * 11 // 20))
+        first, ratio, applied = eleven._fit_pcm_to_window(source, maximum)
+        second, second_ratio, second_applied = eleven._fit_pcm_to_window(source, maximum)
+        self.assertTrue(applied)
+        self.assertTrue(second_applied)
+        self.assertEqual(len(first), maximum)
+        self.assertEqual(first, second)
+        self.assertEqual(ratio, second_ratio)
+        self.assertLessEqual(ratio, core.MAX_ELEVENLABS_TIME_FIT_RATIO)
+        too_long = array("h", [2500, -2500] * maximum)
+        with self.assertRaisesRegex(core.NarrationError, "maximum deterministic time-fit ratio"):
+            eleven._fit_pcm_to_window(too_long, maximum)
+
+    def _history_payload(self):
+        _timeline, windows = core.load_caption_timeline()
+        settings = core.elevenlabs_request_contract(windows)["voiceSettings"]
+        return {
+            "history": [
+                {
+                    "history_item_id": f"history_item_{number:02d}",
+                    "date_unix": core.CANONICAL_ELEVENLABS_RECOVERY_AFTER_UNIX + number,
+                    "voice_id": core.CANONICAL_ELEVENLABS_VOICE_ID,
+                    "model_id": core.CANONICAL_ELEVENLABS_MODEL_ID,
+                    "source": "TTS",
+                    "output_format": core.CANONICAL_ELEVENLABS_OUTPUT_FORMAT,
+                    "content_type": "audio/pcm",
+                    "text": windows[number - 1][2],
+                    "settings": dict(settings),
+                }
+                for number in core.CANONICAL_ELEVENLABS_RECOVERED_BEATS
+            ]
+        }
+
+    def test_history_recovery_matches_exact_failed_run_inventory(self) -> None:
+        _timeline, windows = core.load_caption_timeline()
+        selected = eleven._select_recovery_items(self._history_payload(), windows)
+        self.assertEqual(set(selected), {1, 2, 3, 4, 5})
+        tampered = self._history_payload()
+        tampered["history"][0]["text"] = "wrong"
+        with self.assertRaisesRegex(core.NarrationError, "beat 1 is absent or ambiguous"):
+            eleven._select_recovery_items(tampered, windows)
+        ambiguous = self._history_payload()
+        ambiguous["history"].append(dict(ambiguous["history"][0], history_item_id="history_item_duplicate"))
+        with self.assertRaisesRegex(core.NarrationError, "beat 1 is absent or ambiguous"):
+            eleven._select_recovery_items(ambiguous, windows)
+
+    def test_history_query_is_secret_safe_exact_and_read_only(self) -> None:
+        captured = []
+        response = FakeResponse(json.dumps(self._history_payload()).encode(), "application/json")
+
+        def fake_open(request, timeout):
+            captured.append((request, timeout))
+            return response
+
+        secret = "sk_" + "z" * 40
+        with mock.patch.dict(os.environ, {"ELEVEN_LABS_KEY": secret}, clear=False):
+            with mock.patch.object(eleven, "_open_no_redirect", side_effect=fake_open):
+                payload = eleven._request_history_json()
+        self.assertIn("history", payload)
+        self.assertEqual(len(captured), 1)
+        request, _timeout = captured[0]
+        self.assertEqual(request.method, "GET")
+        self.assertEqual(request.get_header("Xi-api-key"), secret)
+        self.assertNotIn(secret, request.full_url)
+        self.assertIn("date_after_unix=1784539947", request.full_url)
+        self.assertIn("date_before_unix=1784539964", request.full_url)
+
+    def test_history_audio_is_secret_safe_and_pcm_only(self) -> None:
+        pcm = array("h", [2500, -2500] * eleven.PROVIDER_SAMPLE_RATE).tobytes()
+        captured = []
+
+        def fake_open(request, timeout):
+            captured.append((request, timeout))
+            return FakeResponse(pcm)
+
+        secret = "sk_" + "h" * 40
+        with mock.patch.dict(os.environ, {"ELEVEN_LABS_KEY": secret}, clear=False):
+            with mock.patch.object(eleven, "_open_no_redirect", side_effect=fake_open):
+                result = eleven._request_history_audio("history_item_01")
+        self.assertEqual(result, pcm)
+        self.assertEqual(len(captured), 1)
+        request, _timeout = captured[0]
+        self.assertEqual(request.method, "GET")
+        self.assertEqual(request.get_header("Xi-api-key"), secret)
+        self.assertNotIn(secret, request.full_url)
+        self.assertTrue(request.full_url.endswith("/v1/history/history_item_01/audio"))
 
 
 if __name__ == "__main__":
