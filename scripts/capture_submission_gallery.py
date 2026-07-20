@@ -1483,15 +1483,31 @@ def strip_and_save(
     size: tuple[int, int] | None = None,
     min_bytes: int = 20_000,
 ) -> None:
-    clean = image.convert("RGB")
+    prepared = image.convert("RGB")
     if size is not None:
-        clean = ImageOps.fit(clean, size, method=Image.Resampling.LANCZOS)
+        prepared = ImageOps.fit(prepared, size, method=Image.Resampling.LANCZOS)
+    # Pillow preserves source ``info`` (notably ICC profiles) across convert and
+    # resize operations.  Re-materialize pixels into a fresh image so public PNGs
+    # cannot inherit metadata from a reviewed source asset.
+    clean = Image.new("RGB", prepared.size)
+    clean.paste(prepared)
     output.parent.mkdir(parents=True, exist_ok=True)
-    clean.save(output, format="PNG", optimize=True)
-    with Image.open(output) as check:
-        require(check.size == (size or clean.size), f"{output.name} has the wrong dimensions")
-        require(not check.info, f"{output.name} retained PNG metadata")
-        require(output.stat().st_size >= min_bytes, f"{output.name} is unexpectedly small")
+    temporary = output.with_name(f".{output.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        clean.save(temporary, format="PNG", optimize=True)
+        with Image.open(temporary) as check:
+            require(check.size == (size or clean.size), f"{output.name} has the wrong dimensions")
+            require(not check.info, f"{output.name} retained PNG metadata")
+            require(temporary.stat().st_size >= min_bytes, f"{output.name} is unexpectedly small")
+        # Preserve any prior reviewed output unless the new bytes have passed the
+        # complete local gate.  The same-directory replace is atomic.
+        os.replace(temporary, output)
+    except BaseException as exc:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError as cleanup_exc:
+            exc.add_note(f"temporary PNG cleanup also failed: {cleanup_exc}")
+        raise
 
 
 def save_dual_submission_frame(
@@ -3227,6 +3243,34 @@ def self_test() -> int:
     )
     require(long_footer_mode == "two-row", "long-footer self-test did not exercise the collision-safe layout")
     strip_and_save(long_footer_canvas, root / "long-footer.png", size=CANVAS, min_bytes=1_000)
+    metadata_source = Image.new("RGB", (320, 180), "#315b4e")
+    metadata_source.info["icc_profile"] = b"synthetic-self-test-icc-profile"
+    metadata_output = root / "metadata-stripped.png"
+    strip_and_save(metadata_source, metadata_output, size=(320, 180), min_bytes=100)
+    with Image.open(metadata_output) as metadata_check:
+        require(not metadata_check.info, "PNG metadata stripping self-test failed")
+
+    preserved_output = root / "preserved-on-validation-failure.png"
+    preserved_output.write_bytes(b"pre-existing-reviewed-output")
+    try:
+        strip_and_save(
+            Image.new("RGB", (32, 32), "#11261f"),
+            preserved_output,
+            size=(32, 32),
+            min_bytes=10_000_000,
+        )
+    except GateError:
+        pass
+    else:
+        raise GateError("atomic PNG validation self-test did not fail")
+    require(
+        preserved_output.read_bytes() == b"pre-existing-reviewed-output",
+        "failed PNG validation replaced the prior reviewed output",
+    )
+    require(
+        not tuple(root.glob(f".{preserved_output.name}.*.tmp")),
+        "failed PNG validation retained a temporary output",
+    )
     windows = root / "windows.json"
     windows.write_text(json.dumps([[3.0, 5.0, "Synthetic caption"], [5.0, 7.5, "Second caption"]]), encoding="utf-8")
     srt = root / "test.srt"
