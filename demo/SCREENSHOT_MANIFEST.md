@@ -14,13 +14,16 @@ focal proof.
 
 | Order | Canonical file | Required visible proof | English gallery caption |
 |---:|---|---|---|
-| 1 | `demo/gallery/01-grounded-cross-session-recall.png` | Live hostname, grounded answer, numbered memory citations | **On original synthetic demo data, a fresh session recalls a bounded slice of durable pgvector memory and grounds the Qwen answer in numbered evidence.** |
-| 2 | `demo/gallery/02-session-feedback-persistence.png` | Session-A correction and separately authenticated fresh Session-B cited application | **Explicit reviewer feedback persists as a cited memory that a fresh session applies; this is stored state, not autonomous training or a model-weight update.** |
-| 3 | `demo/gallery/03-read-only-field-self-audit.png` | `INV-5521`, `8400`, `8900`, recency recommendation, no secret field value | **On original synthetic demo data, the read-only audit keeps both cross-session values visible and recommends a policy winner without rewriting history.** |
-| 4 | `demo/gallery/04-qwen-semantic-self-audit.png` | Visible at-most-one eligible `insight` pair scope, “always pays on time” vs “chronically late”, configured model/completion provenance; token fully absent/cropped | **On original synthetic vendor claims, the bounded Qwen scan selects and catches a meaning-level contradiction with no shared numeric field; the result remains a recommendation, not an automatic edit.** |
-| 5 | `demo/gallery/05-human-resolution-control.png` | Live Defer result only; zero API call/write; Accept/Override visibly labelled unexercised | **The live frame proves Defer with zero API call and zero mutation. Accept/Override are separately tested protected actions and are not claimed by this capture.** |
-| 6 | `demo/gallery/06-safe-memory-lifecycle.png` | Preview exactly one synthetic candidate, confirm exactly one deletion, protected state unchanged during that operation, post-proof cleanup leaves zero prefix residue | **Lifecycle control is concrete: preview one feedback-superseded retention candidate, confirm one audited deletion, preserve protected memory during that operation, then perform post-proof exact-marker cleanup.** |
+| 1 | `demo/gallery/01-grounded-cross-session-recall.png` | Live hostname, grounded answer, numbered memory citations | **A fresh session recalls a bounded slice of durable pgvector memory and grounds the Qwen answer in numbered synthetic-demo evidence.** |
+| 2 | `demo/gallery/02-session-feedback-persistence.png` | Session-A correction and separately authenticated fresh Session-B cited application | **Reviewer feedback persists as cited memory that a fresh session applies; it is stored state, not training or a model-weight update.** |
+| 3 | `demo/gallery/03-read-only-field-self-audit.png` | `INV-5521`, `8400`, `8900`, recency recommendation, no secret field value | **The read-only audit keeps both synthetic cross-session values visible and recommends a policy winner without rewriting history.** |
+| 4 | `demo/gallery/04-qwen-semantic-self-audit.png` | Visible at-most-one eligible `insight` pair scope, “always pays on time” vs “chronically late”, configured model/completion provenance; token fully absent/cropped | **The bounded Qwen scan catches a meaning-level contradiction in synthetic vendor claims; the result is read-only, never an automatic edit.** |
+| 5 | `demo/gallery/05-human-resolution-control.png` | Live Defer result only; zero API call/write; Accept/Override visibly labelled unexercised | **The live frame proves Defer with zero API call and mutation. Accept/Override are tested protected actions, not claims made by this capture.** |
+| 6 | `demo/gallery/06-safe-memory-lifecycle.png` | Preview exactly one synthetic candidate, confirm exactly one deletion, protected state unchanged during that operation, post-proof cleanup leaves zero prefix residue | **Lifecycle control previews one superseded candidate, confirms one audited deletion, preserves protected memory, then clears marker residue.** |
 | 7 | `demo/gallery/07-qwen-memoryagent-architecture.png` | No-crop 3:2 wrapper of the canonical architecture | **Qwen embeddings and narration, hybrid pgvector recall, read-only self-audit and human control are separated by explicit trust boundaries.** |
+
+Every primary caption is at most 140 characters, matching the live Devpost
+server-side limit, which is not surfaced as an input `maxlength` in the editor.
 
 If the gallery has fewer slots, keep **1, 2, 3 and 7** in that order. The thumbnail
 is a separate 3:2 asset and should not consume a gallery slot.

@@ -158,7 +158,7 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
       article, architecture image, live link, repository link, and public video link
       signed out. No separate social-network post is required for this release.
 - [x] Confirm the dev.to post is public from an unauthenticated HTTP client.
-- [ ] Add the public blog/social URL to the Devpost submission for the optional bonus.
+- [x] Add the public blog/social URL to the Devpost submission for the optional bonus.
 
 **Blog URL:** <https://dev.to/efousekis/we-built-a-qwen-memoryagent-that-challenges-its-own-memory-53no>
 **Social URL:** Not used; the published dev.to article is the bonus artifact.
