@@ -18,6 +18,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "canonical-final-video.yml"
 TOOLS = ROOT / "demo" / "tools"
 sys.path.insert(0, str(TOOLS))
 import build_caption_video as caption
+import compose_real_motion_video as motion
 
 SPEC = importlib.util.spec_from_file_location("materialize_ci_evidence", TOOLS / "materialize_ci_evidence.py")
 assert SPEC is not None and SPEC.loader is not None
@@ -26,6 +27,9 @@ SPEC.loader.exec_module(evidence)
 
 
 class CanonicalFinalVideoWorkflowTests(unittest.TestCase):
+    def test_publication_audio_processing_contract_is_shared_exactly(self) -> None:
+        self.assertEqual(caption.PUBLICATION_AUDIO_PROCESSING, motion.PUBLICATION_AUDIO_PROCESSING)
+
     def test_post_capture_allowlist_is_exactly_bounded_to_known_media_workflows(self) -> None:
         for allowed in (
             ".github/workflows/demo-video.yml",
@@ -90,17 +94,22 @@ class CanonicalFinalVideoWorkflowTests(unittest.TestCase):
         self.assertNotIn("apparmor_restrict_unprivileged_userns=0", text)
         self.assertNotIn("--no-sandbox", text)
 
-    def test_workflow_orders_public_capture_build_verify_then_upload(self) -> None:
+    def test_workflow_checkpoints_public_capture_before_build_verify_and_final_upload(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         capture = text.index("Record one public live interaction pass")
+        checkpoint = text.index("Checkpoint the successful public live capture immediately")
+        reuse = text.index("Reuse one exact successful public live-capture checkpoint")
         build = text.index("Build canonical narrated real-motion final")
         verify = text.index("Independently verify final bundle")
         upload = text.index("Upload verified final-video bundle")
-        self.assertLess(capture, build)
+        self.assertLess(capture, checkpoint)
+        self.assertLess(checkpoint, build)
+        self.assertLess(reuse, build)
         self.assertLess(build, verify)
         self.assertLess(verify, upload)
         self.assertEqual(text.count("python demo/tools/record_live_motion.py \\"), 1)
         self.assertIn("python demo/tools/compose_real_motion_video.py --verify-only", text)
+        self.assertIn("canonical-live-capture-${{ github.sha }}", text)
         self.assertIn("canonical-final-video-${{ github.sha }}", text)
         for required_input in (
             ".artifacts/deploy/exact-merged-deploy-output-attempt-27.txt",
@@ -111,6 +120,21 @@ class CanonicalFinalVideoWorkflowTests(unittest.TestCase):
             ".artifacts/final-narration/memoryagent-narration.wav",
         ):
             self.assertIn(required_input, text)
+
+    def test_fresh_and_reused_capture_paths_are_exclusive_and_hash_bound(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("reuse_capture_run_id:", text)
+        self.assertIn("reuse_capture_source_sha:", text)
+        self.assertGreaterEqual(text.count("if: ${{ inputs.reuse_capture_run_id == '' }}"), 3)
+        self.assertEqual(text.count("if: ${{ inputs.reuse_capture_run_id != '' }}"), 1)
+        self.assertIn('[[ "$REUSE_CAPTURE_RUN_ID" =~ ^[0-9]+$ ]]', text)
+        self.assertIn('[[ "$REUSE_CAPTURE_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]', text)
+        self.assertIn(
+            'git merge-base --is-ancestor "$REUSE_CAPTURE_SOURCE_SHA" "$EXPECTED_SOURCE_SHA"',
+            text,
+        )
+        self.assertIn("canonical-live-capture-${{ inputs.reuse_capture_source_sha }}", text)
+        self.assertIn("run-id: ${{ inputs.reuse_capture_run_id }}", text)
 
 
 class MaterializeCiEvidenceTests(unittest.TestCase):

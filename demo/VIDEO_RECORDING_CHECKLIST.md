@@ -101,7 +101,7 @@ when all three variables are unset.
 ## Technical acceptance
 
 - [ ] `memoryagent-demo.manifest.json` reports `status: passed`, identifies
-      `caption-led-real-motion-compositor-v3-narrated-immutable-inputs`, binds the exact runtime,
+      `caption-led-real-motion-compositor-v4-narrated-gain-normalized-immutable-inputs`, binds the exact runtime,
       `CAPTURE_REVIEW`, caption-base manifest/video, narration WAV/manifest,
       live-interaction manifest/video, SRT, thumbnail and final
       output hashes, and records exactly 5,160 frames, 172 measured seconds, ten SRT
@@ -114,8 +114,10 @@ when all three variables are unset.
       before upload against every unchanged bound artifact. Static-base or
       workflow-candidate manifests do not satisfy this gate.
 - [ ] No alternate narration, workflow candidate or manually edited export is used
-      instead of the canonical real-motion final. The shipped audio is the exact
-      manifest-bound ElevenLabs narration preserved from the base AAC.
+      instead of the canonical real-motion final. The source WAV remains the exact
+      manifest-bound ElevenLabs narration; the base AAC applies only the declared,
+      deterministic `volume=-1.5dB:precision=fixed` publication gain and the final
+      preserves that base AAC byte-for-byte at the decoded-PCM boundary.
 - [ ] If the workflow source candidate is used, its permanent A/V/caption/order gate
       passed. Do not represent that source-candidate gate as validation of a changed
       exported final.
