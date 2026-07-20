@@ -11,7 +11,9 @@ these commands.
 base renderer only. The one-command real-motion builder invokes it with the hash-bound
 canonical ElevenLabs narration bundle inside a randomized, project-contained scratch
 directory before applying the SHA-bound live interaction. The bundle is generated
-once by the dedicated main-only workflow, with no retry or fallback voice.
+by the dedicated main-only workflow. It recovers the five exact successful items from
+failed run `29731821217`, synthesizes only beats 6-10, and uses no per-beat retry or
+fallback voice. Bounded deterministic PCM duration-fit is disclosed and never truncates speech.
 A directly exported static caption MP4 or its base manifest is never the publication
 candidate, even if its own encode checks pass. Supporting guides must return here for
 the production build and final acceptance.
@@ -99,8 +101,8 @@ recorder verifies the real request is byte-identical and carries `limit: 3`; the
 interaction-video bytes, caption-base manifest, ElevenLabs narration WAV and manifest,
 SRT and thumbnail. Voice id `pNInz6obpgDQGcFmaJgB`, the `eleven_multilingual_v2` model, request contract,
 decoded PCM hashes and entrant-approved commercial/publication rights are disclosed
-in the manifests. Generation uses the provider network once; no retry, fallback voice,
-music or human voice is permitted.
+in the manifests. Provider access is limited to exact history recovery plus five new
+synthesis requests; no per-beat retry, fallback voice, music or human voice is permitted.
 
 Final judge-facing artifacts:
 

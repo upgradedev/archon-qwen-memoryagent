@@ -47,7 +47,7 @@ jobs:
           python -m py_compile demo/tools/build_local_narration.py demo/tools/build_elevenlabs_narration.py
           python -m unittest demo.tests.test_elevenlabs_narration
 
-      - name: Generate exact ElevenLabs narration once
+      - name: Recover beats 1-5 and synthesize beats 6-10 once
         shell: bash
         env:
           ELEVEN_LABS_KEY: ${{ secrets.ELEVEN_LABS_KEY }}

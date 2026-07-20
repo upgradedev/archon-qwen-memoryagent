@@ -56,8 +56,10 @@ non-submission fixture only under `.artifacts/local-narration-selftest/`.
 ## 2. Generate the canonical narration bundle
 
 Production narration uses the paid ElevenLabs account through a main-only workflow.
-It makes exactly ten caption-bound requests, uses no retry or fallback voice, and
-promotes nothing unless the exact request, PCM, timing, clipping and rights gates pass:
+The completion workflow first recovers the exact first five history items from failed
+run `29731821217`, then makes exactly five new caption-bound requests for beats 6-10.
+It uses no per-beat retry or fallback voice and promotes nothing unless the exact
+history, request, PCM, timing, clipping and rights gates pass:
 
 ```powershell
 gh workflow run canonical-elevenlabs-narration.yml `
@@ -67,17 +69,14 @@ gh workflow run canonical-elevenlabs-narration.yml `
   -f commercial_rights_approved=true
 ```
 
-The tool obtains Windows PowerShell from the system directory returned by
-`GetSystemDirectoryW` and accepts only the canonical regular, non-reparse
-`WindowsPowerShell/v1.0/powershell.exe`. It never resolves an executable from the
-working directory or `PATH`.
-
 There is no implicit provider default. Production requires voice id
 `pNInz6obpgDQGcFmaJgB`, model `eleven_multilingual_v2`, PCM 24 kHz provider output,
 fixed per-beat seeds, and an explicit commercial/publication-rights approval.
-The generator speaks one complete segment per row
-of tracked [`caption-timeline.json`](./caption-timeline.json). It fails instead of
-cutting a segment that cannot fit its beat. A successful run writes only:
+The first five items must match the exact failed-run time window, text, voice, model,
+settings and output format before any new synthesis begins. The generator speaks one
+complete segment per row of tracked [`caption-timeline.json`](./caption-timeline.json)
+and deterministically duration-fits PCM only when necessary, capped at 1.35x. It never
+cuts or drops speech. A successful run writes only:
 
 - `.artifacts/final-narration/memoryagent-narration.wav`, exactly 172.000 seconds,
   48 kHz, stereo, signed 16-bit PCM;
