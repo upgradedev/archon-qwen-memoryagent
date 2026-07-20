@@ -15,7 +15,7 @@ This is a claim audit for **Track 1: MemoryAgent** only. The Autopilot entry has
 | Text description + track | [`SUBMISSION.md`](./SUBMISSION.md) and [`PROJECT_STORY.md`](./PROJECT_STORY.md) | Ready |
 | Public video under three minutes | [Public YouTube demo](https://www.youtube.com/watch?v=pvfe8ZDfMfM) plus [run 29742958323](https://github.com/upgradedev/archon-qwen-memoryagent/actions/runs/29742958323) | **Ready:** the canonical 172-second, 1080p MP4 is public with the reviewed thumbnail, exact English SRT, visible synthetic-audio disclosure and no copyright-check issues. A local MP4 is not a pass; the public URL is the submission evidence. |
 | Free/unrestricted judging access | Public no-login path plus dedicated low-privilege reviewer credential in Devpost testing instructions | Ready as instructions; entrant must verify field visibility, preview logged out, and rotate after judging |
-| Optional public blog post | [`BLOG.md`](./BLOG.md) | **Pending dev.to publication; a draft is not bonus-eligible** |
+| Optional public blog post | [Published dev.to article](https://dev.to/efousekis/we-built-a-qwen-memoryagent-that-challenges-its-own-memory-53no) from [`BLOG.md`](./BLOG.md) | **Ready:** published and verified signed out together with its architecture image, live/repository CTAs, and public video link |
 | Entrant eligibility, ownership, third-party rights | Human sign-off in [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md#5-entrant-and-rights-sign-off) | **Pending human attestation; cannot be inferred from repository automation** |
 
 ## Why it is competitive

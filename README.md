@@ -6,6 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Alibaba%20Cloud-ff6a00?logo=alibabacloud&logoColor=white)](https://memory.43.106.13.19.sslip.io)
 [![Demo Video](https://img.shields.io/badge/Demo%20Video-2%3A53%20on%20YouTube-red?logo=youtube)](https://www.youtube.com/watch?v=pvfe8ZDfMfM)
+[![Build Journey](https://img.shields.io/badge/Build%20Journey-dev.to-0A0A0A?logo=devdotto)](https://dev.to/efousekis/we-built-a-qwen%2Dmemoryagent-that-challenges-its-own-memory-53no)
 [![Project Story](https://img.shields.io/badge/Project%20Story-Devpost-003e54)](demo/SUBMISSION.md)
 
 **Documentation map:** judges can start with the
