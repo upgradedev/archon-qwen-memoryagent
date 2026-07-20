@@ -35,7 +35,7 @@ $env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
 $env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
 
 python -m py_compile demo/tools/record_live_motion.py demo/tools/compose_real_motion_video.py demo/tools/build_real_motion_submission.py
-python demo/tools/build_local_narration.py --self-test
+python demo/tools/build_local_narration.py --self-test --rate 1
 python demo/tools/record_live_motion.py --self-test
 python demo/tools/compose_real_motion_video.py --self-test
 ```
