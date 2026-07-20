@@ -217,6 +217,17 @@ class LiveMotionRecorderTests(unittest.TestCase):
         with self.assertRaisesRegex(recorder.CaptureError, "exactly one hard link"):
             recorder.project_path(original, "evidence", exists=True)
 
+    def test_owned_path_rejects_changed_bytes_even_when_filesystem_identity_is_stable(self) -> None:
+        path = self.root / "owned.bin"
+        path.write_bytes(b"original-owned-bytes")
+        owner = recorder.OwnedPath.capture(path, "owned fixture")
+        before = path.stat()
+        path.write_bytes(b"replaced-owned-bytes")
+        after = path.stat()
+        self.assertEqual((before.st_dev, before.st_ino), (after.st_dev, after.st_ino))
+        self.assertEqual(len(b"original-owned-bytes"), len(b"replaced-owned-bytes"))
+        self.assertFalse(owner.still_owned())
+
     def test_symlink_alias_is_rejected_when_supported(self) -> None:
         original = self.root / "evidence.json"
         alias = self.root / "alias.json"
