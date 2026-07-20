@@ -23,8 +23,8 @@ unrelated provider-compatible proxy.
 ## Runtime provenance — exact current source deployed
 
 Exact MemoryAgent runtime source
-[`cfd485de1dd01473c8d6be91521e5560d8e8313e`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/cfd485de1dd01473c8d6be91521e5560d8e8313e)
-is live-verified from project-contained exact-deploy attempt 26 on 2026-07-18. The
+[`0910ab7fe03631321d37e73002054ae7bb740c49`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/0910ab7fe03631321d37e73002054ae7bb740c49)
+is live-verified from project-contained exact-deploy attempt 27 on 2026-07-20. The
 controller verified immutable checkout, pinned image build, schema/grants, the
 non-superuser runtime role, cross-application denial, real-Qwen health/readiness, a
 grounded recall round trip, zero-residue cleanup and public HTTPS. Its retained

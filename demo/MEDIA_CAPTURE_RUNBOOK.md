@@ -168,14 +168,14 @@ hash, dimensions, crop and masks in a separate review. Never bypass the hash che
 
 ## One final command
 
-Run from the repository root with the exact runtime and attempt-26 evidence currently
+Run from the repository root with the exact runtime and attempt-27 evidence currently
 locked by `DEPLOY_STATE.md`:
 
 ```bash
 python scripts/capture_submission_gallery.py \
-  --expected-sha cfd485de1dd01473c8d6be91521e5560d8e8313e \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-26.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-26.json \
+  --expected-sha 0910ab7fe03631321d37e73002054ae7bb740c49 \
+  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-27.txt \
+  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-27.json \
   --reviewer-credential-json .artifacts/devpost/memory-reviewer-credential.json \
   --alibaba-raw demo/private-originals/alibaba-ecs-overview-raw.png \
   --caption-windows .artifacts/final-caption-video/caption_windows.json
