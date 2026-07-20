@@ -48,7 +48,7 @@ $env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE
 
 python -m py_compile demo/tools/build_local_narration.py demo/tools/build_elevenlabs_narration.py demo/tools/build_caption_video.py
 python -m unittest discover -s demo/tests -p 'test_caption_video_builder.py' -v
-python demo/tools/build_local_narration.py --self-test
+python demo/tools/build_local_narration.py --self-test --rate 1
 # Production narration uses voice pNInz6obpgDQGcFmaJgB with
 # eleven_multilingual_v2. Beats 1-5 are recovered from failed run 29731821217;
 # the workflow synthesizes only beats 6-10, then downloads the verified bundle

@@ -4,8 +4,9 @@ Updated: **2026-07-20**. This is the authoritative hardened live-release contrac
 
 <!-- MEMORYAGENT_DEPLOY_STATE_V1 status=LIVE_VERIFIED_READY runtime_sha=0910ab7fe03631321d37e73002054ae7bb740c49 -->
 
-> **Status: EXACT DEPLOYED — runtime release gate is GREEN; final media capture is pending.**
+> **Status: EXACT DEPLOYED — runtime release gate is GREEN; the canonical 172-second YouTube publication is complete.**
 > <https://memory.43.106.13.19.sslip.io>
+> Public canonical demo: <https://www.youtube.com/watch?v=pvfe8ZDfMfM>.
 >
 > Exact deployed runtime source:
 > [`0910ab7fe03631321d37e73002054ae7bb740c49`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/0910ab7fe03631321d37e73002054ae7bb740c49)
@@ -71,15 +72,27 @@ Updated: **2026-07-20**. This is the authoritative hardened live-release contrac
 > `cc2edc3d932f97ec5c3683096db5467d3854674b` and changed only the reviewed
 > capture-specific PNG metadata fix in `scripts/capture_submission_gallery.py`; it
 > is not packaged into the deployed service. After `0910ab7…`,
-> permitted submission-pack paths are `README.md`, `SECURITY.md`, `deploy/DEPLOY_STATE.md`,
+> a read-only runtime-provenance audit through public `origin/main`
+> [`2306af176e8bdb6cb8801ad14c86869649354ca7`](https://github.com/upgradedev/archon-qwen-memoryagent/commit/2306af176e8bdb6cb8801ad14c86869649354ca7)
+> confirmed that every later changed path remains inside the reviewed non-runtime
+> allowlist below. The exact deployed runtime remains `0910ab7…`; this review did
+> not require or perform a redeploy.
+>
+> Permitted submission-pack paths are `README.md`, `SECURITY.md`, `deploy/DEPLOY_STATE.md`,
 > `demo/**`, `docs/**`, `.github/workflows/demo-video.yml`,
+> `.github/workflows/canonical-elevenlabs-narration.yml`,
+> `.github/workflows/canonical-final-video.yml`,
 > `scripts/capture_live.sh`, `scripts/captions.txt`, and
 > `scripts/capture_submission_gallery.py`, `scripts/capture_web.py`, and the exact
-> CI-only path `tests/docs/docs-consistency.test.ts`. The two capture scripts are
+> CI-only paths `tests/docs/docs-consistency.test.ts` and
+> `tests/docs/supply-chain-consistency.test.ts`. The two capture scripts are
 > **review-only, non-runtime capture tooling**: they run from the operator checkout
 > and are not copied into the final runtime image or executed by the deployed service.
-> The docs-consistency test is likewise never packaged into production. None changes
-> the exact runtime-source claim. Before capture, verify that
+> The two canonical media workflows generate and verify narration/video artifacts;
+> they do not deploy the application. The two docs/supply-chain tests are likewise
+> never packaged into production. None changes
+> the exact runtime-source claim. Before treating any later commit as another
+> non-runtime descendant, verify that
 > `0910ab7…` is an ancestor of `origin/main` and inspect every later changed path.
 > Any new path outside that allowlist—or any application, dependency, schema,
 > container, runtime/deployment-workflow or deploy-script delta—requires review and,
@@ -133,7 +146,7 @@ The live Alibaba security group exposes `80` only for HTTP redirect/ACME and `44
 - `JUDGE_API_KEY` + `JUDGE_TENANT_ID`, or `JUDGE_API_KEYS_JSON`, map credentials to tenants on the server. Request bodies cannot select another tenant.
 - The fixed `/demo/seed` and public-tenant read path remain judge-accessible without login. Public seed and recall are quota-bounded.
 - `/ingest`, `/ingest/invoice`, `/ingest/documents`, `/feedback`, `/consistency/semantic`, `/consolidate`, and `/forget` are protected. Lifecycle routes preview by default and require `confirm=true` before mutation.
-- The Explorer's password-type **Judge token** field is only for the dedicated low-privilege judging credential supplied through Devpost testing instructions. Verify field visibility rather than assuming privacy; never commit, log, screenshot, or intentionally publish it, and rotate/revoke it after judging.
+- The Explorer's password-type **Reviewer token (protected audit/feedback)** field is only for the dedicated low-privilege judging credential supplied through Devpost testing instructions. Verify field visibility rather than assuming privacy; never commit, log, screenshot, or intentionally publish it, and rotate/revoke it after judging.
 - Streamable HTTP MCP is separately fail-closed authenticated; stdio is the local trusted transport.
 
 ### Provider-call and runtime containment
