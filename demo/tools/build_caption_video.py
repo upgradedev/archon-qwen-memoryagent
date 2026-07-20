@@ -67,6 +67,10 @@ STRICT_LIMIT_SECONDS = 175
 EXPECTED_TOTAL_SECONDS = 172
 PUBLICATION_NARRATION_GAIN_DB = -1.5
 PUBLICATION_NARRATION_FILTER = "volume=-1.5dB:precision=fixed"
+PUBLICATION_AUDIO_SAMPLE_RATE = 48_000
+PUBLICATION_AUDIO_CHANNELS = 2
+PUBLICATION_ACTIVE_SAMPLE_THRESHOLD = 256
+PUBLICATION_CLIPPING_SAMPLE_THRESHOLD = 32_760
 PUBLICATION_AUDIO_PROCESSING = {
     "filter": PUBLICATION_NARRATION_FILTER,
     "gainDb": PUBLICATION_NARRATION_GAIN_DB,
@@ -1401,7 +1405,11 @@ def encode_video(
 def decoded_audio_signal(path: Path) -> dict[str, int | float]:
     with trusted_invocation("ffmpeg") as ffmpeg:
         process = subprocess.Popen(
-            [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(path), "-map", "0:a:0", "-f", "s16le", "-acodec", "pcm_s16le", "-"],
+            [
+                ffmpeg, "-nostdin", "-v", "error", "-i", str(path), "-map", "0:a:0", "-vn",
+                "-ac", str(PUBLICATION_AUDIO_CHANNELS), "-ar", str(PUBLICATION_AUDIO_SAMPLE_RATE),
+                "-f", "s16le", "-",
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -1429,16 +1437,20 @@ def decoded_audio_signal(path: Path) -> dict[str, int | float]:
                 peak = max(peak, abs(min(samples)), abs(max(samples)))
                 square_sum += sum(int(sample) * int(sample) for sample in samples)
                 sample_count += len(samples)
-                active_samples += sum(1 for sample in samples if abs(sample) >= 64)
-                clipped_samples += sum(1 for sample in samples if abs(sample) >= 32_767)
+                active_samples += sum(
+                    1 for sample in samples if abs(sample) >= PUBLICATION_ACTIVE_SAMPLE_THRESHOLD
+                )
+                clipped_samples += sum(
+                    1 for sample in samples if abs(sample) >= PUBLICATION_CLIPPING_SAMPLE_THRESHOLD
+                )
         stderr = process.stderr.read() if process.stderr is not None else b""
         return_code = process.wait()
     require(return_code == 0 and not remainder, f"narration verification failed (exit {return_code})")
     require(not stderr and sample_count > 0, "narration verification emitted an ffmpeg error or no samples")
     return {
         "peakS16": peak,
-        "rmsS16": round(math.sqrt(square_sum / sample_count), 6),
-        "activeSampleRatio": round(active_samples / sample_count, 9),
+        "rmsS16": round(math.sqrt(square_sum / sample_count), 3),
+        "activeSampleRatio": round(active_samples / sample_count, 6),
         "clippedSamples": clipped_samples,
         "sampleCount": sample_count,
         "pcmSha256": pcm_digest.hexdigest(),
@@ -1485,7 +1497,11 @@ def probe_video(path: Path, expected_seconds: int) -> dict[str, Any]:
     require(int(signal["peakS16"]) >= 128, "encoded narration audio is silent or too close to silence")
     require(float(signal["rmsS16"]) >= 5.0, "encoded narration audio has no meaningful signal")
     require(float(signal["activeSampleRatio"]) >= 0.0002, "encoded narration audio contains too little non-silent audio")
-    require(int(signal["clippedSamples"]) == 0 and int(signal["peakS16"]) < 32_767, "encoded narration audio contains clipping")
+    require(
+        int(signal["clippedSamples"]) == 0
+        and int(signal["peakS16"]) < PUBLICATION_CLIPPING_SAMPLE_THRESHOLD,
+        "encoded narration audio contains clipping",
+    )
     return {
         "durationSeconds": duration,
         "frameCount": frame_count,
