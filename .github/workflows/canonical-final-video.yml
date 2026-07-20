@@ -178,6 +178,50 @@ jobs:
           git diff --exit-code
           test -z "$(git ls-files demo/private-originals .artifacts)"
 
+      - name: Allow user namespaces only for the exact Playwright Chromium binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t browsers < <(
+            find "$HOME/.cache/ms-playwright" \
+              -type f \
+              -path '*/chrome-headless-shell-linux64/chrome-headless-shell' \
+              -print
+          )
+          test "${#browsers[@]}" -eq 1
+          browser="${browsers[0]}"
+          [[ "$browser" =~ ^/home/runner/\.cache/ms-playwright/chromium_headless_shell-[0-9]+/chrome-headless-shell-linux64/chrome-headless-shell$ ]]
+          test -x "$browser"
+          test ! -L "$browser"
+          command -v apparmor_parser >/dev/null
+          profile="$RUNNER_TEMP/memoryagent-playwright-chromium.apparmor"
+          {
+            printf '%s\n' 'abi <abi/4.0>,'
+            printf '%s\n' 'include <tunables/global>'
+            printf 'profile memoryagent-playwright-chromium %s flags=(unconfined) {\n' "$browser"
+            printf '%s\n' '  userns,'
+            printf '%s\n' '}'
+          } > "$profile"
+          sudo install \
+            --owner=root \
+            --group=root \
+            --mode=0644 \
+            "$profile" \
+            /etc/apparmor.d/memoryagent-playwright-chromium
+          sudo apparmor_parser \
+            --replace \
+            /etc/apparmor.d/memoryagent-playwright-chromium
+          python - <<'PY'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as playwright:
+              browser = playwright.chromium.launch(
+                  headless=True,
+                  chromium_sandbox=True,
+              )
+              browser.close()
+          print('Chromium sandbox smoke test: PASS')
+          PY
+
       - name: Record one public live interaction pass
         shell: bash
         run: |
