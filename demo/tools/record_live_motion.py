@@ -106,47 +106,119 @@ class TrustedExecutable:
 
 @dataclass(frozen=True)
 class OwnedPath:
-    """Filesystem identity owned by this promotion transaction."""
+    """Filesystem and content identity owned by this promotion transaction."""
 
     path: Path
     device: int
     inode: int
     mode_type: int
+    size: int
+    sha256: str
 
     @classmethod
     def capture(cls, path: Path, label: str) -> "OwnedPath":
+        descriptor = -1
         try:
-            metadata = path.lstat()
+            before_path = path.lstat()
         except OSError as exc:
             raise CaptureError(f"{label} disappeared while its identity was captured") from exc
         require(
-            stat.S_ISREG(metadata.st_mode) and not _is_symlink_or_reparse(metadata),
+            stat.S_ISREG(before_path.st_mode) and not _is_symlink_or_reparse(before_path),
             f"{label} must be a non-reparse regular file",
         )
-        return cls(path, metadata.st_dev, metadata.st_ino, stat.S_IFMT(metadata.st_mode))
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(path, flags)
+            before_fd = os.fstat(descriptor)
+            require(
+                stat.S_ISREG(before_fd.st_mode) and _same_file_identity(before_path, before_fd),
+                f"{label} changed before its content identity could be captured",
+            )
+            digest = hashlib.sha256()
+            size = 0
+            while True:
+                block = os.read(descriptor, 1024 * 1024)
+                if not block:
+                    break
+                digest.update(block)
+                size += len(block)
+            after_fd = os.fstat(descriptor)
+            after_path = path.lstat()
+        except OSError as exc:
+            raise CaptureError(f"{label} could not be read while its identity was captured") from exc
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        require(
+            _same_file_identity(before_path, before_fd)
+            and _same_file_identity(before_fd, after_fd)
+            and _same_file_identity(after_fd, after_path)
+            and before_fd.st_size == after_fd.st_size == size,
+            f"{label} changed while its content identity was captured",
+        )
+        return cls(
+            path,
+            after_fd.st_dev,
+            after_fd.st_ino,
+            stat.S_IFMT(after_fd.st_mode),
+            size,
+            digest.hexdigest(),
+        )
 
     def still_owned(self) -> bool:
+        descriptor = -1
         try:
-            metadata = self.path.lstat()
+            before_path = self.path.lstat()
+            if (
+                not stat.S_ISREG(before_path.st_mode)
+                or _is_symlink_or_reparse(before_path)
+                or (before_path.st_dev, before_path.st_ino, stat.S_IFMT(before_path.st_mode))
+                != (self.device, self.inode, self.mode_type)
+            ):
+                return False
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(self.path, flags)
+            before_fd = os.fstat(descriptor)
+            if not stat.S_ISREG(before_fd.st_mode) or not _same_file_identity(before_path, before_fd):
+                return False
+            digest = hashlib.sha256()
+            size = 0
+            while True:
+                block = os.read(descriptor, 1024 * 1024)
+                if not block:
+                    break
+                digest.update(block)
+                size += len(block)
+            after_fd = os.fstat(descriptor)
+            after_path = self.path.lstat()
         except FileNotFoundError:
             return False
         except OSError:
             return False
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
         return (
-            metadata.st_dev,
-            metadata.st_ino,
-            stat.S_IFMT(metadata.st_mode),
-        ) == (self.device, self.inode, self.mode_type)
+            _same_file_identity(before_path, before_fd)
+            and _same_file_identity(before_fd, after_fd)
+            and _same_file_identity(after_fd, after_path)
+            and before_fd.st_size == after_fd.st_size == size == self.size
+            and digest.hexdigest() == self.sha256
+        )
 
     def same_identity(self, other: "OwnedPath") -> bool:
         return (
             self.device,
             self.inode,
             self.mode_type,
+            self.size,
+            self.sha256,
         ) == (
             other.device,
             other.inode,
             other.mode_type,
+            other.size,
+            other.sha256,
         )
 
 
@@ -826,7 +898,7 @@ def _move_to_unique_recovery(source: Path, kind: str) -> OwnedPath:
         stat.S_ISREG(metadata.st_mode) and not _is_symlink_or_reparse(metadata),
         f"recorder {kind} source must be a non-reparse regular file",
     )
-    source_owner = OwnedPath(source, metadata.st_dev, metadata.st_ino, stat.S_IFMT(metadata.st_mode))
+    source_owner = OwnedPath.capture(source, f"recorder {kind} source")
     for _attempt in range(64):
         recovery = source.parent / f".{source.name}.{uuid.uuid4().hex}.{kind}"
         try:
@@ -838,6 +910,8 @@ def _move_to_unique_recovery(source: Path, kind: str) -> OwnedPath:
             source_owner.device,
             source_owner.inode,
             source_owner.mode_type,
+            source_owner.size,
+            source_owner.sha256,
         )
         try:
             require(
@@ -906,6 +980,8 @@ def promote_recorder_bundle(
                 source_owner.device,
                 source_owner.inode,
                 source_owner.mode_type,
+                source_owner.size,
+                source_owner.sha256,
             )
             promoted[destination] = expected_owner
             require(
