@@ -10,7 +10,7 @@
 [![Demo Video](https://img.shields.io/badge/Demo%20Video-2%3A53%20on%20YouTube-red?logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=pvfe8ZDfMfM)
 [![Tests](https://img.shields.io/badge/Tests-full%20pyramid%20CI--gated-brightgreen)](.github/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/Coverage-%E2%89%A580%25%20four--metric%20gate-brightgreen)](.github/workflows/ci.yml)
-[![Build Journey](https://img.shields.io/badge/Build%20Journey-dev.to-0A0A0A?logo=devdotto)](https://dev.to/efousekis/we-built-a-qwen-memoryagent-that-challenges-its-own-memory-53no)
+[![Build Journey](https://img.shields.io/badge/Build%20Journey-dev.to-0A0A0A?logo=devdotto)](https://dev.to/efousekis/we-built-a-qwen%2Dmemoryagent-that-challenges-its-own-memory-53no)
 [![Devpost](https://img.shields.io/badge/Devpost-Submitted-003E54?logo=devpost&logoColor=white)](https://devpost.com/software/archon-memoryagent-self-auditing-memory-for-ai-agents)
 
 **Documentation map:** judges can start with the
