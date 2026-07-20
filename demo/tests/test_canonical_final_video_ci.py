@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "canonical-final-video.yml"
 TOOLS = ROOT / "demo" / "tools"
 sys.path.insert(0, str(TOOLS))
+import build_caption_video as caption
+
 SPEC = importlib.util.spec_from_file_location("materialize_ci_evidence", TOOLS / "materialize_ci_evidence.py")
 assert SPEC is not None and SPEC.loader is not None
 evidence = importlib.util.module_from_spec(SPEC)
@@ -24,6 +26,16 @@ SPEC.loader.exec_module(evidence)
 
 
 class CanonicalFinalVideoWorkflowTests(unittest.TestCase):
+    def test_post_capture_allowlist_is_exactly_bounded_to_known_media_workflows(self) -> None:
+        for allowed in (
+            ".github/workflows/demo-video.yml",
+            ".github/workflows/canonical-elevenlabs-narration.yml",
+            ".github/workflows/canonical-final-video.yml",
+        ):
+            self.assertTrue(caption.allowed_submission_path(allowed))
+        self.assertFalse(caption.allowed_submission_path(".github/workflows/unreviewed.yml"))
+        self.assertFalse(caption.allowed_submission_path(".github/workflows/canonical-final-video.yaml"))
+
     def test_workflow_is_main_only_hash_pinned_and_has_read_only_permissions(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("test \"$GITHUB_REF\" = 'refs/heads/main'", text)
