@@ -50,11 +50,23 @@ complete these attestations for the entrant.
 - [ ] Music is omitted or owned/licensed for public competition and promotional use;
   a streaming-platform library track is not assumed portable.
 - [ ] For the canonical real-motion build in
-  [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md), the final manifest `rightsProfile`
-  confirms `voice=false`, `tts=false`, `thirdPartyMusic=false` and locally generated
-  digital silence; the passed QA record independently reports no TTS or music. Both
-  bind only SHA-reviewed project visuals and live interaction. No external font file
-  is copied or embedded; Pillow's bundled default is rasterized into the frames.
+      [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md), the final manifest `rightsProfile`
+  confirms `voice=true`, `humanVoice=false`, `syntheticVoice=true`, `tts=true`,
+  `syntheticVoiceDisclosure=true`, `thirdPartyMusic=false`, `thirdPartyAudio=false`
+  and locally generated Windows System.Speech narration. The passed QA record
+  independently proves meaningful decoded signal, zero clipped samples, EBU R128
+  loudness, true-peak headroom and exact base-to-final normalized PCM preservation.
+  Both bind only SHA-reviewed project
+  visuals and live interaction. No external font file is copied or embedded;
+  Pillow's bundled default is rasterized into the frames.
+- [ ] The canonical Microsoft Zira Desktop Windows System.Speech voice, culture and
+      gender match the narration manifest; generation was local with no network
+      service. The authorized entrant has reviewed the applicable Microsoft/OS and voice terms
+      for public competition and promotional use, and accepts the explicit synthetic
+      voice disclosure in the public description.
+- [ ] Before any public upload, the user has explicitly confirmed that narration
+      generated with Microsoft Zira Desktop may be used and publicly published for
+      this release. Earlier approval of visuals or a different release does not count.
 - [ ] Every human voice/likeness has a release covering the organizer's stated
   judging and promotional use. If synthetic speech is used, both the selected
   service/voice and any fallback path permit publication and promotional reuse.

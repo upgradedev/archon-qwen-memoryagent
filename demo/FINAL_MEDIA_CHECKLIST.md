@@ -27,13 +27,12 @@ August 11, 2026 at 2:00 PM PDT.
       intercepted request is exactly
       `{"company":"Northwind Trading","kind":"insight","maxPairs":1}`.
 - [ ] Browser console is clean and the final repository changes are pushed to `main`.
-- [ ] [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-      `cfd485de1dd01473c8d6be91521e5560d8e8313e` as exact-deployed and
-      live-verified by attempt 26 under the reviewed
-      `terminal-success-truncated-output` mode. Do not check the
-      box from `/health` or `/ready` alone, and redeploy after any later runtime delta.
-- [ ] `git merge-base --is-ancestor cfd485de1dd01473c8d6be91521e5560d8e8313e origin/main` passes, then
-      `git diff --name-only cfd485de1dd01473c8d6be91521e5560d8e8313e..origin/main`
+- [ ] [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records one exact
+      `<FINAL_RUNTIME_SHA>` as deployed and live-verified with its retained
+      controller evidence. Do not check the box from `/health` or `/ready` alone,
+      and redeploy after any later runtime delta.
+- [ ] `git merge-base --is-ancestor <FINAL_RUNTIME_SHA> origin/main` passes, then
+      `git diff --name-only <FINAL_RUNTIME_SHA>..origin/main`
       contains only the post-candidate submission-pack allowlist recorded in
       [`DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). Any new runtime-affecting path
       requires review and redeployment.
@@ -49,8 +48,9 @@ Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use 
 Follow the canonical [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md), run the operational
 [`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md), and build the only
 publication candidate through
-[`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). Its no-TTS, caption-led final adds
-SHA-bound genuine browser motion and must finish with a passed real-motion manifest,
+[`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). Its disclosed local
+Windows System.Speech narration, burned captions and SHA-bound genuine browser motion
+must finish with a passed real-motion manifest,
 passed QA record, and independent `--verify-only`. [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md)
 documents only the deterministic static base; [`BUILD_RECORDING.md`](./BUILD_RECORDING.md)
 retains optional source-footage procedures. After final mux/inspection, use the
@@ -77,12 +77,13 @@ upload metadata but does not authorize publication.
 ### Video quality gate
 
 - [ ] Final file is strictly under 175 seconds and 1080p or better.
-- [ ] Use the canonical caption-led real-motion path: no voice, no TTS, no third-party
-      music, generated digital silence, burned English captions, SHA-bound genuine
-      browser interaction, and green final real-motion manifest + QA records. The
-      optional narrated workflow candidate is not an input or substitute for this
-      final. Run it separately only when both ElevenLabs and edge-tts publication-rights
-      attestations are independently true; otherwise do not run the synthesizer.
+- [ ] Use the canonical narrated real-motion path: disclosed, locally generated
+      Windows System.Speech synthetic voice; no human voice, music, third-party audio,
+      network speech service, or captured microphone/system audio; burned English
+      captions; SHA-bound genuine browser interaction; and green final real-motion
+      manifest + QA records. Keep the narration WAV and manifest under
+      `.artifacts/final-narration/`; both must remain hash-bound and receive the
+      required human voice-rights attestations and publication-rights review.
 - [ ] Immediately before upload, run
       `python demo/tools/compose_real_motion_video.py --verify-only` and require PASS
       against the unchanged MP4, SRT, thumbnail,
@@ -94,8 +95,9 @@ upload metadata but does not authorize publication.
 - [ ] No API key, reviewer token, Authorization header, shell history secret, email, or cloud credential is visible in any frame, thumbnail, caption, or description. Clear the **Reviewer token (protected audit/feedback)** field before any beauty shot.
 - [ ] Claims match [`../docs/CLAIM_EVIDENCE_MATRIX.md`](../docs/CLAIM_EVIDENCE_MATRIX.md).
 - [ ] The description includes live URL, public repo, Track 1, and architecture/code-proof links.
-- [ ] Test the public URL in an incognito window with audio enabled. For the canonical
-      build, confirm the generated-silence track remains silent and captions are on.
+- [ ] Test the public URL in an incognito window with audio enabled. Confirm the
+      disclosed narration is audible, unclipped and synchronized. Repeat muted with
+      captions on to prove that every beat remains understandable without audio.
 
 **Public video URL:** `____________________________________________`
 

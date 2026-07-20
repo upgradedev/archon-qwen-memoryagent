@@ -2,20 +2,18 @@
 
 Target **2:45–2:52**. Hard publication limit: **strictly below 175 seconds**, leaving
 margin below the official `<3:00` rule. This file is the canonical final editorial
-and claim-boundary script. The only canonical rights-safe final is the 172-second,
-no-voice real-motion build in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md);
+and claim-boundary script. The only canonical rights-disclosed final is the 172-second,
+narrated real-motion build in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md);
 [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) supplies only its intermediate
-static base and exact burned captions. The optional
+static base, exact burned captions, and hash-bound local narration. The optional
 authenticated renderer speaks
 [`../docs/narration.txt`](../docs/narration.txt) and produces useful live source
 footage, but its assembled MP4 is only a candidate: it does not replace the exact-SHA,
 architecture, evidence, and Alibaba proof beats required below.
 
 Record only while [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-the final verified 40-character source SHA. Current exact runtime source `cfd485de…`
-is live-verified from project-contained exact-deploy attempt 26 under the reviewed
-`terminal-success-truncated-output` mode; final media must bind its retained
-controller status/output and SHA, not infer source from endpoint health. A later
+the final verified 40-character source SHA. Final media must bind that SHA and its
+retained controller status/output, not infer source from endpoint health. A later
 repository HEAD is acceptable only when every change stays inside the stated
 submission-pack allowlist; any runtime-affecting delta requires another exact deploy.
 
@@ -32,11 +30,14 @@ submission-pack allowlist; any runtime-affecting delta requires another exact de
 | 9 · Evidence, not hype | 2:22–2:42 | One clean evidence card | Field **5/5, 0 FP**; policy **4/4**; deterministic semantic **90% recall, 100% precision, 0 FP**; MRR **0.883→0.911**, Recall@3 **90.0%→96.7%**. Keep fixture labels visible; do not show historical dirty-tree v1.1 as release evidence. |
 | 10 · Alibaba + close | 2:42–2:52 | Sanitized ECS/container proof, then repo/MIT/live end card | Active topology is Alibaba ECS + self-hosted pgvector. Close on the portable, working product; keep Function Compute/RDS alternative-only. |
 
-## Optional narration script for a noncanonical source candidate
+## Canonical narration and optional source candidate
 
-This is not an alternative publication route under the current real-motion contract.
-Use it only if a rights-cleared narrated source candidate is deliberately generated
-for internal review. Read it at a
+The canonical spoken copy is the exact ten-beat contract in
+[`caption-timeline.json`](./caption-timeline.json). The local Windows System.Speech
+generator speaks those same lines and the production gate binds their hashes to the
+WAV, base MP4, final MP4, and measured SRT. The longer text below is only an editorial
+reference for an optional authenticated source-footage candidate. It is not an
+alternative publication route. If used internally, read it at a
 measured **137–140 words per minute**. Make a scratch recording
 before editing and require `ffprobe` duration **≤168 seconds**; this is the real timing
 gate, not a word-count estimate. Pause briefly on architecture, contradiction, and
@@ -93,9 +94,9 @@ never remove a claim caveat.
 
 - Use [`../docs/narration.txt`](../docs/narration.txt) verbatim only for the automated
   source-footage candidate. It cannot replace or be manually spliced into the
-  canonical real-motion final, which uses the exact captions encoded by the static
-  base renderer and generated digital silence. Any separately retained human voice
-  must preserve every claim boundary and caveat.
+  canonical real-motion final, which uses the exact tracked captions and the
+  hash-bound local narration. Any separately retained voice must preserve every
+  claim boundary and caveat.
 - The automated live transcript is generated from real responses by
   [`../scripts/capture_live.sh`](../scripts/capture_live.sh); never replace its
   answers, scores, model ids, or contradiction result with hand-authored values.

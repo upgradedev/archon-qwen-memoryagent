@@ -91,10 +91,10 @@ models and readiness.
 
 ## Dependencies
 
-Reuse the already-installed Python 3.11, Pillow, Playwright/Chromium and ffmpeg
-environment when available. Do not create a duplicate browser cache or virtual
-environment merely for this gate. Only when a dependency is missing, install the
-repository's hash-locked media environment:
+Reuse the already-installed Python 3.11, Pillow, Playwright/Chromium and the reviewed
+ffmpeg/ffprobe installation when available. Do not create a duplicate browser cache,
+virtual environment, or media-tool installation merely for this gate. Only when a
+dependency is missing, install the repository's hash-locked media environment:
 
 ```bash
 python -m pip install --require-hashes -r requirements/video-demo.lock
@@ -104,6 +104,22 @@ python scripts/capture_submission_gallery.py --self-test
 
 The self-test writes only ignored fixtures under `.artifacts/`. It never contacts
 the live service and never creates judge-facing evidence.
+
+This capture gate prepares the reviewed inputs for the downstream production video
+tools. Before running the caption builder, live recorder, one-command real-motion
+builder, or compositor verification, replace these placeholders with absolute
+executable paths reviewed for this release:
+
+```powershell
+$env:MEMORYAGENT_GIT_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_GIT_EXECUTABLE>'
+$env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
+$env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
+```
+
+ffmpeg and ffprobe must be siblings from the same reviewed toolchain directory.
+Those production tools bind and recheck the configured file identities and SHA-256
+values; they never discover a production executable from the working directory or
+`PATH`. Narrow PATH discovery is self-test-only when all three variables are unset.
 
 At startup the gate removes only its known legacy generated filenames and prior
 capture `runs/`; canonical Alibaba sources, other private inputs, and retained
@@ -194,7 +210,9 @@ After this gate passes and a human approves every final, follow the only canonic
 publication pipeline in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). Its
 one-command builder invokes the static caption renderer only as an ignored scratch
 base, adds SHA-bound genuine browser interaction, and produces the required final
-manifest + QA. Upload remains blocked until the independent `--verify-only` pass.
+manifest + QA. Keep the three pre-reviewed executable variables above set for its
+recorder, build, and independent `--verify-only` commands. Upload remains blocked
+until that verification passes.
 
 ## Deterministic outputs
 
@@ -237,9 +255,9 @@ rights attestation.
 
 After a green run:
 
-```bash
-git status --ignored --short demo/
-git ls-files demo/private-originals/
+```powershell
+& $env:MEMORYAGENT_GIT_EXECUTABLE status --ignored --short demo/
+& $env:MEMORYAGENT_GIT_EXECUTABLE ls-files demo/private-originals/
 ```
 
 The second command must print nothing. Open every 3:2 final at 100% and thumbnail

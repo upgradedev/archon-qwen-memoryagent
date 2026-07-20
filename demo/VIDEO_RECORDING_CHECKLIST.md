@@ -4,6 +4,21 @@ Use this after the repository and live release gates are green. It is intentiona
 video-specific; the screenshots, posts, and Devpost fields remain in
 [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md).
 
+Before any local production media command, replace these placeholders with absolute
+Git, ffmpeg, and ffprobe executable paths that were reviewed for this release:
+
+```powershell
+$env:MEMORYAGENT_GIT_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_GIT_EXECUTABLE>'
+$env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
+$env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
+```
+
+ffmpeg and ffprobe must be siblings from the same reviewed toolchain directory.
+The production pipeline requires all three pinned values. Its live recording, build,
+and `--verify-only` commands never discover executables from the working directory or
+`PATH`. PATH discovery is reserved for explicitly labelled non-submission self-tests
+when all three variables are unset.
+
 ## Before capture
 
 - [ ] Read the [official rules](https://qwencloud-hackathon.devpost.com/rules);
@@ -11,12 +26,12 @@ video-specific; the screenshots, posts, and Devpost fields remain in
       hosted on YouTube, Vimeo, or Youku.
 - [ ] Confirm `origin/main` is the intended submission source and
       [`../deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md) records
-      `cfd485de1dd01473c8d6be91521e5560d8e8313e` as exact-deployed and
-      live-verified under the reviewed `terminal-success-truncated-output` mode.
+      one exact `<FINAL_RUNTIME_SHA>` as deployed and live-verified with its
+      retained controller evidence.
       Endpoint health alone is insufficient evidence. A later
       runtime-affecting commit is a hard stop until another exact deployment.
-- [ ] Confirm `cfd485de1dd01473c8d6be91521e5560d8e8313e` is an ancestor of `origin/main`, then inspect
-      `git diff --name-only cfd485de1dd01473c8d6be91521e5560d8e8313e..origin/main`.
+- [ ] Confirm `<FINAL_RUNTIME_SHA>` is an ancestor of `origin/main`, then inspect with
+      `& $env:MEMORYAGENT_GIT_EXECUTABLE diff --name-only <FINAL_RUNTIME_SHA>..origin/main`.
       Every later path must remain within the explicit submission-pack allowlist in
       `DEPLOY_STATE.md`; any new runtime-affecting delta requires another redeploy.
 - [ ] Exercise selected-company P&L in the live Explorer and confirm its request and
@@ -32,14 +47,17 @@ video-specific; the screenshots, posts, and Devpost fields remain in
 - [ ] Use a clean browser profile at 1440×900 or larger, 100% zoom, no personal tabs,
       bookmarks, password-manager popups, extensions, notifications, or account avatar.
 - [ ] Use the only canonical publication pipeline in
-      [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md): caption-led, generated digital
-      silence, no voice/TTS/music, plus SHA-bound genuine browser interaction.
+      [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md): burned captions, disclosed
+      local Windows System.Speech narration, no music or third-party audio, plus
+      SHA-bound genuine browser interaction.
       [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) is only the deterministic
-      static-base guide; a direct static export is not a final. The optional narrated
-      workflow in [`BUILD_RECORDING.md`](./BUILD_RECORDING.md) is internal source-candidate
-      evidence only and cannot be substituted or manually spliced into the canonical
-      final. If it is run separately, retain rights evidence for every voice, font,
+      base guide; a direct base export is not a final. Do not manually splice an
+      alternate narration or workflow export into the canonical final. Retain the
+      exact local narration manifest and rights evidence for every voice, font,
       image, logo and other asset.
+- [ ] Confirm the three `MEMORYAGENT_*_EXECUTABLE` values above still name the exact
+      pre-reviewed absolute files. Do not derive production values with `where`,
+      `which`, `Get-Command`, or `command -v`.
 - [ ] Read [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md) and
       [`../docs/CLAIM_EVIDENCE_MATRIX.md`](../docs/CLAIM_EVIDENCE_MATRIX.md) end to end.
 
@@ -83,30 +101,35 @@ video-specific; the screenshots, posts, and Devpost fields remain in
 ## Technical acceptance
 
 - [ ] `memoryagent-demo.manifest.json` reports `status: passed`, identifies
-      `caption-led-real-motion-compositor-v1`, binds the exact runtime,
-      `CAPTURE_REVIEW`, live-interaction manifest/video, SRT, thumbnail and final
+      `caption-led-real-motion-compositor-v3-narrated-immutable-inputs`, binds the exact runtime,
+      `CAPTURE_REVIEW`, caption-base manifest/video, narration WAV/manifest,
+      live-interaction manifest/video, SRT, thumbnail and final
       output hashes, and records exactly 5,160 frames, 172 measured seconds, ten SRT
-      entries, one 1080p H.264 stream, one generated-silence AAC stream, and decoded
-      silence peak `<=8`. The intermediate static base retains its stricter `<=4`
-      threshold; do not misreport that base-only limit as the final compositor gate.
+      entries, one 1080p H.264 stream and one preserved narrated AAC stream. Decoded
+      source, base and final measurements must prove meaningful signal, zero clipped
+      samples and byte-identical base-to-final normalized PCM.
 - [ ] `memoryagent-demo.qa.json` reports `status: passed` for the same final MP4/SRT,
-      and `python demo/tools/compose_real_motion_video.py --verify-only` passes
-      immediately before upload against every unchanged bound artifact. Static-base
-      or workflow-candidate manifests do not satisfy this gate.
-- [ ] No narrated workflow or manually edited export is used instead of the canonical
-      real-motion final; the shipped audio stream is generated digital silence only.
+      and, with the three pinned executable variables still set,
+      `python demo/tools/compose_real_motion_video.py --verify-only` passes immediately
+      before upload against every unchanged bound artifact. Static-base or
+      workflow-candidate manifests do not satisfy this gate.
+- [ ] No alternate narration, workflow candidate or manually edited export is used
+      instead of the canonical real-motion final. The shipped audio is the exact
+      manifest-bound local Windows System.Speech narration preserved from the base AAC.
 - [ ] If the workflow source candidate is used, its permanent A/V/caption/order gate
       passed. Do not represent that source-candidate gate as validation of a changed
       exported final.
-- [ ] `ffprobe` reports a duration strictly below 175 seconds and exactly one expected
-      video plus one expected audio stream; no blank lead-in or unexplained tail.
+- [ ] The pinned `$env:MEMORYAGENT_FFPROBE_EXECUTABLE` reports a duration strictly
+      below 175 seconds and exactly one expected video plus one expected audio stream;
+      no blank lead-in or unexplained tail.
 - [ ] Burned captions, source labels, beat transitions, and highlighted evidence stay
-      synchronized; the canonical final contains no narration to mask timing drift.
+      synchronized with the narration. Inspect both audio/video sync and muted caption
+      comprehension; narration must never mask stale or mistimed captions.
 - [ ] Captions are accurate English, correctly spell every model id, and remain inside
       safe margins at 1080p playback.
 - [ ] The full video was watched at normal speed and at 0.25×, once with audio enabled
-      and once muted. Confirm the host/player does not add audio and every caption-led
-      beat remains fully understandable.
+      and once muted. Confirm narration is audible, unclipped and synchronized, the
+      host/player adds no extra audio, and every captioned beat remains understandable.
 - [ ] The thumbnail contains no unverified metric or sensitive browser/terminal detail.
 
 ## Publication and Devpost

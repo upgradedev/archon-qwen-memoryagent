@@ -3,6 +3,21 @@
 The canonical real-motion production and QA commands are in
 [`../REAL_MOTION_VIDEO.md`](../REAL_MOTION_VIDEO.md). They never publish or upload.
 
+Before any production build or independent verification, replace these placeholders
+with absolute executable paths reviewed for this release:
+
+```powershell
+$env:MEMORYAGENT_GIT_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_GIT_EXECUTABLE>'
+$env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
+$env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
+```
+
+ffmpeg and ffprobe must be siblings from the same reviewed toolchain directory.
+Production and `--verify-only` execution use only those identity-bound, SHA-bound
+files and never discover Git, ffmpeg, or ffprobe from the working directory or
+`PATH`. PATH discovery is permitted only for explicitly labelled non-submission
+self-tests when all three variables are unset.
+
 - `judge-architecture.jpg` — 1600×900 browser-rendered raster for Devpost and the slide deck.
 - Source: [`../../docs/judge-architecture.svg`](../../docs/judge-architecture.svg), retained as an editable, accessible 16:9 vector.
 - Publication sanitization is lossless and reproducible: run
@@ -17,24 +32,32 @@ The canonical real-motion production and QA commands are in
   **real-motion** final. The only publication pipeline is
   [`../REAL_MOTION_VIDEO.md`](../REAL_MOTION_VIDEO.md): it renders the static caption
   composition only as an intermediate scratch base, then inserts SHA-bound genuine
-  browser interaction. It uses no voice, TTS, or third-party music and muxes generated
-  digital silence for player compatibility. It is intentionally absent until the exact
-  deploy, sanitized gallery, SHA-bound capture review, live recording, automated
-  real-motion checks, and every human item in `../FINAL_MEDIA_CHECKLIST.md` pass.
+  browser interaction. It uses a locally generated, explicitly disclosed synthetic
+  en-US Windows `System.Speech` voice, with no network media or third-party music.
+  Digital silence is rejected. The exact narration WAV and JSON manifest are created
+  under ignored `.artifacts/final-narration/` by
+  [`../tools/build_local_narration.py`](../tools/build_local_narration.py). The final
+  remains absent until the exact deploy, sanitized gallery, SHA-bound capture review,
+  narration gate, live recording, automated checks, and every human item in
+  `../FINAL_MEDIA_CHECKLIST.md` pass.
 - `memoryagent-demo.en.srt` — exact ten-beat measured captions. The final builder
   refuses any byte/timing mismatch with the burned 5,160-frame timeline.
 - The inert, tracked [`../caption-timeline.json`](../caption-timeline.json) is the
   single caption/timing source for both capture preflight and video rendering.
   Capture reads the ignored measured windows once, binds their SHA-256 in
-  `CAPTURE_REVIEW.json`, and refuses any difference before a live model call.
+  `CAPTURE_REVIEW.json`, and refuses any difference before a live model call. The
+  narration generator also binds this exact tracked file, speaks one complete segment
+  per beat, and fails instead of truncating speech.
 - `memoryagent-demo.manifest.json` — required real-motion cryptographic build record:
   exact runtime/source heads, upstream/downstream hashes, measured codecs/duration,
-  silent-audio peak, timeline, live-interaction binding, and claim locks.
+  narration WAV/manifest/voice/timeline hashes, non-silent and no-clipping audio
+  measurements, live-interaction binding, and claim locks.
 - `memoryagent-demo.qa.json` — required independent measured QA record for the shipped
   MP4/SRT. Both JSON records must report `status: passed`, and
-  `python demo/tools/compose_real_motion_video.py --verify-only` must pass against
-  their unchanged hashes immediately before upload. A static caption-base manifest is
-  intermediate evidence only and is not accepted here.
+  `python demo/tools/compose_real_motion_video.py --verify-only` must pass with the
+  three pre-reviewed executable variables still set, against their unchanged hashes
+  immediately before upload. A static caption-base manifest is intermediate evidence
+  only and is not accepted here.
 
 The judge-facing hero intentionally excludes unfinished model-promotion work. Its
 productization card shows only shipped surfaces: tenant-scoped REST/MCP, a pg-wire
