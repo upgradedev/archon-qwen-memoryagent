@@ -52,20 +52,20 @@ complete these attestations for the entrant.
 - [ ] For the canonical real-motion build in
       [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md), the final manifest `rightsProfile`
   confirms `voice=true`, `humanVoice=false`, `syntheticVoice=true`, `tts=true`,
-  `syntheticVoiceDisclosure=true`, `thirdPartyMusic=false`, `thirdPartyAudio=false`
-  and locally generated Windows System.Speech narration. The passed QA record
+  `syntheticVoiceDisclosure=true`, `thirdPartyMusic=false`, `thirdPartyAudio=true`,
+  `commercialUseRightsApproved=true` and entrant-approved ElevenLabs narration. The passed QA record
   independently proves meaningful decoded signal, zero clipped samples, EBU R128
   loudness, true-peak headroom and exact base-to-final normalized PCM preservation.
   Both bind only SHA-reviewed project
   visuals and live interaction. No external font file is copied or embedded;
   Pillow's bundled default is rasterized into the frames.
-- [ ] The canonical Microsoft Zira Desktop Windows System.Speech voice, culture and
-      gender match the narration manifest; generation was local with no network
-      service. The authorized entrant has reviewed the applicable Microsoft/OS and voice terms
-      for public competition and promotional use, and accepts the explicit synthetic
-      voice disclosure in the public description.
+- [ ] The canonical ElevenLabs voice id `pNInz6obpgDQGcFmaJgB`, model
+      `eleven_multilingual_v2`, request count, no-retry/no-fallback contract and decoded
+      PCM bindings match the narration manifest. The authorized entrant approved paid-plan
+      credit use and public competition/promotional publication and accepts the explicit
+      provider synthetic-voice disclosure.
 - [ ] Before any public upload, the user has explicitly confirmed that narration
-      generated with Microsoft Zira Desktop may be used and publicly published for
+      generated with the exact ElevenLabs voice/model may be used and publicly published for
       this release. Earlier approval of visuals or a different release does not count.
 - [ ] Every human voice/likeness has a release covering the organizer's stated
   judging and promotional use. If synthetic speech is used, both the selected

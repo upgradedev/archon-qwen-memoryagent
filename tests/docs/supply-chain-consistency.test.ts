@@ -100,7 +100,7 @@ test("CHECK 4b — CI runtimes, runner OS, Docker base, and package metadata agr
     }
   }
   assert.ok(nodeSetups >= 9, `expected all Node jobs to be checked, found ${nodeSetups}`);
-  assert.equal(pythonSetups, 2, `expected both Python video workflows, found ${pythonSetups}`);
+  assert.equal(pythonSetups, 3, `expected all three Python media workflows, found ${pythonSetups}`);
 
   const dockerfile = readText("Dockerfile");
   const nodeBases = [...dockerfile.matchAll(/^FROM\s+(node:\S+)\s+AS\s+/gm)].map((match) => match[1]);

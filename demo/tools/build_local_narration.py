@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Generate and verify a local, provenance-disclosed MemoryAgent narration bundle.
+"""Shared generation and verification core for MemoryAgent narration bundles.
 
-Production synthesis is deliberately Windows-only and offline. It requires the
-caller to name one installed en-US ``System.Speech`` voice explicitly, speaks one
-segment per row of the tracked caption contract, and never downloads music, voice
-models, or other media. The final PCM WAV is padded, never cut, to exactly 172
-seconds at 48 kHz stereo. A SHA-bound JSON manifest records the voice, disclosure,
-timeline, segment placement, and measured signal properties.
+Canonical production uses the bounded ElevenLabs generator in
+``build_elevenlabs_narration.py``. This module owns the exact 172-second PCM,
+manifest, rights, promotion and validation contracts and retains the older local
+Windows ``System.Speech`` builder only as a separately identified compatibility
+path. A SHA-bound JSON manifest records the provider/voice disclosure, timeline,
+segment placement, request evidence, rights approval and measured signal properties.
 
 The cross-platform self-test uses generated sine tones. Those fixtures are marked
 unmistakably and can never satisfy the production validator.
@@ -42,10 +42,16 @@ REPO = Path(REPO_ROOT)
 CAPTION_CONTRACT_REL = "demo/caption-timeline.json"
 DEFAULT_AUDIO_REL = ".artifacts/final-narration/memoryagent-narration.wav"
 DEFAULT_MANIFEST_REL = ".artifacts/final-narration/memoryagent-narration.manifest.json"
-GENERATOR_ID = "windows-system-speech-local-narration-v1"
+GENERATOR_ID = "elevenlabs-multilingual-v2-narration-v1"
+SYSTEM_SPEECH_GENERATOR_ID = "windows-system-speech-local-narration-v1"
 FIXTURE_GENERATOR_ID = "synthetic-self-test-tone-v1"
 CANONICAL_PRODUCTION_VOICE_NAME = "Microsoft Zira Desktop"
 CANONICAL_PRODUCTION_RATE = 1
+CANONICAL_ELEVENLABS_VOICE_ID = "pNInz6obpgDQGcFmaJgB"
+CANONICAL_ELEVENLABS_VOICE_NAME = "Adam (pNInz6obpgDQGcFmaJgB)"
+CANONICAL_ELEVENLABS_MODEL_ID = "eleven_multilingual_v2"
+CANONICAL_ELEVENLABS_OUTPUT_FORMAT = "pcm_24000"
+CANONICAL_ELEVENLABS_SEED_BASE = 20260720
 SAMPLE_RATE = 48_000
 CHANNELS = 2
 SAMPLE_WIDTH = 2
@@ -62,9 +68,19 @@ DISCLOSURE = (
     "through Windows System.Speech. No music, downloaded voice model, "
     "or third-party audio is used."
 )
+ELEVENLABS_DISCLOSURE = (
+    "Narration is generated with the explicitly selected ElevenLabs synthetic voice "
+    "pNInz6obpgDQGcFmaJgB using eleven_multilingual_v2. The paid-plan commercial-use "
+    "rights were explicitly approved by the entrant. No human voice, music, fallback "
+    "voice, or other third-party audio is used."
+)
 PROVENANCE_ASSURANCE = (
     "Hash-bound local generation evidence, not an authenticated rights attestation. "
     "Human review of the selected synthetic voice and publication rights remains required."
+)
+ELEVENLABS_PROVENANCE_ASSURANCE = (
+    "Hash-bound provider request and decoded-response evidence, not an independent legal "
+    "opinion. The entrant explicitly approved credit use and public competition publication."
 )
 FIXTURE_ALGORITHM = "python-stdlib-sine-fixture-v1"
 
@@ -449,7 +465,7 @@ def _little_endian_pcm(samples: Sequence[int]) -> bytes:
 def _segment_pcm_binding(stereo_samples: Sequence[int], placed_start: int, placed_end: int) -> dict[str, int | str]:
     left = array("h", stereo_samples[placed_start * CHANNELS : placed_end * CHANNELS : CHANNELS])
     right = array("h", stereo_samples[placed_start * CHANNELS + 1 : placed_end * CHANNELS : CHANNELS])
-    require(left == right, "narration segment stereo channels are not identical System.Speech placement")
+    require(left == right, "narration segment stereo channels are not identical mono-source placement")
     pcm = _little_endian_pcm(left)
     return {"sourcePcmSha256": sha256_bytes(pcm), "sourcePcmBytes": len(pcm)}
 
@@ -501,6 +517,81 @@ def _production_generation_evidence(
     }
 
 
+def _elevenlabs_generator_source_record() -> dict[str, Any]:
+    try:
+        source = read_project_file_once(
+            REPO / "demo" / "tools" / "build_elevenlabs_narration.py",
+            "ElevenLabs narration generator source",
+        )
+    except ValueError as exc:
+        raise NarrationError(str(exc)) from exc
+    return {"path": source.relative_path, "sha256": source.sha256, "size": source.size}
+
+
+def elevenlabs_request_contract(
+    windows: Sequence[tuple[int, int, str]],
+) -> dict[str, Any]:
+    return {
+        "apiOrigin": "https://api.elevenlabs.io",
+        "endpointTemplate": "/v1/text-to-speech/{voiceId}",
+        "voiceId": CANONICAL_ELEVENLABS_VOICE_ID,
+        "modelId": CANONICAL_ELEVENLABS_MODEL_ID,
+        "outputFormat": CANONICAL_ELEVENLABS_OUTPUT_FORMAT,
+        "seedBase": CANONICAL_ELEVENLABS_SEED_BASE,
+        "requestCount": len(windows),
+        "retryCount": 0,
+        "fallback": None,
+        "voiceSettings": {
+            "stability": 0.55,
+            "similarity_boost": 0.75,
+            "style": 0.0,
+            "use_speaker_boost": True,
+        },
+        "segments": [
+            {
+                "beatNumber": number,
+                "textSha256": sha256_bytes(text.encode("utf-8")),
+                "characters": len(text),
+                "seed": CANONICAL_ELEVENLABS_SEED_BASE + number,
+                "previousTextSha256": (
+                    sha256_bytes(windows[number - 2][2].encode("utf-8")) if number > 1 else None
+                ),
+                "nextTextSha256": (
+                    sha256_bytes(windows[number][2].encode("utf-8")) if number < len(windows) else None
+                ),
+            }
+            for number, (_start, _end, text) in enumerate(windows, start=1)
+        ],
+    }
+
+
+def elevenlabs_generation_evidence(
+    *,
+    windows: Sequence[tuple[int, int, str]],
+    segments: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    request = elevenlabs_request_contract(windows)
+    decoded = [
+        {
+            "beatNumber": segment["beatNumber"],
+            "canonicalPcmSha256": segment["sourcePcmSha256"],
+            "canonicalPcmBytes": segment["sourcePcmBytes"],
+        }
+        for segment in segments
+    ]
+    return {
+        "evidenceType": "elevenlabs-api-generation-record-v1",
+        "assurance": ELEVENLABS_PROVENANCE_ASSURANCE,
+        "generatorSource": _elevenlabs_generator_source_record(),
+        "synthesisRequest": request,
+        "synthesisRequestSha256": canonical_json_sha256(request),
+        "decodedResponses": decoded,
+        "decodedResponsesSha256": canonical_json_sha256(decoded),
+        "secretSerialized": False,
+        "commercialUseApproved": True,
+    }
+
+
 def _fixture_generation_evidence(*, windows: Sequence[tuple[int, int, str]]) -> dict[str, Any]:
     request = {
         "algorithm": FIXTURE_ALGORITHM,
@@ -530,6 +621,7 @@ def validate_narration_bundle(
     *,
     windows: Sequence[tuple[int, int, str]] | None = None,
     production_mode: bool = True,
+    expected_generator: str | None = None,
     expected_audio_path: str | Path | None = None,
     expected_manifest_path: str | Path | None = None,
 ) -> NarrationBundle:
@@ -564,8 +656,12 @@ def validate_narration_bundle(
         },
         "local narration manifest has missing or unrecognized top-level claims",
     )
-    expected_generator = GENERATOR_ID if production_mode else FIXTURE_GENERATOR_ID
-    require(payload.get("generator") == expected_generator, "local narration manifest has the wrong generator")
+    active_generator = expected_generator or (GENERATOR_ID if production_mode else FIXTURE_GENERATOR_ID)
+    require(
+        active_generator in {GENERATOR_ID, SYSTEM_SPEECH_GENERATOR_ID, FIXTURE_GENERATOR_ID},
+        "narration validation requested an unknown generator",
+    )
+    require(payload.get("generator") == active_generator, "local narration manifest has the wrong generator")
     require(payload.get("fixtureOnly") is (not production_mode), "local narration fixture/production boundary is invalid")
 
     logical_audio = project_path(expected_audio_path or audio_snapshot.path, "logical narration WAV path")
@@ -607,22 +703,35 @@ def validate_narration_bundle(
     require(voice.get("volume") == 100, "local narration voice volume is not canonical")
     require(voice.get("explicitlySelected") is True, "local narration voice was not explicitly selected")
     if production_mode:
-        require(voice.get("engine") == "Microsoft System.Speech", "production narration is not from Windows System.Speech")
-        require_canonical_production_voice_name(voice.get("name"))
-        require(
-            voice.get("rate") == CANONICAL_PRODUCTION_RATE,
-            f"production narration rate must be exactly {CANONICAL_PRODUCTION_RATE}",
-        )
+        if active_generator == GENERATOR_ID:
+            require(voice.get("engine") == "ElevenLabs API", "canonical production narration is not from ElevenLabs")
+            require(voice.get("name") == CANONICAL_ELEVENLABS_VOICE_NAME, "canonical ElevenLabs voice is not exact")
+            require(voice.get("rate") == 0, "canonical ElevenLabs narration rate must be provider default")
+        else:
+            require(voice.get("engine") == "Microsoft System.Speech", "production narration is not from Windows System.Speech")
+            require_canonical_production_voice_name(voice.get("name"))
+            require(
+                voice.get("rate") == CANONICAL_PRODUCTION_RATE,
+                f"production narration rate must be exactly {CANONICAL_PRODUCTION_RATE}",
+            )
 
     rights = payload.get("rights")
     require(isinstance(rights, dict), "local narration manifest has no rights disclosure")
-    require(rights == _rights(), "local narration rights disclosure is stale or has unrecognized claims")
+    expected_rights = _elevenlabs_rights() if active_generator == GENERATOR_ID else _rights()
+    require(rights == expected_rights, "local narration rights disclosure is stale or has unrecognized claims")
     require(rights.get("syntheticVoiceDisclosure") is True, "synthetic voice disclosure is absent")
-    require(rights.get("disclosure") == DISCLOSURE, "synthetic voice disclosure text is not canonical")
-    require(rights.get("networkUsed") is False, "local narration manifest reports network use")
+    expected_disclosure = ELEVENLABS_DISCLOSURE if active_generator == GENERATOR_ID else DISCLOSURE
+    require(rights.get("disclosure") == expected_disclosure, "synthetic voice disclosure text is not canonical")
     require(rights.get("musicUsed") is False and rights.get("thirdPartyMusic") is False, "local narration manifest reports music")
-    require(rights.get("thirdPartyAudio") is False, "local narration manifest reports third-party audio")
-    require(rights.get("generatedLocally") is True, "local narration manifest does not attest local generation")
+    if active_generator == GENERATOR_ID:
+        require(rights.get("networkUsed") is True, "ElevenLabs narration does not disclose provider network use")
+        require(rights.get("thirdPartyAudio") is True, "ElevenLabs narration does not disclose provider audio")
+        require(rights.get("generatedLocally") is False, "ElevenLabs narration incorrectly claims local generation")
+        require(rights.get("commercialUseRightsApproved") is True, "ElevenLabs commercial-use approval is absent")
+    else:
+        require(rights.get("networkUsed") is False, "local narration manifest reports network use")
+        require(rights.get("thirdPartyAudio") is False, "local narration manifest reports third-party audio")
+        require(rights.get("generatedLocally") is True, "local narration manifest does not attest local generation")
     require(rights.get("humanVoiceRightsReviewRequired") is True, "local narration lost the mandatory human rights-review gate")
     require(rights.get("automatedProvenanceIsAuthoritativeRightsProof") is False, "local narration overstates automated provenance evidence")
 
@@ -716,15 +825,18 @@ def validate_narration_bundle(
     generation_evidence = payload.get("generationEvidence")
     require(isinstance(generation_evidence, dict), "local narration manifest has no generation evidence")
     if production_mode:
-        rate = voice.get("rate")
-        require(type(rate) is int and -2 <= rate <= 4, "production narration voice rate is invalid")
-        current_executable = trusted_powershell()
-        expected_evidence = _production_generation_evidence(
-            executable=current_executable,
-            voice=voice,
-            rate=rate,
-            windows=active_windows,
-        )
+        if active_generator == GENERATOR_ID:
+            expected_evidence = elevenlabs_generation_evidence(windows=active_windows, segments=segments)
+        else:
+            rate = voice.get("rate")
+            require(type(rate) is int and -2 <= rate <= 4, "production narration voice rate is invalid")
+            current_executable = trusted_powershell()
+            expected_evidence = _production_generation_evidence(
+                executable=current_executable,
+                voice=voice,
+                rate=rate,
+                windows=active_windows,
+            )
         require(generation_evidence == expected_evidence, "production narration generation evidence is stale or incomplete")
     else:
         require(
@@ -772,6 +884,21 @@ def _rights() -> dict[str, Any]:
     }
 
 
+def _elevenlabs_rights() -> dict[str, Any]:
+    return {
+        "syntheticVoiceDisclosure": True,
+        "disclosure": ELEVENLABS_DISCLOSURE,
+        "networkUsed": True,
+        "musicUsed": False,
+        "thirdPartyMusic": False,
+        "thirdPartyAudio": True,
+        "generatedLocally": False,
+        "commercialUseRightsApproved": True,
+        "humanVoiceRightsReviewRequired": True,
+        "automatedProvenanceIsAuthoritativeRightsProof": False,
+    }
+
+
 def _base_manifest(
     *,
     generator: str,
@@ -785,6 +912,7 @@ def _base_manifest(
     logical_audio_path: Path,
     logical_manifest_path: Path,
     generation_evidence: dict[str, Any],
+    rights: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     logical_audio_rel = relative_repo_path(logical_audio_path)
     logical_manifest_rel = relative_repo_path(logical_manifest_path)
@@ -803,7 +931,7 @@ def _base_manifest(
             "beatCount": len(windows),
         },
         "voice": voice,
-        "rights": _rights(),
+        "rights": dict(rights if rights is not None else _rights()),
         "generationEvidence": generation_evidence,
         "segments": segments,
         "audio": {
@@ -1407,7 +1535,7 @@ def build_production_bundle(
             "explicitlySelected": True,
         }
         manifest_payload = _base_manifest(
-            generator=GENERATOR_ID,
+            generator=SYSTEM_SPEECH_GENERATOR_ID,
             fixture_only=False,
             timeline=timeline,
             windows=windows,
@@ -1430,6 +1558,7 @@ def build_production_bundle(
             staged_audio,
             staged_manifest,
             production_mode=True,
+            expected_generator=SYSTEM_SPEECH_GENERATOR_ID,
             expected_audio_path=audio_path,
             expected_manifest_path=manifest_path,
         )
@@ -1444,6 +1573,7 @@ def build_production_bundle(
                 audio_path,
                 manifest_path,
                 production_mode=True,
+                expected_generator=SYSTEM_SPEECH_GENERATOR_ID,
             ),
         )
     except NarrationRecoveryRequired:

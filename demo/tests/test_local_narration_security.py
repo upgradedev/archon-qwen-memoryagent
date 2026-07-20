@@ -135,7 +135,7 @@ class CanonicalProductionVoiceTests(RepoArtifactTestCase):
             json.dumps({
                 "schemaVersion": 1,
                 "status": "passed",
-                "generator": narration.GENERATOR_ID,
+                "generator": narration.SYSTEM_SPEECH_GENERATOR_ID,
                 "generatedAt": "2026-07-19T00:00:00Z",
                 "fixtureOnly": False,
                 "bundleOutputs": {
@@ -171,6 +171,7 @@ class CanonicalProductionVoiceTests(RepoArtifactTestCase):
                 audio,
                 manifest,
                 production_mode=True,
+                expected_generator=narration.SYSTEM_SPEECH_GENERATOR_ID,
                 expected_audio_path=narration.DEFAULT_AUDIO_REL,
                 expected_manifest_path=narration.DEFAULT_MANIFEST_REL,
             )
@@ -184,7 +185,7 @@ class CanonicalProductionVoiceTests(RepoArtifactTestCase):
             json.dumps({
                 "schemaVersion": 1,
                 "status": "passed",
-                "generator": narration.GENERATOR_ID,
+                "generator": narration.SYSTEM_SPEECH_GENERATOR_ID,
                 "generatedAt": "2026-07-19T00:00:00Z",
                 "fixtureOnly": False,
                 "bundleOutputs": {
@@ -221,11 +222,12 @@ class CanonicalProductionVoiceTests(RepoArtifactTestCase):
                 audio,
                 manifest,
                 production_mode=True,
+                expected_generator=narration.SYSTEM_SPEECH_GENERATOR_ID,
                 expected_audio_path=narration.DEFAULT_AUDIO_REL,
                 expected_manifest_path=narration.DEFAULT_MANIFEST_REL,
             )
 
-    def test_release_docs_pin_zira_and_the_actual_selftest_location(self) -> None:
+    def test_release_docs_pin_elevenlabs_and_the_actual_selftest_location(self) -> None:
         for relative in (
             "demo/BUILD_RECORDING.md",
             "demo/CAPTION_VIDEO_BUILD.md",
@@ -235,7 +237,7 @@ class CanonicalProductionVoiceTests(RepoArtifactTestCase):
         ):
             with self.subTest(relative=relative):
                 self.assertIn(
-                    narration.CANONICAL_PRODUCTION_VOICE_NAME,
+                    narration.CANONICAL_ELEVENLABS_VOICE_ID,
                     (ROOT / relative).read_text(encoding="utf-8"),
                 )
 

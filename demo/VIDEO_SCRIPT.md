@@ -5,7 +5,7 @@ margin below the official `<3:00` rule. This file is the canonical final editori
 and claim-boundary script. The only canonical rights-disclosed final is the 172-second,
 narrated real-motion build in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md);
 [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) supplies only its intermediate
-static base, exact burned captions, and hash-bound local narration. The optional
+static base, exact burned captions, and hash-bound canonical narration. The optional
 authenticated renderer speaks
 [`../docs/narration.txt`](../docs/narration.txt) and produces useful live source
 footage, but its assembled MP4 is only a candidate: it does not replace the exact-SHA,
@@ -33,8 +33,8 @@ submission-pack allowlist; any runtime-affecting delta requires another exact de
 ## Canonical narration and optional source candidate
 
 The canonical spoken copy is the exact ten-beat contract in
-[`caption-timeline.json`](./caption-timeline.json). The local Windows System.Speech
-generator speaks those same lines and the production gate binds their hashes to the
+[`caption-timeline.json`](./caption-timeline.json). The exact ElevenLabs voice/model
+speaks those same lines and the production gate binds their hashes to the
 WAV, base MP4, final MP4, and measured SRT. The longer text below is only an editorial
 reference for an optional authenticated source-footage candidate. It is not an
 alternative publication route. If used internally, read it at a
@@ -95,7 +95,7 @@ never remove a claim caveat.
 - Use [`../docs/narration.txt`](../docs/narration.txt) verbatim only for the automated
   source-footage candidate. It cannot replace or be manually spliced into the
   canonical real-motion final, which uses the exact tracked captions and the
-  hash-bound local narration. Any separately retained voice must preserve every
+  hash-bound canonical narration. Any separately retained voice must preserve every
   claim boundary and caveat.
 - The automated live transcript is generated from real responses by
   [`../scripts/capture_live.sh`](../scripts/capture_live.sh); never replace its

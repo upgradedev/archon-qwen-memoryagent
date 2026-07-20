@@ -32,8 +32,8 @@ self-tests when all three variables are unset.
   **real-motion** final. The only publication pipeline is
   [`../REAL_MOTION_VIDEO.md`](../REAL_MOTION_VIDEO.md): it renders the static caption
   composition only as an intermediate scratch base, then inserts SHA-bound genuine
-  browser interaction. It uses a locally generated, explicitly disclosed synthetic
-  en-US Windows `System.Speech` voice, with no network media or third-party music.
+  browser interaction. It uses the explicitly disclosed, entrant-approved ElevenLabs
+  voice/model pair, with no fallback voice, human voice, or third-party music.
   Digital silence is rejected. The exact narration WAV and JSON manifest are created
   under ignored `.artifacts/final-narration/` by
   [`../tools/build_local_narration.py`](../tools/build_local_narration.py). The final

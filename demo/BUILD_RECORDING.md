@@ -4,8 +4,8 @@ The only canonical publication candidate is the rights-disclosed, narrated and c
 **real-motion** assembly documented in
 [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). It uses the hash-reviewed
 gallery/proof inputs, burns the exact English captions, inserts SHA-bound genuine live
-browser interaction, and preserves a required local Windows System.Speech narration
-track. It uses no music, downloaded voice model, or third-party audio. Its 5,160-frame
+browser interaction, and preserves the exact entrant-approved ElevenLabs narration
+track. It uses no music, human voice, or fallback service. Its 5,160-frame
 timeline is deterministically 172 seconds, and its final manifest, QA, and
 `--verify-only` gate measure the actual shipped MP4, SRT, and audible signal before
 promotion.
@@ -38,7 +38,7 @@ full-text path.
 
 ## Canonical narrated real-motion final
 
-Generate and validate the local narration, run the offline self-tests, and emit the
+Generate and validate the canonical narration, run the offline self-tests, and emit the
 deterministic caption-window input before the final gallery capture:
 
 ```powershell
@@ -46,10 +46,12 @@ $env:MEMORYAGENT_GIT_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_GIT_EXECUTABLE>'
 $env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
 $env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
 
-python -m py_compile demo/tools/build_local_narration.py demo/tools/build_caption_video.py
+python -m py_compile demo/tools/build_local_narration.py demo/tools/build_elevenlabs_narration.py demo/tools/build_caption_video.py
 python -m unittest discover -s demo/tests -p 'test_caption_video_builder.py' -v
-python demo/tools/build_local_narration.py --list-voices
-python demo/tools/build_local_narration.py --voice "Microsoft Zira Desktop" --rate 1
+python demo/tools/build_local_narration.py --self-test
+# Production narration uses voice pNInz6obpgDQGcFmaJgB with
+# eleven_multilingual_v2, is generated once by canonical-elevenlabs-narration.yml
+# on main, then downloaded unchanged into .artifacts/final-narration/.
 python demo/tools/build_caption_video.py --self-test
 python demo/tools/build_caption_video.py --full-self-test
 python demo/tools/build_caption_video.py `

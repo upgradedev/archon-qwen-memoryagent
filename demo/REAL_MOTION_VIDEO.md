@@ -8,9 +8,10 @@ never covered by unrelated interaction footage. Nothing is uploaded or published
 these commands.
 
 [`tools/build_caption_video.py`](./tools/build_caption_video.py) is an intermediate
-base renderer only. The one-command real-motion builder invokes it with a hash-bound,
-locally generated Windows System.Speech narration inside a randomized, project-contained
-scratch directory before applying the SHA-bound live interaction.
+base renderer only. The one-command real-motion builder invokes it with the hash-bound
+canonical ElevenLabs narration bundle inside a randomized, project-contained scratch
+directory before applying the SHA-bound live interaction. The bundle is generated
+once by the dedicated main-only workflow, with no retry or fallback voice.
 A directly exported static caption MP4 or its base manifest is never the publication
 candidate, even if its own encode checks pass. Supporting guides must return here for
 the production build and final acceptance.
@@ -22,7 +23,7 @@ browse flow; `#judgeToken` must remain blank for the entire recording.
 
 ## Deterministic offline acceptance
 
-Run from the repository root before touching the live service. Replace the three
+Run from the repository root before touching the live service or ElevenLabs. Replace the three
 placeholders with absolute executable paths that were reviewed before this release;
 ffmpeg and ffprobe must be siblings from the same reviewed toolchain directory:
 
@@ -45,7 +46,7 @@ to the explicitly non-submission self-test fixtures when all three variables are
 unset; it is never a production fallback.
 
 The recorder and compositor self-tests create only ignored, unmistakably labelled
-fixture artifacts below `.artifacts/final-video/`. The local narration self-test uses
+fixture artifacts below `.artifacts/final-video/`. The narration-validator self-test uses
 the separate ignored `.artifacts/local-narration-selftest/` directory. They verify a
 real browser recording, 1920×1080 pixels,
 zero recorder audio streams, frame diversity, H.264/30 fps composition, non-silent
@@ -66,11 +67,14 @@ $env:MEMORYAGENT_GIT_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_GIT_EXECUTABLE>'
 $env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
 $env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
 
-python demo/tools/build_local_narration.py --list-voices
-python demo/tools/build_local_narration.py `
-  --voice 'Microsoft Zira Desktop' `
-  --rate 1 `
-  --replace
+gh workflow run canonical-elevenlabs-narration.yml `
+  --repo upgradedev/archon-qwen-memoryagent `
+  --ref main `
+  -f expected_source_sha='<FINAL_MAIN_SHA>' `
+  -f commercial_rights_approved=true
+
+# After the one authorized run passes, download its exact two-file artifact into
+# .artifacts/final-narration/ without renaming either file.
 
 python demo/tools/record_live_motion.py `
   --expected-sha $sha `
@@ -92,9 +96,11 @@ unrequested amounts, ratios, counts and calculations; it contains no answer. The
 recorder verifies the real request is byte-identical and carries `limit: 3`; the response must report
 `qwen-plus`, one to three citations, `[1]`, and grounding `(passed, 1)` or
 `(repaired, 2)`. The final compositor also binds the exact SHA, CAPTURE_REVIEW bytes,
-interaction-video bytes, caption-base manifest, local narration WAV and manifest,
-SRT and thumbnail. The selected System.Speech voice name, culture and gender are
-disclosed in the manifests; generation is local and uses no network or music.
+interaction-video bytes, caption-base manifest, ElevenLabs narration WAV and manifest,
+SRT and thumbnail. Voice id `pNInz6obpgDQGcFmaJgB`, the `eleven_multilingual_v2` model, request contract,
+decoded PCM hashes and entrant-approved commercial/publication rights are disclosed
+in the manifests. Generation uses the provider network once; no retry, fallback voice,
+music or human voice is permitted.
 
 Final judge-facing artifacts:
 
@@ -104,9 +110,9 @@ Final judge-facing artifacts:
 - `demo/final-media/memoryagent-demo.qa.json`
 - `demo/final-media/youtube-thumbnail.png`
 
-The MP4 has one preserved AAC stream containing disclosed local Windows
-System.Speech narration. It contains no human voice, music, third-party audio, or
-captured microphone/system audio. Burned captions and the exact SRT remain required
+The MP4 has one preserved AAC stream containing disclosed, entrant-approved ElevenLabs
+synthetic narration. It contains no human voice, music, fallback voice, or captured
+microphone/system audio. Burned captions and the exact SRT remain required
 for accessibility and muted playback. The final video, subtitles, manifest, QA,
 narration evidence and thumbnail hashes must pass `--verify-only` immediately before
 upload; decoded audio must be meaningfully non-silent and contain zero clipped samples.

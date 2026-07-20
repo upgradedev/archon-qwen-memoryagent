@@ -1,0 +1,99 @@
+name: Canonical ElevenLabs Narration
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_source_sha:
+        description: Exact 40-character main SHA authorized for narration generation.
+        required: true
+        type: string
+      commercial_rights_approved:
+        description: Entrant approved paid-plan commercial/public hackathon use for the exact voice.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-elevenlabs-narration
+  cancel-in-progress: false
+
+jobs:
+  narration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11.15'
+
+      - name: Pin authorized source and validate generator
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RIGHTS_APPROVED: ${{ inputs.commercial_rights_approved }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$RIGHTS_APPROVED" = 'true'
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          python -m py_compile demo/tools/build_local_narration.py demo/tools/build_elevenlabs_narration.py
+          python -m unittest \
+            demo.tests.test_elevenlabs_narration \
+            demo.tests.test_local_narration_security \
+            demo.tests.test_caption_video_builder
+
+      - name: Generate exact ElevenLabs narration once
+        shell: bash
+        env:
+          ELEVEN_LABS_KEY: ${{ secrets.ELEVEN_LABS_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$ELEVEN_LABS_KEY"
+          python demo/tools/build_elevenlabs_narration.py \
+            --voice-id pNInz6obpgDQGcFmaJgB \
+            --model-id eleven_multilingual_v2 \
+            --commercial-rights-approved \
+            --replace
+
+      - name: Re-verify bundle and secret absence
+        shell: bash
+        env:
+          ELEVEN_LABS_KEY: ${{ secrets.ELEVEN_LABS_KEY }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, 'demo/tools')
+          import build_local_narration as narration
+          bundle = narration.validate_narration_bundle(
+              '.artifacts/final-narration/memoryagent-narration.wav',
+              '.artifacts/final-narration/memoryagent-narration.manifest.json',
+              production_mode=True,
+          )
+          key = os.environ['ELEVEN_LABS_KEY'].encode()
+          for path in (Path(bundle.audio.path), Path(bundle.manifest.path)):
+              if key in path.read_bytes():
+                  raise SystemExit('secret material reached a narration artifact')
+          print(f'narration verification: PASS | audio {bundle.audio.sha256} | manifest {bundle.manifest.sha256}')
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canonical-elevenlabs-narration-${{ github.sha }}
+          path: |
+            .artifacts/final-narration/memoryagent-narration.wav
+            .artifacts/final-narration/memoryagent-narration.manifest.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+          compression-level: 0

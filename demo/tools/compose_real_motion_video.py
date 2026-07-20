@@ -2,10 +2,10 @@
 """Compose and prove a narrated submission video with genuine live motion.
 
 The existing judge-first renderer remains the source of title, architecture,
-metrics, claim-locked captions and disclosed local Windows System.Speech narration.
+metrics, claim-locked captions and disclosed ElevenLabs synthetic narration.
 This compositor places a separately recorded, SHA-bound live browser interaction
 into one reviewed timeline window, then measures the shipped pixels and decoded
-audio.  It never contacts the live service and never reads a reviewer credential.
+audio.  It never contacts the live service, ElevenLabs, or a reviewer credential.
 
 Production inputs must be regular project-contained files.  The interaction
 manifest must bind the exact CAPTURE_REVIEW bytes, deployed SHA, public origin and
@@ -38,7 +38,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "demo" / "tools"))
 sys.path.insert(0, str(ROOT / "scripts"))
 from build_local_narration import (  # noqa: E402
-    DISCLOSURE,
+    ELEVENLABS_DISCLOSURE as DISCLOSURE,
+    GENERATOR_ID as CANONICAL_NARRATION_GENERATOR,
     NarrationError,
     canonical_json_sha256,
     load_caption_timeline,
@@ -80,6 +81,7 @@ BASE_SCHEMA_VERSION = 4
 BASE_BUILDER_ID = "memoryagent-caption-led-ten-beat-v4-narrated"
 RELEASE_SOURCE_RELS = (
     "demo/tools/build_local_narration.py",
+    "demo/tools/build_elevenlabs_narration.py",
     "demo/tools/build_caption_video.py",
     "demo/tools/record_live_motion.py",
     "demo/tools/compose_real_motion_video.py",
@@ -125,12 +127,13 @@ CANONICAL_RIGHTS_PROFILE = {
     "syntheticVoiceDisclosure": True,
     "tts": True,
     "thirdPartyMusic": False,
-    "thirdPartyAudio": False,
-    "audio": "locally generated Windows System.Speech narration",
+    "thirdPartyAudio": True,
+    "commercialUseRightsApproved": True,
+    "audio": "entrant-approved ElevenLabs synthetic narration; no music or fallback voice",
     "humanVoiceRightsReviewRequired": True,
     "automatedProvenanceIsAuthoritativeRightsProof": False,
 }
-CANONICAL_AUDIO_POLICY = "disclosed locally generated Windows System.Speech narration; no music"
+CANONICAL_AUDIO_POLICY = "disclosed entrant-approved ElevenLabs synthetic narration; no music or fallback voice"
 SAFE_SELFTEST_ROOTS = {
     ".artifacts/final-video/compositor-selftest",
     ".artifacts/final-video/memory-recorder-selftest",
@@ -1276,28 +1279,44 @@ def validate_narration_rights(
     """Require the exact nested narration rights disclosure and its projection."""
 
     fixture_disclosure = generated_rights.get("disclosure") if isinstance(generated_rights, dict) else None
-    expected_generated_rights = {
-        "syntheticVoiceDisclosure": True,
-        "disclosure": fixture_disclosure if allow_fixture else DISCLOSURE,
-        "networkUsed": False,
-        "musicUsed": False,
-        "thirdPartyMusic": False,
-        "thirdPartyAudio": False,
-        "generatedLocally": True,
-        "humanVoiceRightsReviewRequired": True,
-        "automatedProvenanceIsAuthoritativeRightsProof": False,
-    }
+    expected_generated_rights = (
+        {
+            "syntheticVoiceDisclosure": True,
+            "disclosure": fixture_disclosure,
+            "networkUsed": False,
+            "musicUsed": False,
+            "thirdPartyMusic": False,
+            "thirdPartyAudio": False,
+            "generatedLocally": True,
+            "humanVoiceRightsReviewRequired": True,
+            "automatedProvenanceIsAuthoritativeRightsProof": False,
+        }
+        if allow_fixture
+        else {
+            "syntheticVoiceDisclosure": True,
+            "disclosure": DISCLOSURE,
+            "networkUsed": True,
+            "musicUsed": False,
+            "thirdPartyMusic": False,
+            "thirdPartyAudio": True,
+            "generatedLocally": False,
+            "commercialUseRightsApproved": True,
+            "humanVoiceRightsReviewRequired": True,
+            "automatedProvenanceIsAuthoritativeRightsProof": False,
+        }
+    )
     require(generated_rights == expected_generated_rights,
             "narration manifest rights record is not the exact canonical disclosure")
     expected_base_rights = {
         key: expected_generated_rights[key]
         for key in (
-            "syntheticVoiceDisclosure", "disclosure", "thirdPartyMusic", "thirdPartyAudio",
+            "syntheticVoiceDisclosure", "disclosure", "thirdPartyMusic",
             "humanVoiceRightsReviewRequired", "automatedProvenanceIsAuthoritativeRightsProof",
         )
     }
-    if allow_fixture:
-        expected_base_rights.pop("thirdPartyAudio")
+    if not allow_fixture:
+        expected_base_rights["thirdPartyAudio"] = True
+        expected_base_rights["commercialUseRightsApproved"] = True
     require(base_rights == expected_base_rights,
             "caption-base narration rights are not an exact projection of the narration manifest")
     return expected_base_rights
@@ -1475,8 +1494,8 @@ def validate_base_and_narration(
     if allow_fixture:
         require(bool(generator), "fixture caption-base narration has no generator disclosure")
     else:
-        require(generator == "windows-system-speech-local-narration-v1",
-                "caption-base narration must disclose local Windows System.Speech")
+        require(generator == CANONICAL_NARRATION_GENERATOR,
+                "caption-base narration must disclose the canonical ElevenLabs generator")
     voice = narration.get("voice")
     require(isinstance(voice, dict) and all(str(voice.get(key) or "").strip() for key in ("name", "culture", "gender")),
             "caption-base narration has incomplete synthetic voice disclosure")
