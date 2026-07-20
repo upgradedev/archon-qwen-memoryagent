@@ -459,7 +459,7 @@ class CaptionTimelineTests(unittest.TestCase):
             narration.DEFAULT_MANIFEST_REL,
             ".artifacts/final-narration/memoryagent-narration.manifest.json",
         )
-        self.assertEqual(narration.GENERATOR_ID, "windows-system-speech-local-narration-v1")
+        self.assertEqual(narration.GENERATOR_ID, "elevenlabs-multilingual-v2-narration-v1")
         args = builder.parse_args([])
         self.assertEqual(args.narration_audio, narration.DEFAULT_AUDIO_REL)
         self.assertEqual(args.narration_manifest, narration.DEFAULT_MANIFEST_REL)
@@ -578,7 +578,7 @@ class CaptionTimelineTests(unittest.TestCase):
         self.assertRegex(canonical, r"build_caption_video\.py[\s\S]*intermediate[\s\S]*base renderer only")
         video_checklist = (ROOT / "demo" / "VIDEO_RECORDING_CHECKLIST.md").read_text(encoding="utf-8")
         self.assertIn("meaningful signal, zero clipped", video_checklist)
-        self.assertIn("local Windows System.Speech narration", video_checklist)
+        self.assertIn("entrant-approved ElevenLabs narration", video_checklist)
         for relative in routed:
             with self.subTest(route=relative):
                 self.assertIn("REAL_MOTION_VIDEO.md", (ROOT / relative).read_text(encoding="utf-8"))

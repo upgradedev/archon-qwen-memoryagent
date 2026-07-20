@@ -1653,6 +1653,11 @@ def build_video(
                 "disclosure": narration.payload["rights"]["disclosure"],
                 "thirdPartyMusic": narration.payload["rights"]["thirdPartyMusic"],
                 "thirdPartyAudio": narration.payload["rights"]["thirdPartyAudio"],
+                **(
+                    {"commercialUseRightsApproved": narration.payload["rights"]["commercialUseRightsApproved"]}
+                    if "commercialUseRightsApproved" in narration.payload["rights"]
+                    else {}
+                ),
                 "humanVoiceRightsReviewRequired": narration.payload["rights"]["humanVoiceRightsReviewRequired"],
                 "automatedProvenanceIsAuthoritativeRightsProof": narration.payload["rights"]["automatedProvenanceIsAuthoritativeRightsProof"],
             },

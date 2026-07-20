@@ -281,11 +281,12 @@ class RealMotionCompositorTests(unittest.TestCase):
         generated = {
             "syntheticVoiceDisclosure": True,
             "disclosure": motion.DISCLOSURE,
-            "networkUsed": False,
+            "networkUsed": True,
             "musicUsed": False,
             "thirdPartyMusic": False,
-            "thirdPartyAudio": False,
-            "generatedLocally": True,
+            "thirdPartyAudio": True,
+            "generatedLocally": False,
+            "commercialUseRightsApproved": True,
             "humanVoiceRightsReviewRequired": True,
             "automatedProvenanceIsAuthoritativeRightsProof": False,
         }
@@ -293,13 +294,14 @@ class RealMotionCompositorTests(unittest.TestCase):
             key: generated[key]
             for key in (
                 "syntheticVoiceDisclosure", "disclosure", "thirdPartyMusic", "thirdPartyAudio",
+                "commercialUseRightsApproved",
                 "humanVoiceRightsReviewRequired", "automatedProvenanceIsAuthoritativeRightsProof",
             )
         }
         motion.validate_narration_rights(generated, base, allow_fixture=False)
         motion.validate_final_rights_profile(copy.deepcopy(motion.CANONICAL_RIGHTS_PROFILE))
         cases = {
-            "narration manifest rights": (generated | {"networkUsed": True}, base),
+            "narration manifest rights": (generated | {"networkUsed": False}, base),
             "caption-base rights projection": (generated, base | {"thirdPartyMusic": True}),
         }
         for label, (candidate_generated, candidate_base) in cases.items():
@@ -849,6 +851,7 @@ class RealMotionCompositorTests(unittest.TestCase):
     def test_release_critical_source_inventory_is_exact(self) -> None:
         self.assertEqual(set(motion.RELEASE_SOURCE_RELS), {
             "demo/tools/build_local_narration.py",
+            "demo/tools/build_elevenlabs_narration.py",
             "demo/tools/build_caption_video.py",
             "demo/tools/record_live_motion.py",
             "demo/tools/compose_real_motion_video.py",

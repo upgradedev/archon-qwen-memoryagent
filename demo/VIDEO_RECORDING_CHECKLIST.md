@@ -48,12 +48,12 @@ when all three variables are unset.
       bookmarks, password-manager popups, extensions, notifications, or account avatar.
 - [ ] Use the only canonical publication pipeline in
       [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md): burned captions, disclosed
-      local Windows System.Speech narration, no music or third-party audio, plus
+      entrant-approved ElevenLabs narration, no music or fallback voice, plus
       SHA-bound genuine browser interaction.
       [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) is only the deterministic
       base guide; a direct base export is not a final. Do not manually splice an
       alternate narration or workflow export into the canonical final. Retain the
-      exact local narration manifest and rights evidence for every voice, font,
+      exact narration manifest and rights evidence for every voice, font,
       image, logo and other asset.
 - [ ] Confirm the three `MEMORYAGENT_*_EXECUTABLE` values above still name the exact
       pre-reviewed absolute files. Do not derive production values with `where`,
@@ -115,7 +115,7 @@ when all three variables are unset.
       workflow-candidate manifests do not satisfy this gate.
 - [ ] No alternate narration, workflow candidate or manually edited export is used
       instead of the canonical real-motion final. The shipped audio is the exact
-      manifest-bound local Windows System.Speech narration preserved from the base AAC.
+      manifest-bound ElevenLabs narration preserved from the base AAC.
 - [ ] If the workflow source candidate is used, its permanent A/V/caption/order gate
       passed. Do not represent that source-candidate gate as validation of a changed
       exported final.

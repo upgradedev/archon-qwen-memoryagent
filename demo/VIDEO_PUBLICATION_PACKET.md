@@ -36,9 +36,9 @@ authorize or perform publication.
 >
 > Reproducible deployment path: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh
 >
-> Audio disclosure: English narration was generated locally with Windows
-> System.Speech using the Microsoft Zira Desktop synthetic voice. No human voice,
-> music, third-party audio, or network speech service is used. Burned English
+> Audio disclosure: English narration was generated with the entrant-approved
+> ElevenLabs synthetic voice `pNInz6obpgDQGcFmaJgB` and `eleven_multilingual_v2`.
+> No human voice, music, or fallback voice is used. Burned English
 > captions and the downloadable SRT mirror the same ten beats.
 >
 > Track 1: MemoryAgent | Qwen Cloud | Alibaba Cloud | pgvector | MCP | MIT
@@ -77,8 +77,8 @@ The real-motion manifest and QA must still report those transitions, 172.000 mea
 seconds and 5,160 frames, and `--verify-only` must pass immediately before upload.
 Recheck the chapters after YouTube finishes processing.
 
-Do not upload publicly until the user explicitly confirms that Microsoft Zira
-Desktop synthetic narration may be used and publicly published for this release.
+Do not upload publicly until the user explicitly confirms that the exact ElevenLabs
+synthetic narration may be used and publicly published for this release.
 
 ## Thumbnail and captions
 
@@ -92,7 +92,7 @@ Desktop synthetic narration may be used and publicly published for this release.
 - Do not publish an SRT whose capture review says
   `canonical-unmeasured-draft`.
 - Do not enable YouTube auto-dubbing or replace the reviewed audio. The canonical
-  track already contains disclosed local Windows System.Speech narration. Its exact
+  track already contains disclosed ElevenLabs narration. Its exact
   voice, WAV, manifest, clipping/silence checks and rights review must remain bound
   to the final manifest.
 

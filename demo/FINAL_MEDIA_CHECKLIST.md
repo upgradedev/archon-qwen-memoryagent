@@ -48,8 +48,8 @@ Accepted safe hosts under the detailed rules: **YouTube, Vimeo, or Youku**. Use 
 Follow the canonical [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md), run the operational
 [`VIDEO_RECORDING_CHECKLIST.md`](./VIDEO_RECORDING_CHECKLIST.md), and build the only
 publication candidate through
-[`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). Its disclosed local
-Windows System.Speech narration, burned captions and SHA-bound genuine browser motion
+[`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). Its disclosed, entrant-approved
+ElevenLabs narration, burned captions and SHA-bound genuine browser motion
 must finish with a passed real-motion manifest,
 passed QA record, and independent `--verify-only`. [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md)
 documents only the deterministic static base; [`BUILD_RECORDING.md`](./BUILD_RECORDING.md)
@@ -77,9 +77,9 @@ upload metadata but does not authorize publication.
 ### Video quality gate
 
 - [ ] Final file is strictly under 175 seconds and 1080p or better.
-- [ ] Use the canonical narrated real-motion path: disclosed, locally generated
-      Windows System.Speech synthetic voice; no human voice, music, third-party audio,
-      network speech service, or captured microphone/system audio; burned English
+- [ ] Use the canonical narrated real-motion path: disclosed, entrant-approved
+      ElevenLabs synthetic voice; no human voice, music, fallback voice, or captured
+      microphone/system audio; burned English
       captions; SHA-bound genuine browser interaction; and green final real-motion
       manifest + QA records. Keep the narration WAV and manifest under
       `.artifacts/final-narration/`; both must remain hash-bound and receive the

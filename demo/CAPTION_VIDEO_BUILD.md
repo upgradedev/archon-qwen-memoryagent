@@ -5,7 +5,7 @@ publication pipeline, [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). The base
 **172-second**, ten-beat composition with locally generated synthetic narration and
 no third-party music. Every English caption is burned into the 1920×1080 picture and
 mirrored in an exact measured SRT. Production rejects digital silence: audio must
-come from the SHA-bound local narration bundle described below.
+come from the SHA-bound canonical ElevenLabs narration bundle described below.
 
 `build_caption_video.py` does not call the live service, capture a browser, download
 an asset, or create substitute evidence. It is not a publication builder: the
@@ -53,18 +53,18 @@ live-evidence source. The full run replaces the fast self-test scratch in that
 dedicated ignored directory. The local narration self-test writes its separate
 non-submission fixture only under `.artifacts/local-narration-selftest/`.
 
-## 2. Generate the local narration bundle
+## 2. Generate the canonical narration bundle
 
-Production narration uses Windows `System.Speech` locally. It never calls a network
-service, downloads a voice model, adds music, or mixes third-party audio. First list
-the enabled installed en-US voices and confirm the canonical voice is installed:
+Production narration uses the paid ElevenLabs account through a main-only workflow.
+It makes exactly ten caption-bound requests, uses no retry or fallback voice, and
+promotes nothing unless the exact request, PCM, timing, clipping and rights gates pass:
 
 ```powershell
-python demo/tools/build_local_narration.py --list-voices
-python demo/tools/build_local_narration.py `
-  --voice "Microsoft Zira Desktop" `
-  --rate 1 `
-  --replace
+gh workflow run canonical-elevenlabs-narration.yml `
+  --repo upgradedev/archon-qwen-memoryagent `
+  --ref main `
+  -f expected_source_sha='<FINAL_MAIN_SHA>' `
+  -f commercial_rights_approved=true
 ```
 
 The tool obtains Windows PowerShell from the system directory returned by
@@ -72,8 +72,9 @@ The tool obtains Windows PowerShell from the system directory returned by
 `WindowsPowerShell/v1.0/powershell.exe`. It never resolves an executable from the
 working directory or `PATH`.
 
-There is no implicit OS-default voice. Production requires exactly Microsoft Zira
-Desktop, and `--voice` remains mandatory so the manifest discloses what was used.
+There is no implicit provider default. Production requires voice id
+`pNInz6obpgDQGcFmaJgB`, model `eleven_multilingual_v2`, PCM 24 kHz provider output,
+fixed per-beat seeds, and an explicit commercial/publication-rights approval.
 The generator speaks one complete segment per row
 of tracked [`caption-timeline.json`](./caption-timeline.json). It fails instead of
 cutting a segment that cannot fit its beat. A successful run writes only:
@@ -98,7 +99,7 @@ attestation; the human synthetic-voice rights review below remains authoritative
 
 Both records stay ignored and project-contained. The validator requires meaningful
 non-silent audio in every beat and zero clipped samples. `--self-test` does not
-invoke `System.Speech`; it creates a cross-platform ten-tone fixture that the
+invoke ElevenLabs; it creates a cross-platform ten-tone fixture that the
 production gate explicitly rejects.
 
 ## 3. Lock the exact caption timeline before final capture
@@ -191,10 +192,10 @@ a filename check and not publication approval. It requires:
 - `subtitleTimingSource=measured-caption-windows` plus an SRT that exactly equals the
   deterministic ten-beat text and boundaries. A draft/fallback SRT is rejected.
 - the read-once narration WAV and manifest, SHA-bound to each other and the exact
-  tracked caption contract; production requires the explicitly selected Microsoft
-  Zira Desktop en-US Windows `System.Speech` voice named in that manifest; and
+  tracked caption contract; production requires the exact approved ElevenLabs
+  voice/model/request contract named in that manifest; and
 - exactly 172 seconds of 48 kHz stereo PCM with meaningful signal in all ten beats,
-  no speech truncation, no clipping, no music or network media, and the canonical
+  no speech truncation, no clipping, no music or fallback media, and the canonical
   synthetic-voice disclosure.
 
 Missing media, a changed byte, stale source ancestry, a runtime-affecting working-tree
@@ -213,7 +214,7 @@ or duplicate machine records cannot make the build green. Until a new exact
 deployment writes that single record, production mode remains blocked.
 
 The builder retains immutable snapshots of every input it validates. Both the
-caption builder and local narration validator are compared directly with their
+caption builder and narration validators are compared directly with their
 current `HEAD` blobs and recorded in the base manifest. Direct CLI output is limited
 to `.artifacts/final-caption-video/`; it cannot replace the canonical final video.
 The canonical public SRT is a validated read-only input and is never rewritten or
