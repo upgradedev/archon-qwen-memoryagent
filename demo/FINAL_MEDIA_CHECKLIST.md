@@ -152,16 +152,16 @@ Store sensitive originals only in the ignored repo-local folder `demo/private-or
 
 ## 3. Public posts
 
-- [ ] Publish the technical article from [`BLOG.md`](./BLOG.md); remove its publisher-only HTML checklist, resolve only public video/Devpost placeholders, and keep its absolute architecture image URL and Qwen Cloud build journey intact.
-- [ ] Open the published article, architecture image, live CTA, repository CTA, and optional video/Devpost links in a signed-out/private browser; require every page to load without a login or access request.
-- [ ] Publish the canonical [`BLOG.md`](./BLOG.md) on dev.to and verify the final
+- [x] Publish the technical article from [`BLOG.md`](./BLOG.md); remove its publisher-only HTML checklist, resolve only public video/Devpost placeholders, and keep its absolute architecture image URL and Qwen Cloud build journey intact.
+- [x] Open the published article, architecture image, live CTA, repository CTA, and optional video/Devpost links signed out; require every page to load without a login or access request.
+- [x] Publish the canonical [`BLOG.md`](./BLOG.md) on dev.to and verify the final
       article, architecture image, live link, repository link, and public video link
       signed out. No separate social-network post is required for this release.
-- [ ] Confirm each post is public in an incognito window.
-- [ ] Add the public blog/social URL to the Devpost submission for the optional bonus.
+- [x] Confirm the dev.to post is public from an unauthenticated HTTP client.
+- [x] Add the public blog/social URL to the Devpost submission for the optional bonus.
 
-**Blog URL:** `____________________________________________`
-**Social URL:** `____________________________________________`
+**Blog URL:** <https://dev.to/efousekis/we-built-a-qwen-memoryagent-that-challenges-its-own-memory-53no>
+**Social URL:** Not used; the published dev.to article is the bonus artifact.
 
 ## 4. Devpost copy/paste fields
 
