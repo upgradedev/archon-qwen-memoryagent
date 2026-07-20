@@ -29,6 +29,10 @@ SPEC.loader.exec_module(evidence)
 class CanonicalFinalVideoWorkflowTests(unittest.TestCase):
     def test_publication_audio_processing_contract_is_shared_exactly(self) -> None:
         self.assertEqual(caption.PUBLICATION_AUDIO_PROCESSING, motion.PUBLICATION_AUDIO_PROCESSING)
+        self.assertEqual(caption.PUBLICATION_AUDIO_SAMPLE_RATE, motion.AUDIO_SAMPLE_RATE)
+        self.assertEqual(caption.PUBLICATION_AUDIO_CHANNELS, motion.AUDIO_CHANNELS)
+        self.assertEqual(caption.PUBLICATION_ACTIVE_SAMPLE_THRESHOLD, motion.ACTIVE_SAMPLE_THRESHOLD)
+        self.assertEqual(caption.PUBLICATION_CLIPPING_SAMPLE_THRESHOLD, motion.CLIPPING_SAMPLE_THRESHOLD)
 
     def test_post_capture_allowlist_is_exactly_bounded_to_known_media_workflows(self) -> None:
         for allowed in (

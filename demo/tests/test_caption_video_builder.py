@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import hashlib
 from http import client as httpclient
+import io
 import json
+import math
 import os
 from pathlib import Path
 import re
 import shutil
 import ssl
+import struct
 import subprocess
 import sys
 import tempfile
@@ -453,6 +457,51 @@ class CaptureQuotaOrderingTests(unittest.TestCase):
 
 
 class CaptionTimelineTests(unittest.TestCase):
+    def test_encoded_audio_measurement_uses_the_final_verifier_normalization(self) -> None:
+        sample_values = (0, 255, 256, -32_759, 32_760, -1_000)
+        pcm = struct.pack("<6h", *sample_values)
+
+        class Process:
+            stdout = io.BytesIO(pcm)
+            stderr = io.BytesIO()
+
+            @staticmethod
+            def wait() -> int:
+                return 0
+
+        commands: list[list[str]] = []
+
+        def popen(command: list[str], **_kwargs: object) -> Process:
+            commands.append(command)
+            return Process()
+
+        with (
+            mock.patch.object(
+                builder,
+                "trusted_invocation",
+                return_value=contextlib.nullcontext("/trusted/ffmpeg"),
+            ),
+            mock.patch.object(builder.subprocess, "Popen", side_effect=popen),
+        ):
+            measured = builder.decoded_audio_signal(ROOT / "normalized-audio.mp4")
+
+        self.assertEqual(
+            commands[0],
+            [
+                "/trusted/ffmpeg", "-nostdin", "-v", "error", "-i",
+                str(ROOT / "normalized-audio.mp4"), "-map", "0:a:0", "-vn",
+                "-ac", "2", "-ar", "48000", "-f", "s16le", "-",
+            ],
+        )
+        self.assertEqual(measured["sampleCount"], 6)
+        self.assertEqual(measured["peakS16"], 32_760)
+        self.assertEqual(measured["activeSampleRatio"], round(4 / 6, 6))
+        self.assertEqual(measured["clippedSamples"], 1)
+        self.assertEqual(
+            measured["rmsS16"],
+            round(math.sqrt(sum(value * value for value in sample_values) / len(sample_values)), 3),
+        )
+
     def test_local_narration_defaults_and_schema_are_stable(self) -> None:
         self.assertEqual(narration.DEFAULT_AUDIO_REL, ".artifacts/final-narration/memoryagent-narration.wav")
         self.assertEqual(
