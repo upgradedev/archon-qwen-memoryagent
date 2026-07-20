@@ -1,13 +1,14 @@
 # Build the final video and optional authenticated source footage
 
-The only canonical publication candidate is the rights-safe, caption-led
+The only canonical publication candidate is the rights-disclosed, narrated and captioned
 **real-motion** assembly documented in
 [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). It uses the hash-reviewed
 gallery/proof inputs, burns the exact English captions, inserts SHA-bound genuine live
-browser interaction, and generates a digital-silence compatibility track: no TTS,
-recorded voice, or third-party music. Its 5,160-frame timeline is deterministically
-172 seconds, and its final manifest + QA + `--verify-only` gate measure the actual
-shipped MP4/SRT before promotion.
+browser interaction, and preserves a required local Windows System.Speech narration
+track. It uses no music, downloaded voice model, or third-party audio. Its 5,160-frame
+timeline is deterministically 172 seconds, and its final manifest, QA, and
+`--verify-only` gate measure the actual shipped MP4, SRT, and audible signal before
+promotion.
 
 [`CAPTION_VIDEO_BUILD.md`](./CAPTION_VIDEO_BUILD.md) documents the deterministic
 timeline and static base renderer. `build_caption_video.py` is intermediate tooling
@@ -35,19 +36,33 @@ as a recording source: it is retained only as explicitly labelled historical evi
 and describes an older BM25-labelled capture rather than the deployed PostgreSQL
 full-text path.
 
-## Canonical caption-led real-motion final
+## Canonical narrated real-motion final
 
-Run the offline self-test and emit the deterministic caption-window input before the
-final gallery capture:
+Generate and validate the local narration, run the offline self-tests, and emit the
+deterministic caption-window input before the final gallery capture:
 
-```bash
-python -m py_compile demo/tools/build_caption_video.py
+```powershell
+$env:MEMORYAGENT_GIT_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_GIT_EXECUTABLE>'
+$env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
+$env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
+
+python -m py_compile demo/tools/build_local_narration.py demo/tools/build_caption_video.py
 python -m unittest discover -s demo/tests -p 'test_caption_video_builder.py' -v
+python demo/tools/build_local_narration.py --list-voices
+python demo/tools/build_local_narration.py --voice "Microsoft Zira Desktop" --rate 1
 python demo/tools/build_caption_video.py --self-test
 python demo/tools/build_caption_video.py --full-self-test
-python demo/tools/build_caption_video.py \
+python demo/tools/build_caption_video.py `
   --emit-caption-windows .artifacts/final-caption-video/caption_windows.json
 ```
+
+Replace the placeholders with absolute paths reviewed for this release. ffmpeg and
+ffprobe must be sibling files from the same reviewed toolchain directory. Production
+media commands never use working-directory or `PATH` discovery; configured tool
+identity and SHA-256 are bound and rechecked. Only explicit non-submission self-test
+fixtures may discover an unambiguous PATH toolchain when all three variables are
+unset. Do not obtain production values with `where`, `which`, `Get-Command`, or
+`command -v`.
 
 After exact deployment and the final media-capture gate, use the static builder's
 `--check-only` mode only as an optional base-input preflight. Then run the production
@@ -62,12 +77,10 @@ or the final real-motion manifest/QA cannot be independently re-verified.
 ## 1. Preconditions
 
 1. Confirm the default branch and live runtime evidence are aligned with
-   [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). The required recording
-   runtime candidate is `cfd485de1dd01473c8d6be91521e5560d8e8313e`, explicitly
-   recorded there as exact-deployed/live-verified under the reviewed
-   `terminal-success-truncated-output` evidence mode. Submission-pack-only descendants
-   may move repository HEAD after that candidate; any runtime descendant is a hard
-   stop until another exact deploy.
+   [`deploy/DEPLOY_STATE.md`](../deploy/DEPLOY_STATE.md). Use only the exact runtime
+   SHA and retained deployment evidence named by its current green machine record.
+   Submission-only descendants may move repository HEAD after that runtime; any
+   runtime-affecting descendant is a hard stop until another exact deployment.
 2. Run the secret-safe pre-recording checks in
    [`FINAL_MEDIA_CHECKLIST.md`](./FINAL_MEDIA_CHECKLIST.md).
 3. Configure `MEMORYAGENT_JUDGE_API_KEY` only as a private Actions secret. Never put
@@ -143,22 +156,31 @@ screenshots, manifest, and caption windows so synchronization can be audited.
 
 ## 5. Re-run local acceptance and review
 
-Run from the repository root with local `ffmpeg`/`ffprobe`, Python 3.11, and Pillow
-available. Set the actual run id once; the manifest and caption-window sidecars must
-come from the same artifact as the candidate:
+Run from the repository root with Python 3.11 and Pillow available. Set the actual
+run id once, and replace each executable placeholder with a pre-reviewed absolute
+path. The manifest and caption-window sidecars must come from the same artifact as
+the candidate:
 
 ```bash
+export MEMORYAGENT_GIT_EXECUTABLE='/absolute/pre-reviewed/path/to/git'
+export MEMORYAGENT_FFMPEG_EXECUTABLE='/absolute/pre-reviewed/path/to/ffmpeg'
+export MEMORYAGENT_FFPROBE_EXECUTABLE='/absolute/pre-reviewed/path/to/ffprobe'
+
 RUN_ID=<RUN_ID>
 ART="demo/private-originals/video-build-${RUN_ID}"
 CAND="${ART}/demo/final-media/memoryagent-demo.mp4"
 
-command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null
+test -x "$MEMORYAGENT_GIT_EXECUTABLE"
+test -x "$MEMORYAGENT_FFMPEG_EXECUTABLE"
+test -x "$MEMORYAGENT_FFPROBE_EXECUTABLE"
 python -c 'from PIL import Image; print("Pillow OK")'
 test -s "$CAND" -a -s "$ART/video_manifest.json" -a -s "$ART/caption_windows.json"
 
-ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$CAND"
-test "$(ffprobe -v error -select_streams v -show_entries stream=index -of csv=p=0 "$CAND" | wc -l)" -eq 1
-test "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$CAND" | wc -l)" -eq 1
+"$MEMORYAGENT_FFPROBE_EXECUTABLE" -v error -show_entries format=duration -of default=nw=1:nk=1 "$CAND"
+VIDEO_STREAMS=$("$MEMORYAGENT_FFPROBE_EXECUTABLE" -v error -select_streams v -show_entries stream=index -of csv=p=0 "$CAND" | wc -l)
+AUDIO_STREAMS=$("$MEMORYAGENT_FFPROBE_EXECUTABLE" -v error -select_streams a -show_entries stream=index -of csv=p=0 "$CAND" | wc -l)
+test "$VIDEO_STREAMS" -eq 1
+test "$AUDIO_STREAMS" -eq 1
 
 VIDEO_MANIFEST="$ART/video_manifest.json" \
 CAPTION_WINDOWS="$ART/caption_windows.json" \
@@ -190,8 +212,8 @@ recording checklist.
 After promotion, check ignored/tracked state before staging:
 
 ```bash
-git status --ignored --short demo/
-git ls-files demo/private-originals/
+"$MEMORYAGENT_GIT_EXECUTABLE" status --ignored --short demo/
+"$MEMORYAGENT_GIT_EXECUTABLE" ls-files demo/private-originals/
 ```
 
 The second command must print nothing. A workflow candidate or direct static-caption

@@ -481,24 +481,31 @@
 
     function planHumanDecision(action, c, selectedMemoryId) {
       const values = c.values || [];
+      const carrierIdsFor = (value) => {
+        const declared = Array.isArray(value.carrierMemoryIds) ? value.carrierMemoryIds : [];
+        // `memoryId` is the legacy single-carrier contract. Always merge it so
+        // older audit payloads remain actionable and malformed new payloads
+        // cannot accidentally omit their public representative.
+        return [...new Set([value.memoryId, ...declared]
+          .filter((id) => typeof id === 'string' && id.length > 0))].sort();
+      };
+      const activeCarrierIds = [...new Set(values.flatMap(carrierIdsFor))].sort();
       const winnerId = c.resolution && c.resolution.recommendedMemoryId;
-      if (!winnerId || !values.some((v) => v.memoryId === winnerId)) {
+      if (!winnerId || !activeCarrierIds.includes(winnerId)) {
         throw new Error('resolution requires a traceable recommended memory');
       }
       const resolvedSelectedId = action === 'accept' ? winnerId : selectedMemoryId;
-      if (!resolvedSelectedId || !values.some((v) => v.memoryId === resolvedSelectedId)) {
+      if (!resolvedSelectedId || !activeCarrierIds.includes(resolvedSelectedId)) {
         throw new Error('human decision requires an explicit traceable selected memory');
       }
       if (action === 'override' && resolvedSelectedId === winnerId) {
         throw new Error('override must select a non-recommended memory');
       }
       // Accept and Override share the same complete-set invariant: every active
-      // conflicting value except the explicitly selected one must be targeted.
-      // Targeting only the recommended winner on a 3+ value override would leave
-      // another losing alternative active and the contradiction unresolved.
-      const targetMemoryIds = values
-        .filter((v) => v.memoryId !== resolvedSelectedId)
-        .map((v) => v.memoryId);
+      // carrier except the explicitly selected memory must be targeted. This
+      // includes duplicate writes inside the selected value bucket as well as
+      // every carrier of the other conflicting values.
+      const targetMemoryIds = activeCarrierIds.filter((id) => id !== resolvedSelectedId);
       if (!targetMemoryIds.length) throw new Error('decision requires at least one conflicting target');
       return { selectedMemoryId: resolvedSelectedId, targetMemoryIds };
     }
@@ -519,13 +526,18 @@
         if (reasonField) reasonField.focus();
         return;
       }
-      const selected = (c.values || []).find((v) => v.memoryId === plan.selectedMemoryId);
-      const targets = plan.targetMemoryIds.map((id) => (c.values || []).find((v) => v.memoryId === id));
-      if (!selected || targets.some((target) => !target)) throw new Error('decision references an unknown memory');
+      const knownCarrierIds = new Set((c.values || []).flatMap((value) => [
+        value.memoryId,
+        ...(Array.isArray(value.carrierMemoryIds) ? value.carrierMemoryIds : []),
+      ].filter((id) => typeof id === 'string' && id.length > 0)));
+      if (!knownCarrierIds.has(plan.selectedMemoryId) ||
+          plan.targetMemoryIds.some((id) => !knownCarrierIds.has(id))) {
+        throw new Error('decision references an unknown memory');
+      }
       const buttons = box.querySelectorAll('button'); buttons.forEach((b) => { b.disabled = true; });
       statusBusy((action === 'accept' ? 'Accepting recommendation' : 'Applying human override') + '…');
       try {
-        const decisionId = conflictDecisionId(action, c, selected.memoryId, plan.targetMemoryIds);
+        const decisionId = conflictDecisionId(action, c, plan.selectedMemoryId, plan.targetMemoryIds);
         // One authenticated transaction selects an EXISTING carrier and
         // supersedes the complete loser set. No duplicate correction rows, no
         // partial window, no embedding call; a lost-response retry replays the
@@ -534,7 +546,7 @@
           decisionId,
           subject: c.subject,
           attribute: c.attribute,
-          selectedMemoryId: selected.memoryId,
+          selectedMemoryId: plan.selectedMemoryId,
           targetMemoryIds: plan.targetMemoryIds,
           reason,
         });
@@ -568,13 +580,18 @@
         const ordered = [...(c.values || [])].sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
         ordered.forEach((v, index) => {
           const recommended = c.resolution && v.memoryId === c.resolution.recommendedMemoryId;
+          const carrierCount = new Set([
+            v.memoryId,
+            ...(Array.isArray(v.carrierMemoryIds) ? v.carrierMemoryIds : []),
+          ].filter(Boolean)).size;
           timeline.appendChild(el('div', { class: 'timeline-event' + (recommended ? ' recommended' : '') }, [
             el('div', { class: 'timeline-head' }, [
               el('span', { class: 'session-label', text: 'SESSION ' + String.fromCharCode(65 + index) }),
               el('span', { class: 'timeline-value', text: printable(v.value) }),
               ...(recommended ? [el('span', { class: 'pill', text: 'policy recommendation' })] : []),
             ]),
-            el('div', { class: 'timeline-meta', text: (v.createdAt || 'unknown time') + ' · source ' + (v.sourceRef || '—') + ' · memory ' + shortId(v.memoryId) }),
+            el('div', { class: 'timeline-meta', text: (v.createdAt || 'unknown time') + ' · source ' + (v.sourceRef || '—') + ' · memory ' + shortId(v.memoryId) +
+              (carrierCount > 1 ? ' · ' + carrierCount + ' active carriers in this value bucket' : '') }),
           ]));
         });
         box.appendChild(timeline);
@@ -591,7 +608,8 @@
           const actions = el('div', { class: 'resolution-actions' });
           const winnerId = c.resolution.recommendedMemoryId;
           const alternatives = ordered.filter((v) => v.memoryId !== winnerId);
-          const accept = el('button', { type: 'button', text: 'Accept recommendation · resolve ' + alternatives.length + ' alternative(s)' });
+          const acceptTargetCount = planHumanDecision('accept', c, winnerId).targetMemoryIds.length;
+          const accept = el('button', { type: 'button', text: 'Accept recommendation · resolve ' + acceptTargetCount + ' alternative carrier(s)' });
           const defer = el('button', { type: 'button', class: 'secondary', text: 'Defer — no write' });
           accept.addEventListener('click', () => applyHumanDecision('accept', c, box, winnerId));
           actions.appendChild(accept);

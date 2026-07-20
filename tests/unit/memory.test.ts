@@ -585,6 +585,80 @@ for (const scenario of [
   });
 }
 
+test("atomic conflict resolution validates flattened duplicate same-value carriers", async () => {
+  const tenantId = "tenant-duplicate-carriers";
+  const store = new InMemoryStore();
+  const agent = new MemoryAgent(
+    new FakeEmbedder(),
+    store,
+    new FakeNarrator(),
+    new FakeJudge(),
+    undefined,
+    tenantId,
+  );
+  const selected = await agent.remember("document", "Invoice INV-DUP amount 8900, reviewed source.", {
+    tenantId,
+    company: "Resolution Co",
+    period: "2026-05",
+    sourceRef: "session-1",
+    metadata: { record: "INV-DUP", amount: 8900 },
+    importance: 0.9,
+    idempotencyKey: "duplicate-carriers:selected",
+  });
+  const sameValueDuplicate = await agent.remember("document", "Invoice INV-DUP amount 8900, re-ingest.", {
+    tenantId,
+    company: "Resolution Co",
+    period: "2026-05",
+    sourceRef: "session-2",
+    metadata: { record: "INV-DUP", amount: 8900 },
+    importance: 0.5,
+    idempotencyKey: "duplicate-carriers:same-value",
+  });
+  const conflicting = await agent.remember("document", "Invoice INV-DUP amount 8400.", {
+    tenantId,
+    company: "Resolution Co",
+    period: "2026-05",
+    sourceRef: "session-3",
+    metadata: { record: "INV-DUP", amount: 8400 },
+    importance: 0.5,
+    idempotencyKey: "duplicate-carriers:conflicting",
+  });
+
+  const contradiction = (await agent.auditConsistency({ tenantId })).contradictions[0]!;
+  const selectedBucket = contradiction.values.find((value) => value.value === 8900)!;
+  assert.equal(selectedBucket.memoryId, selected);
+  assert.deepEqual(
+    selectedBucket.carrierMemoryIds,
+    [selected, sameValueDuplicate].sort(),
+    "the report must expose both active writes that carry the selected value",
+  );
+
+  await assert.rejects(
+    agent.resolveConflict("INV-DUP", "amount", selected, [conflicting], {
+      tenantId,
+      decisionId: "decision-duplicate-incomplete",
+    }),
+    /every active non-selected/i,
+    "server-side validation must reject a distinct-value-only target set",
+  );
+  const result = await agent.resolveConflict(
+    "INV-DUP",
+    "amount",
+    selected,
+    [conflicting, sameValueDuplicate].reverse(),
+    { tenantId, decisionId: "decision-duplicate-complete" },
+  );
+  assert.deepEqual(result.supersededMemoryIds, [conflicting, sameValueDuplicate].sort());
+  assert.deepEqual(
+    { before: result.before.activeCarriers, after: result.after.activeCarriers },
+    { before: 3, after: 1 },
+  );
+  assert.deepEqual(
+    (await store.listForAudit({ tenantId })).map((memory) => memory.id),
+    [selected],
+  );
+});
+
 test("atomic conflict resolution rejects incomplete, stale, mismatched and cross-tenant sets without partial changes", async () => {
   const store = new InMemoryStore();
   const { agent, ids } = await threeWayConflict(store);

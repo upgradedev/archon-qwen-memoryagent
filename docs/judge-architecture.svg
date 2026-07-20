@@ -39,7 +39,7 @@
   <circle cx="1530" cy="690" r="230" fill="#0ea5e9" opacity="0.05"/>
 
   <text x="68" y="70" class="h1">Archon MemoryAgent</text>
-  <text x="68" y="106" class="sub">Track 1 · persistent agent memory that recalls, cites — and challenges its own contradictions</text>
+  <text x="68" y="106" class="sub">Track 1 · persistent agent memory that recalls, cites, and challenges its own contradictions</text>
   <rect x="1268" y="48" width="264" height="54" rx="27" fill="url(#brand)"/>
   <text x="1400" y="82" text-anchor="middle" class="title" style="font-size:18px">Alibaba ECS · HTTPS</text>
 

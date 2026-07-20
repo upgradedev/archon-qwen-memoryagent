@@ -17,6 +17,7 @@ import { RESOLUTION_CASE } from "../../bench/resolution-dataset.js";
 
 const S_A = "2026-05-01T09:00:00.000Z";
 const S_B = "2026-05-08T14:30:00.000Z";
+const S_C = "2026-05-15T11:45:00.000Z";
 
 function mem(
   id: string,
@@ -188,6 +189,110 @@ test("recency (default): the later write wins", () => {
   assert.equal(r.recommendedValue, 200);
 });
 
+test("public values expose the latest carrier selected by recency", () => {
+  const report = auditConsistency([
+    mem("amount-8400-old", "INV-5521", S_A, { amount: 8400 }, "session-a.json"),
+    mem("amount-8900", "INV-5521", S_B, { amount: 8900 }, "session-b.json"),
+    mem("amount-8400-latest", "INV-5521", S_C, { amount: 8400 }, "session-c.json"),
+  ]);
+
+  assert.equal(report.contradictions.length, 1);
+  const contradiction = report.contradictions[0]!;
+  assert.equal(contradiction.resolution.rule, "recency");
+  assert.equal(contradiction.resolution.recommendedMemoryId, "amount-8400-latest");
+  assert.match(contradiction.resolution.rationale, /Later write \(2026-05-15\)/);
+  assert.deepEqual(
+    contradiction.values.find((v) => v.value === 8400),
+    {
+      memoryId: "amount-8400-latest",
+      carrierMemoryIds: ["amount-8400-latest", "amount-8400-old"],
+      sourceRef: "session-c.json",
+      value: 8400,
+      createdAt: S_C,
+    }
+  );
+  assert.ok(
+    contradiction.values.some(
+      (v) =>
+        v.memoryId === contradiction.resolution.recommendedMemoryId &&
+        v.createdAt === S_C
+    ),
+    "the recommended write must be visible with its timestamp"
+  );
+  assert.ok(
+    contradiction.values.every((v) => v.memoryId !== "amount-8400-old"),
+    "an older carrier of the same distinct value must not mask the latest write"
+  );
+});
+
+test("numeric tolerance buckets bind the selected memory to its exact value and all carriers", () => {
+  const memories = [
+    mem("amount-100-old", "INV-TOLERANCE", S_A, { amount: 100 }, "session-a.json"),
+    mem("amount-200", "INV-TOLERANCE", S_B, { amount: 200 }, "session-b.json"),
+    mem("amount-100.4-latest", "INV-TOLERANCE", S_C, { amount: 100.4 }, "session-c.json"),
+  ];
+
+  const contradiction = auditConsistency(memories, { numericTolerance: 0.5 }).contradictions[0]!;
+  assert.equal(contradiction.resolution.rule, "recency");
+  assert.equal(contradiction.resolution.recommendedMemoryId, "amount-100.4-latest");
+  assert.equal(
+    contradiction.resolution.recommendedValue,
+    100.4,
+    "the resolution value must be the value asserted by the selected memory",
+  );
+  assert.deepEqual(
+    contradiction.values.find((value) => value.memoryId === "amount-100.4-latest"),
+    {
+      memoryId: "amount-100.4-latest",
+      carrierMemoryIds: ["amount-100-old", "amount-100.4-latest"],
+      sourceRef: "session-c.json",
+      value: 100.4,
+      createdAt: S_C,
+    },
+    "representative provenance must never pair one carrier ID with another carrier's value",
+  );
+
+  const reversed = auditConsistency([...memories].reverse(), { numericTolerance: 0.5 });
+  assert.deepEqual(
+    reversed.contradictions,
+    [contradiction],
+    "bucket representatives and carrier ID ordering must not depend on input order",
+  );
+});
+
+test("numeric tolerance bucket membership is deterministic for chained near-values", () => {
+  const memories = [
+    mem("chain-0", "INV-CHAIN", S_A, { amount: 0 }),
+    mem("chain-0.4", "INV-CHAIN", S_B, { amount: 0.4 }),
+    mem("chain-0.8", "INV-CHAIN", S_C, { amount: 0.8 }),
+  ];
+
+  const forward = auditConsistency(memories, { numericTolerance: 0.5 });
+  const reversed = auditConsistency([...memories].reverse(), { numericTolerance: 0.5 });
+  assert.equal(forward.contradictions.length, 1);
+  assert.deepEqual(reversed, forward);
+  assert.deepEqual(
+    forward.contradictions[0]!.values.map((value) => value.carrierMemoryIds),
+    [["chain-0", "chain-0.4"], ["chain-0.8"]],
+  );
+});
+
+test("latest-value representatives use the resolver's deterministic id tie-break", () => {
+  const report = auditConsistency([
+    mem("value-100-old", "INV-TIE", S_A, { amount: 100 }),
+    mem("z-value-100-latest", "INV-TIE", S_C, { amount: 100 }),
+    mem("a-value-100-latest", "INV-TIE", S_C, { amount: 100 }),
+    mem("value-200", "INV-TIE", S_B, { amount: 200 }),
+  ]);
+
+  const contradiction = report.contradictions[0]!;
+  assert.equal(contradiction.resolution.recommendedMemoryId, "a-value-100-latest");
+  assert.equal(
+    contradiction.values.find((v) => v.value === 100)?.memoryId,
+    "a-value-100-latest"
+  );
+});
+
 test("importance overrides recency: a flagged older memory beats a later one", () => {
   const report = auditConsistency([
     { ...mem("a", "P-1", S_A, { limit: 1000 }), metadata: { record: "P-1", limit: 1000, importance: 0.9 } },
@@ -199,6 +304,23 @@ test("importance overrides recency: a flagged older memory beats a later one", (
   assert.equal(r.recommendedValue, 1000);
 });
 
+test("public values retain an older carrier selected by importance", () => {
+  const report = auditConsistency([
+    { ...mem("important-100", "POLICY-TRACE", S_A, { limit: 100 }), importance: 0.9 },
+    { ...mem("later-100", "POLICY-TRACE", S_B, { limit: 100 }), importance: 0.2 },
+    { ...mem("latest-200", "POLICY-TRACE", S_C, { limit: 200 }), importance: 0.3 },
+  ]);
+
+  const contradiction = report.contradictions[0]!;
+  assert.equal(contradiction.resolution.rule, "importance");
+  assert.equal(contradiction.resolution.recommendedMemoryId, "important-100");
+  assert.ok(
+    contradiction.values.some((v) => v.memoryId === "important-100" && v.createdAt === S_A),
+    "the exact importance carrier must remain traceable even when the same value was written later"
+  );
+  assert.ok(contradiction.values.every((v) => v.memoryId !== "later-100"));
+});
+
 test("source-authority overrides recency: a structured record beats a derived insight", () => {
   const report = auditConsistency([
     { ...mem("a", "ACCT-1", S_A, { balance: 5000 }), kind: "document" },
@@ -208,6 +330,25 @@ test("source-authority overrides recency: a structured record beats a derived in
   assert.equal(r.rule, "source-authority");
   assert.equal(r.recommendedMemoryId, "a");
   assert.equal(r.recommendedValue, 5000);
+});
+
+test("public values retain an older carrier selected by source authority", () => {
+  const report = auditConsistency([
+    { ...mem("structured-5000", "ACCT-TRACE", S_A, { balance: 5000 }), kind: "document" },
+    { ...mem("derived-5000", "ACCT-TRACE", S_B, { balance: 5000 }), kind: "insight" },
+    { ...mem("derived-5200", "ACCT-TRACE", S_C, { balance: 5200 }), kind: "insight" },
+  ]);
+
+  const contradiction = report.contradictions[0]!;
+  assert.equal(contradiction.resolution.rule, "source-authority");
+  assert.equal(contradiction.resolution.recommendedMemoryId, "structured-5000");
+  assert.ok(
+    contradiction.values.some(
+      (v) => v.memoryId === "structured-5000" && v.createdAt === S_A
+    ),
+    "the exact authority carrier must remain traceable even when the same value was written later"
+  );
+  assert.ok(contradiction.values.every((v) => v.memoryId !== "derived-5000"));
 });
 
 test("resolveContradiction falls back to recency for equal kinds + no importance", () => {

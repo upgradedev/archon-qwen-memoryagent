@@ -54,6 +54,7 @@ GALLERY = REPO / "demo" / "gallery"
 FINAL_MEDIA = REPO / "demo" / "final-media"
 PROOF_FRAMES = FINAL_MEDIA / "proof-frames"
 ARCHITECTURE = FINAL_MEDIA / "judge-architecture.jpg"
+CAPTION_CONTRACT = REPO / "demo" / "caption-timeline.json"
 
 DEFAULT_BASE_URL = "https://memory.43.106.13.19.sslip.io"
 PINNED_LIVE_HOST = "memory.43.106.13.19.sslip.io"
@@ -1546,6 +1547,44 @@ def wrap(draw: ImageDraw.ImageDraw, text: str, face: ImageFont.ImageFont, max_wi
     return lines
 
 
+def draw_live_footer(
+    draw: ImageDraw.ImageDraw,
+    *,
+    left_text: str,
+    right_text: str,
+) -> str:
+    """Draw a collision-free evidence footer inside the 1920x1080 safe area."""
+    left_face = font(22, bold=True)
+    right_face = font(20)
+    left_width = float(draw.textlength(left_text, font=left_face))
+    right_width = float(draw.textlength(right_text, font=right_face))
+    available_width = 1760
+    require(left_width <= available_width, "live footer URL is too wide for the publication frame")
+    require(right_width <= available_width, "live footer provenance is too wide for the publication frame")
+
+    draw.rectangle((0, 990, 1920, 1080), fill="#091612")
+    if left_width + right_width + 56 <= available_width:
+        left_box = draw.textbbox((80, 1018), left_text, font=left_face)
+        right_box = draw.textbbox((1840, 1018), right_text, anchor="ra", font=right_face)
+        require(left_box[2] + 56 <= right_box[0], "single-row live footer geometry collides")
+        require(left_box[3] <= 1070 and right_box[3] <= 1070, "single-row live footer escapes the safe area")
+        draw.text((80, 1018), left_text, font=left_face, fill="#d3f6e8")
+        draw.text((1840, 1018), right_text, anchor="ra", font=right_face, fill="#89a79b")
+        return "single-row"
+
+    # Long repository URLs and full source provenance use two deliberate rows.
+    # This keeps both strings readable instead of letting a fixed x-offset collide.
+    stacked_left_face = font(20, bold=True)
+    stacked_right_face = font(19)
+    left_box = draw.textbbox((80, 1001), left_text, font=stacked_left_face)
+    right_box = draw.textbbox((1840, 1037), right_text, anchor="ra", font=stacked_right_face)
+    require(left_box[3] + 5 <= right_box[1], "two-row live footer geometry collides")
+    require(left_box[2] <= 1840 and right_box[0] >= 80 and right_box[3] <= 1070, "two-row live footer escapes the safe area")
+    draw.text((80, 1001), left_text, font=stacked_left_face, fill="#d3f6e8")
+    draw.text((1840, 1037), right_text, anchor="ra", font=stacked_right_face, fill="#89a79b")
+    return "two-row"
+
+
 def fit_source(source: Image.Image, box: tuple[int, int, int, int], background: str = "#0a1412") -> Image.Image:
     width = box[2] - box[0]
     height = box[3] - box[1]
@@ -1590,9 +1629,11 @@ def composite_live_capture(
     rounded(draw, (70, 320, 1850, 975), "#0a1713", radius=28, outline="#23483b", width=2)
     panel = fit_source(source, (88, 338, 1832, 957), "#0b1513")
     canvas.paste(panel, (88, 338))
-    draw.rectangle((0, 1000, 1920, 1080), fill="#091612")
-    draw.text((80, 1018), f"LIVE HTTPS · {base_url}", font=font(22, bold=True), fill="#d3f6e8")
-    draw.text((760, 1018), f"{source_label} {expected_sha[:12]} · observed {observed_at}", font=font(20), fill="#89a79b")
+    draw_live_footer(
+        draw,
+        left_text=f"LIVE HTTPS · {base_url}",
+        right_text=f"{source_label} {expected_sha[:12]} · observed {observed_at}",
+    )
     if dual_submission:
         save_dual_submission_frame(canvas, output)
     else:
@@ -1709,11 +1750,13 @@ def render_feedback_persistence_card(
     draw.rectangle((0, 0, 1920, 10), fill="#a78bfa")
     draw.text((80, 60), "EXPLICIT FEEDBACK · FRESH SESSION", font=font(24, bold=True), fill="#a78bfa")
     draw.text((80, 108), "Session A stores feedback. Session B applies it.", font=font(56, bold=True), fill="#f4f0ff")
-    draw.text((82, 185), "The correction is a durable, cited memory record—not autonomous training and not a model-weight update.", font=font(27), fill="#b9aecf")
+    draw.text((82, 185), "The correction is a durable, cited memory record. It is not autonomous training or a model-weight update.", font=font(27), fill="#b9aecf")
 
+    citation_count = int(session_b["citationCount"])
+    citation_label = "citation" if citation_count == 1 else "citations"
     panels = (
         (80, "SESSION A · REVIEWER FEEDBACK", "Persisted correction", proof["preferenceDisplay"], "Original synthetic fact superseded · correction provenance retained"),
-        (980, "SESSION B · NEW CLIENT", "Grounded application", str(session_b["answer"]), f"{session_b['citationCount']} citation(s) · {session_b['modelId']} · corrected memory recalled"),
+        (980, "SESSION B · NEW CLIENT", "Grounded application", str(session_b["answer"]), f"{citation_count} {citation_label} · {session_b['modelId']} · corrected memory recalled"),
     )
     for x0, eyebrow, heading, body, detail in panels:
         x1 = x0 + 850
@@ -1862,14 +1905,25 @@ def render_alibaba_card(
         ("Narration / judge", f"{health['narrator']} / {health['judge']}"),
         ("Readiness", "database · Qwen · auth ready"),
     ]
-    y = 375
+    y = 374
     for label, value in facts:
-        draw.text((1320, y), label.upper(), font=font(16, bold=True), fill="#7f8b98")
-        y += 27
-        for line in wrap(draw, value, font(24, bold=True), 485)[:2]:
-            draw.text((1320, y), line, font=font(24, bold=True), fill="#eef3f8")
-            y += 29
-        y += 22
+        label_face = font(14, bold=True)
+        value_face = font(20, bold=True)
+        value_lines = wrap(draw, value, value_face, 310)
+        require(len(value_lines) <= 2, f"Alibaba release fact does not fit without truncation: {label}")
+        row_height = max(48, 10 + 25 * len(value_lines))
+        require(y + row_height <= 836, f"Alibaba release fact row overflows its card: {label}")
+        label_box = draw.textbbox((1320, y + 4), label.upper(), font=label_face)
+        require(label_box[2] <= 1490, f"Alibaba release label collides with its value: {label}")
+        draw.text((1320, y + 4), label.upper(), font=label_face, fill="#7f8b98")
+        line_y = y
+        for line in value_lines:
+            value_box = draw.textbbox((1510, line_y), line, font=value_face)
+            require(value_box[2] <= 1820, f"Alibaba release value escapes its card: {label}")
+            draw.text((1510, line_y), line, font=value_face, fill="#eef3f8")
+            line_y += 25
+        draw.line((1320, y + row_height - 8, 1815, y + row_height - 8), fill="#303944", width=1)
+        y += row_height
     draw.text((80, 938), f"Exact-deploy marker + live /health + /ready · {base_url} · {observed_at}", font=font(22), fill="#9aa8b5")
     save_dual_submission_frame(canvas, output)
 
@@ -2027,7 +2081,7 @@ def browser_capture(
             raw_recall,
             GALLERY / PRIMARY_OUTPUTS[0],
             eyebrow="Fresh session · bounded recall",
-            title="Qwen answers from durable memory — with citations",
+            title="Qwen answers from durable memory, with citations",
             subtitle="On original synthetic demo data, a new browser session asks by meaning; pgvector supplies bounded evidence and qwen-plus grounds the answer in numbered sources.",
             badges=("qwen-plus", f"{len(recall['citations'])} citations", f"grounding {grounding['status']}"),
             base_url=base_url,
@@ -2057,7 +2111,7 @@ def browser_capture(
             raw_field,
             GALLERY / PRIMARY_OUTPUTS[2],
             eyebrow="Read-only self-audit",
-            title="Both values stay visible. Policy recommends — never rewrites.",
+            title="Both values stay visible. Policy recommends. It never rewrites.",
             subtitle="Original synthetic INV-5521 preserves both sessions' provenance, then recommends the later 8,900 value under the declared recency rule.",
             badges=("INV-5521", "8,400 ↔ 8,900", "read-only"),
             base_url=base_url,
@@ -2123,7 +2177,7 @@ def browser_capture(
             eyebrow="Meaning-level self-audit",
             title="Qwen catches the contradiction metadata rules cannot see",
             subtitle="Original synthetic vendor claims share no numeric field. The configured Qwen judge detects their opposed meaning and returns a read-only recommendation.",
-            badges=(str(judge["model"]), f"{semantic.get('compared')} pair compared", "credential absent"),
+            badges=(str(judge["model"]), f"{semantic.get('compared')} pair compared", "credential not rendered"),
             base_url=base_url,
             expected_sha=expected_sha,
             observed_at=observed_at,
@@ -2542,21 +2596,74 @@ def format_srt_time(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def parse_measured_windows(path: Path) -> list[tuple[float, float, str]]:
-    raw = load_json(path, "caption windows")
-    require(isinstance(raw, list) and raw, "caption windows must be a non-empty array")
+def normalize_caption_windows(raw: Any, label: str) -> list[tuple[float, float, str]]:
+    require(isinstance(raw, list) and raw, f"{label} must be a non-empty array")
     rows: list[tuple[float, float, str]] = []
     previous_end = 0.0
     for row in raw:
-        require(isinstance(row, list) and len(row) == 3, "caption window has the wrong shape")
+        require(isinstance(row, list) and len(row) == 3, f"{label} has a row with the wrong shape")
         start, end, text = row
-        require(isinstance(start, (int, float)) and isinstance(end, (int, float)), "caption time is not numeric")
-        require(isinstance(text, str) and text.strip(), "caption text is empty")
+        require(isinstance(start, (int, float)) and isinstance(end, (int, float)), f"{label} has a non-numeric time")
+        require(isinstance(text, str) and text.strip(), f"{label} has empty text")
         start_f, end_f = float(start), float(end)
-        require(start_f >= previous_end - 0.001 and end_f > start_f, "caption windows are not monotonic")
+        require(start_f >= previous_end - 0.001 and end_f > start_f, f"{label} is not monotonic")
         rows.append((start_f, end_f, text.strip()))
         previous_end = end_f
     return rows
+
+
+def parse_caption_windows_snapshot(
+    snapshot: ProjectFileSnapshot,
+    label: str,
+) -> list[tuple[float, float, str]]:
+    try:
+        raw = json.loads(snapshot.text())
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise GateError(f"{label} is not valid UTF-8 JSON") from exc
+    return normalize_caption_windows(raw, label)
+
+
+def parse_measured_windows(path: Path) -> list[tuple[float, float, str]]:
+    return parse_caption_windows_snapshot(snapshot_project_file(path, "caption windows"), "caption windows")
+
+
+def validate_canonical_caption_windows(
+    measured_snapshot: ProjectFileSnapshot,
+    contract_snapshot: ProjectFileSnapshot,
+) -> list[tuple[float, float, str]]:
+    """Bind one read-once ignored measurement to one inert tracked contract."""
+    measured = parse_caption_windows_snapshot(measured_snapshot, "caption windows")
+    canonical = parse_caption_windows_snapshot(contract_snapshot, "canonical caption-video timeline")
+    require(
+        measured == canonical,
+        "caption windows do not exactly match the canonical ten-beat final-video timeline",
+    )
+    require(len(canonical) == 10 and canonical[0][0] == 0.0 and canonical[-1][1] == 172.0, "canonical caption-video timeline is not the exact ten-beat 172-second contract")
+    return measured
+
+
+def validate_production_caption_inputs(
+    *,
+    caption_windows: str | None,
+    allow_canonical_fallback: bool,
+    video_manifest: str | None,
+    web_narration: str | None,
+) -> None:
+    """Reject caption inputs that cannot produce the canonical final video.
+
+    The legacy web-narration pair adds an eleventh subtitle beat.  Keeping that
+    path in ``emit_srt`` is useful for explicitly non-production drafts, but a
+    canonical capture must fail before it reads evidence, creates a run, calls a
+    model, or mutates judge data.
+    """
+    require(
+        caption_windows is not None or allow_canonical_fallback,
+        "final capture requires --caption-windows; draft fallback must be explicit",
+    )
+    require(
+        video_manifest is None and web_narration is None,
+        "canonical capture rejects legacy --video-manifest/--web-narration inputs because they add a non-canonical eleventh subtitle beat",
+    )
 
 
 def parse_canonical_captions(path: Path, *, title_offset: float = 3.0) -> list[tuple[float, float, str]]:
@@ -2574,13 +2681,16 @@ def parse_canonical_captions(path: Path, *, title_offset: float = 3.0) -> list[t
 def emit_srt(
     output: Path,
     *,
-    measured_windows: Path | None,
+    measured_windows: ProjectFileSnapshot | Path | None,
     allow_canonical_fallback: bool,
-    video_manifest: Path | None,
-    web_narration: Path | None,
+    video_manifest: ProjectFileSnapshot | None,
+    web_narration: ProjectFileSnapshot | None,
 ) -> str:
     if measured_windows is not None:
-        rows = parse_measured_windows(measured_windows)
+        if isinstance(measured_windows, ProjectFileSnapshot):
+            rows = parse_caption_windows_snapshot(measured_windows, "caption windows")
+        else:
+            rows = parse_measured_windows(measured_windows)
         source = "measured-caption-windows"
     else:
         require(allow_canonical_fallback, "final SRT requires --caption-windows; use --allow-canonical-caption-fallback only for an explicit draft")
@@ -2589,13 +2699,16 @@ def emit_srt(
 
     if video_manifest is not None or web_narration is not None:
         require(video_manifest is not None and web_narration is not None, "web narration timing requires both --video-manifest and --web-narration")
-        manifest = load_json(video_manifest, "video manifest")
+        try:
+            manifest = json.loads(video_manifest.text())
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GateError("video manifest is not valid UTF-8 JSON") from exc
         require(isinstance(manifest, dict), "video manifest must be an object")
         title = float(manifest.get("title_dur"))
         screencast = float(manifest.get("screencast_dur"))
         web_duration = float(manifest.get("web_dur"))
         web_audio = float(manifest.get("a_web"))
-        narration = web_narration.read_text(encoding="utf-8").strip()
+        narration = web_narration.text().strip()
         require(narration and web_duration >= web_audio > 0, "measured web narration timing is invalid")
         web_start = title + screencast + 0.5
         web_end = min(title + screencast + web_duration, web_start + web_audio)
@@ -2614,6 +2727,22 @@ def emit_srt(
     output.write_text("\n".join(blocks), encoding="utf-8", newline="\n")
     require(output.stat().st_size > 50, "generated SRT is unexpectedly small")
     return source
+
+
+def thumbnail_evidence_panel(source: Image.Image) -> Image.Image:
+    """Make a wide proof crop while retaining at least 90% of source width."""
+    target = (570, 410)
+    target_aspect = target[0] / target[1]
+    source_aspect = source.width / source.height
+    require(source_aspect >= target_aspect, "thumbnail evidence source is unexpectedly narrow")
+    retained_width = int(round(source.height * target_aspect))
+    excess = source.width - retained_width
+    left = int(round(excess * 0.40))
+    right = left + retained_width
+    require(retained_width / source.width >= 0.90, "thumbnail evidence crop discards too much horizontal context")
+    require(left <= int(round(source.width * 0.04)), "thumbnail evidence crop cuts the leading-label safe area")
+    require(0 <= left < right <= source.width, "thumbnail evidence crop escapes its source")
+    return source.crop((left, 0, right, source.height)).resize(target, Image.Resampling.LANCZOS)
 
 
 def render_youtube_thumbnail(field_audit_image: Path, output: Path) -> None:
@@ -2635,10 +2764,12 @@ def render_youtube_thumbnail(field_audit_image: Path, output: Path) -> None:
     draw.text((455, 504), "SESSION B", anchor="mm", font=font(34, bold=True), fill="#86efc1")
     draw.text((318, 583), "RECOMMEND · DON'T REWRITE", anchor="mm", font=font(23, bold=True), fill="#a8c0b6")
 
-    # A crisp crop of the real final field-audit composite anchors the right side.
-    panel = ImageOps.fit(source, (570, 520), method=Image.Resampling.LANCZOS, centering=(0.58, 0.58))
+    # A wide, deliberate crop of the real field-audit composite anchors the right
+    # side while preserving the full leading labels. The prior tall crop cut
+    # "AUDIT" and the opening words of the headline at thumbnail size.
+    panel = thumbnail_evidence_panel(source)
     rounded(draw, (650, 105, 1242, 647), "#0a1713", radius=28, outline="#3e6d5a", width=3)
-    canvas.alpha_composite(panel.convert("RGBA"), (661, 116))
+    canvas.alpha_composite(panel.convert("RGBA"), (661, 171))
     rounded(draw, (1010, 48, 1225, 96), "#9f1c1c", radius=22)
     draw.text((1118, 72), "LIVE PROOF", anchor="mm", font=font(20, bold=True), fill="#ffffff")
     strip_and_save(canvas.convert("RGB"), output, size=(1280, 720))
@@ -2685,6 +2816,8 @@ def write_review_manifest(
     deployment_producer: dict[str, str | int],
     deployment_output: ProjectFileSnapshot,
     deployment_status: ProjectFileSnapshot,
+    caption_contract: ProjectFileSnapshot,
+    caption_windows: ProjectFileSnapshot | None,
     base_url: str,
     observed_at: str,
     probes: dict[str, Any],
@@ -2757,6 +2890,23 @@ def write_review_manifest(
             "alibabaProfileShaBound": True,
         },
         "subtitleTimingSource": srt_source,
+        "subtitleTimeline": {
+            "canonicalContract": {
+                "path": caption_contract.relative_path,
+                "sha256": caption_contract.sha256,
+                "size": caption_contract.size,
+            },
+            "measuredInput": (
+                {
+                    "path": caption_windows.relative_path,
+                    "sha256": caption_windows.sha256,
+                    "size": caption_windows.size,
+                }
+                if caption_windows is not None
+                else None
+            ),
+            "matchesCanonicalContract": caption_windows is not None,
+        },
         "architecture": {
             "sourcePath": "docs/judge-architecture.svg",
             "sourceSha256": sha256_file(REPO / "docs" / "judge-architecture.svg"),
@@ -3069,6 +3219,14 @@ def self_test() -> int:
         observed_at="2000-01-01T00:00:00Z",
         dual_submission=False,
     )
+    long_footer_canvas = Image.new("RGB", CANVAS, "#06110e")
+    long_footer_mode = draw_live_footer(
+        ImageDraw.Draw(long_footer_canvas),
+        left_text="L" * 110,
+        right_text="R" * 110,
+    )
+    require(long_footer_mode == "two-row", "long-footer self-test did not exercise the collision-safe layout")
+    strip_and_save(long_footer_canvas, root / "long-footer.png", size=CANVAS, min_bytes=1_000)
     windows = root / "windows.json"
     windows.write_text(json.dumps([[3.0, 5.0, "Synthetic caption"], [5.0, 7.5, "Second caption"]]), encoding="utf-8")
     srt = root / "test.srt"
@@ -3131,6 +3289,23 @@ def self_test() -> int:
         },
         base_url=DEFAULT_BASE_URL, expected_sha="0" * 40, observed_at="2000-01-01T00:00:00Z",
     )
+    alibaba_fixture = root / "alibaba-3x2.png"
+    render_alibaba_card(
+        alibaba_fixture,
+        raw,
+        probes,
+        base_url=DEFAULT_BASE_URL,
+        expected_sha="0" * 40,
+        observed_at="2000-01-01T00:00:00Z",
+    )
+    repository_fixture = root / "repository-3x2.png"
+    render_repository_card(
+        raw_path,
+        repository_fixture,
+        repo_url=DEFAULT_REPO_URL,
+        remote_main="0" * 40,
+        observed_at="2000-01-01T00:00:00Z",
+    )
     canary_pages = [
         synthetic_vision_document("MVLSELFTEST", "payroll_register"),
         synthetic_vision_document("MVLSELFTEST", "bank_confirmation"),
@@ -3141,6 +3316,8 @@ def self_test() -> int:
     require(Image.open(lifecycle_fixture).size == GALLERY_CANVAS, "lifecycle-card self-test failed")
     require(Image.open(vision_fixture).size == GALLERY_CANVAS, "vision-card self-test failed")
     require(Image.open(feedback_fixture).size == GALLERY_CANVAS, "feedback-card self-test failed")
+    require(Image.open(alibaba_fixture).size == GALLERY_CANVAS, "Alibaba-card self-test failed")
+    require(Image.open(repository_fixture).size == GALLERY_CANVAS, "repository-card self-test failed")
     require(Image.open(root / "youtube-thumbnail.png").size == (1280, 720), "YouTube thumbnail self-test failed")
     capture_resilience_self_test(root / "capture-resilience")
     print("media pipeline self-test: PASS (ignored project-contained fixtures only)")
@@ -3166,8 +3343,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="SHA-bound crop/redaction profile",
     )
     parser.add_argument("--caption-windows", help="final measured caption_windows.json")
-    parser.add_argument("--video-manifest", help="final measured video_manifest.json")
-    parser.add_argument("--web-narration", help="final narration_web.txt used by the video")
+    parser.add_argument("--video-manifest", help="legacy draft input; rejected by the canonical capture gate")
+    parser.add_argument("--web-narration", help="legacy draft input; rejected by the canonical capture gate")
     parser.add_argument(
         "--allow-canonical-caption-fallback",
         action="store_true",
@@ -3185,20 +3362,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         require(args.expected_sha is not None, "--expected-sha is required")
         require(args.deployment_output is not None and args.deployment_status is not None, "both deployment evidence paths are required")
         require(args.alibaba_raw is not None, "--alibaba-raw is required")
+        validate_production_caption_inputs(
+            caption_windows=args.caption_windows,
+            allow_canonical_fallback=args.allow_canonical_caption_fallback,
+            video_manifest=args.video_manifest,
+            web_narration=args.web_narration,
+        )
         expected_sha = str(args.expected_sha).lower()
         deployment_output = snapshot_project_file(args.deployment_output, "deployment output")
         deployment_status = snapshot_project_file(args.deployment_status, "deployment status")
         raw_alibaba_source = project_path(args.alibaba_raw, "Alibaba raw capture", must_exist=True)
         redaction_profile = project_path(args.alibaba_redaction_profile, "Alibaba redaction profile", must_exist=True)
-        caption_windows = project_path(args.caption_windows, "caption windows", must_exist=True) if args.caption_windows else None
-        video_manifest = project_path(args.video_manifest, "video manifest", must_exist=True) if args.video_manifest else None
-        web_narration = project_path(args.web_narration, "web narration", must_exist=True) if args.web_narration else None
+        caption_windows = snapshot_project_file(args.caption_windows, "caption windows") if args.caption_windows else None
+        caption_contract = snapshot_project_file(CAPTION_CONTRACT, "canonical caption-video timeline")
+        video_manifest = None
+        web_narration = None
         reviewer_credential_source = (
             project_path(args.reviewer_credential_json, "reviewer credential JSON", must_exist=True)
             if args.reviewer_credential_json
             else None
         )
 
+        if caption_windows is not None:
+            # Fail before run setup, live Qwen calls, mutations, or quota use when
+            # an ignored measured-timeline artifact has drifted from the tracked
+            # final-video contract.
+            validate_canonical_caption_windows(caption_windows, caption_contract)
         base_url = validate_live_origin(str(args.base_url))
         reviewer_token = reviewer_token_from_args(args)
 
@@ -3215,9 +3404,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for path in (
                     raw_alibaba_source,
                     redaction_profile,
-                    caption_windows,
-                    video_manifest,
-                    web_narration,
+                    caption_windows.path if caption_windows is not None else None,
+                    video_manifest.path if video_manifest is not None else None,
+                    web_narration.path if web_narration is not None else None,
                     reviewer_credential_source,
                 )
                 if path is not None
@@ -3314,6 +3503,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             deployment_producer=deployment_producer,
             deployment_output=deployment_output,
             deployment_status=deployment_status,
+            caption_contract=caption_contract,
+            caption_windows=caption_windows,
             base_url=base_url,
             observed_at=observed_at,
             probes=probes,

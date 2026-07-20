@@ -16,11 +16,13 @@ export function ContradictionCard({ c }: { c: Contradiction }) {
       <div className="values">
         {c.values.map((v) => {
           const win = v.memoryId === winnerId;
+          const carrierCount = new Set([v.memoryId, ...(v.carrierMemoryIds ?? [])]).size;
           return (
             <div className={`value-chip${win ? " win" : ""}`} key={v.memoryId}>
               <div className="v">{formatValue(v.value)}</div>
               <div className="meta">
                 {v.sourceRef ?? "—"} · {formatDate(v.createdAt)}
+                {carrierCount > 1 ? ` · ${carrierCount} active carriers` : ""}
                 {win ? " · recommended" : ""}
               </div>
             </div>

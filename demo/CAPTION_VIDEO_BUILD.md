@@ -2,10 +2,10 @@
 
 This guide covers the deterministic **intermediate base** used by the only canonical
 publication pipeline, [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). The base is a
-**172-second**, ten-beat composition without speech synthesis, recorded voice, or
-third-party music. Every English caption is burned into the 1920×1080 picture and
-mirrored in an exact measured SRT. Its compatibility audio stream is generated
-digital silence (48 kHz stereo AAC), not music or TTS.
+**172-second**, ten-beat composition with locally generated synthetic narration and
+no third-party music. Every English caption is burned into the 1920×1080 picture and
+mirrored in an exact measured SRT. Production rejects digital silence: audio must
+come from the SHA-bound local narration bundle described below.
 
 `build_caption_video.py` does not call the live service, capture a browser, download
 an asset, or create substitute evidence. It is not a publication builder: the
@@ -17,24 +17,91 @@ gallery exists, even the base production gate is expected to fail.
 
 ## 1. Verify the offline compositor
 
-Run from the repository root:
+Run from the repository root. Replace each placeholder with an absolute executable
+path that was reviewed before this release. The ffmpeg and ffprobe files must be
+siblings from the same reviewed toolchain directory. Keep all three values set for
+every later production media command in this guide:
 
-```bash
+```powershell
+$env:MEMORYAGENT_GIT_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_GIT_EXECUTABLE>'
+$env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
+$env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
+
 python -m py_compile demo/tools/build_caption_video.py
+python -m py_compile demo/tools/build_local_narration.py
 python -m unittest discover -s demo/tests -p 'test_caption_video_builder.py' -v
+python demo/tools/build_local_narration.py --self-test
 python demo/tools/build_caption_video.py --self-test
 # Slower pre-release acceptance of the complete 172-second / 5,160-frame encode:
 python demo/tools/build_caption_video.py --full-self-test
 ```
 
-Both self-tests create only unmistakably watermarked synthetic fixtures under the
-ignored `.artifacts/caption-video-selftest/` directory. Their MP4s are named
+Production and `--check-only` execution never discover Git, ffmpeg, or ffprobe from
+the working directory or `PATH`. The three configured files must be absolute,
+pre-reviewed, regular, non-reparse executables; the tools bind their identity and
+SHA-256 and fail if a file changes. Leaving all three variables unset permits narrow,
+unambiguous `PATH` discovery only inside the explicitly non-submission `--self-test`
+and `--full-self-test` fixture modes. Never derive production values with `where`,
+`which`, `Get-Command`, or `command -v` during the release run.
+
+The two caption compositor self-tests create only unmistakably watermarked synthetic
+fixtures under the ignored `.artifacts/caption-video-selftest/` directory. Their MP4s
+are named
 `SELF-TEST-NOT-SUBMISSION-EVIDENCE.mp4` or
 `FULL-172S-SELF-TEST-NOT-SUBMISSION-EVIDENCE.mp4`; neither is a final or
 live-evidence source. The full run replaces the fast self-test scratch in that
-dedicated ignored directory.
+dedicated ignored directory. The local narration self-test writes its separate
+non-submission fixture only under `.artifacts/local-narration-selftest/`.
 
-## 2. Lock the exact caption timeline before final capture
+## 2. Generate the local narration bundle
+
+Production narration uses Windows `System.Speech` locally. It never calls a network
+service, downloads a voice model, adds music, or mixes third-party audio. First list
+the enabled installed en-US voices and confirm the canonical voice is installed:
+
+```powershell
+python demo/tools/build_local_narration.py --list-voices
+python demo/tools/build_local_narration.py `
+  --voice "Microsoft Zira Desktop" `
+  --rate 1 `
+  --replace
+```
+
+The tool obtains Windows PowerShell from the system directory returned by
+`GetSystemDirectoryW` and accepts only the canonical regular, non-reparse
+`WindowsPowerShell/v1.0/powershell.exe`. It never resolves an executable from the
+working directory or `PATH`.
+
+There is no implicit OS-default voice. Production requires exactly Microsoft Zira
+Desktop, and `--voice` remains mandatory so the manifest discloses what was used.
+The generator speaks one complete segment per row
+of tracked [`caption-timeline.json`](./caption-timeline.json). It fails instead of
+cutting a segment that cannot fit its beat. A successful run writes only:
+
+- `.artifacts/final-narration/memoryagent-narration.wav`, exactly 172.000 seconds,
+  48 kHz, stereo, signed 16-bit PCM;
+- `.artifacts/final-narration/memoryagent-narration.manifest.json`, binding the WAV
+  and timeline SHA-256 values, selected voice, all ten placements, measured signal,
+  and the synthetic-voice disclosure.
+
+Generation stays in private randomized staging until the complete WAV and manifest
+validate together. Pair promotion is exclusive and rollback-protected, so a failed
+validation or second-file promotion leaves the previous pair byte-for-byte intact.
+If an OS-level restore itself fails, the tool retains that randomized project-local
+recovery directory instead of cleaning it, reports its exact path, and writes a
+`RECOVERY_REQUIRED-*.json` inventory with the retained SHA-256 values and intended
+destinations. Those files require manual review and must never be published directly.
+The manifest also binds the generator source, canonical PowerShell file identity,
+synthesizer script, normalized request, voice metadata and each placed source-PCM
+segment. This is strong local build evidence, not an authenticated legal-rights
+attestation; the human synthetic-voice rights review below remains authoritative.
+
+Both records stay ignored and project-contained. The validator requires meaningful
+non-silent audio in every beat and zero clipped samples. `--self-test` does not
+invoke `System.Speech`; it creates a cross-platform ten-tone fixture that the
+production gate explicitly rejects.
+
+## 3. Lock the exact caption timeline before final capture
 
 ```bash
 python demo/tools/build_caption_video.py \
@@ -65,28 +132,34 @@ Pass that JSON to the one-command final capture gate documented in
 
 ```bash
 python scripts/capture_submission_gallery.py \
-  --expected-sha cfd485de1dd01473c8d6be91521e5560d8e8313e \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-26.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-26.json \
+  --expected-sha <FINAL_RUNTIME_SHA> \
+  --deployment-output .artifacts/deploy/<FINAL_DEPLOY_OUTPUT>.txt \
+  --deployment-status .artifacts/deploy/<FINAL_DEPLOY_STATUS>.json \
   --reviewer-credential-json .artifacts/devpost/memory-reviewer-credential.json \
   --alibaba-raw demo/private-originals/alibaba-ecs-overview-raw.png \
   --caption-windows .artifacts/final-caption-video/caption_windows.json
 ```
 
-The runtime SHA and attempt-26 evidence paths above are the exact values locked by
-the current green deployment record. Do not substitute a later SHA or evidence pair
-unless `DEPLOY_STATE.md` is refreshed by another successful exact deployment.
+Replace the placeholders only with the exact SHA and evidence pair recorded by the
+current green `DEPLOY_STATE.md`. A later SHA is a hard stop until another exact
+deployment refreshes that record.
 
-## 3. Validate every base input without encoding
+## 4. Validate every base input without encoding
 
 After a human has reviewed all gallery/proof frames and the capture gate has written
 `demo/gallery/CAPTURE_REVIEW.json`:
 
-```bash
-python demo/tools/build_caption_video.py \
-  --expected-sha cfd485de1dd01473c8d6be91521e5560d8e8313e \
-  --deployment-output .artifacts/deploy/exact-merged-deploy-output-attempt-26.txt \
-  --deployment-status .artifacts/deploy/exact-merged-deploy-status-attempt-26.json \
+```powershell
+$env:MEMORYAGENT_GIT_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_GIT_EXECUTABLE>'
+$env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
+$env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
+
+python demo/tools/build_caption_video.py `
+  --expected-sha <FINAL_RUNTIME_SHA> `
+  --deployment-output .artifacts/deploy/<FINAL_DEPLOY_OUTPUT>.txt `
+  --deployment-status .artifacts/deploy/<FINAL_DEPLOY_STATUS>.json `
+  --narration-audio .artifacts/final-narration/memoryagent-narration.wav `
+  --narration-manifest .artifacts/final-narration/memoryagent-narration.manifest.json `
   --check-only
 ```
 
@@ -117,6 +190,12 @@ a filename check and not publication approval. It requires:
   recorded in the capture review; and
 - `subtitleTimingSource=measured-caption-windows` plus an SRT that exactly equals the
   deterministic ten-beat text and boundaries. A draft/fallback SRT is rejected.
+- the read-once narration WAV and manifest, SHA-bound to each other and the exact
+  tracked caption contract; production requires the explicitly selected Microsoft
+  Zira Desktop en-US Windows `System.Speech` voice named in that manifest; and
+- exactly 172 seconds of 48 kHz stereo PCM with meaningful signal in all ten beats,
+  no speech truncation, no clipping, no music or network media, and the canonical
+  synthetic-voice disclosure.
 
 Missing media, a changed byte, stale source ancestry, a runtime-affecting working-tree
 change, a red deploy state, or an unmeasured/mismatched SRT stops the build before an
@@ -133,13 +212,17 @@ Human prose such as `NOT READY` or `UNVERIFIED`, a loose SHA elsewhere in the fi
 or duplicate machine records cannot make the build green. Until a new exact
 deployment writes that single record, production mode remains blocked.
 
-The builder retains immutable snapshots of every input it validates. Its tracked
-gate sources are compared directly with their current `HEAD` blobs after Git clean
-filtering. Encoding occurs only in a newly randomized project-contained scratch
-child; frame, concat, log and final `.writing` files are created exclusively without
-following pre-seeded links.
+The builder retains immutable snapshots of every input it validates. Both the
+caption builder and local narration validator are compared directly with their
+current `HEAD` blobs and recorded in the base manifest. Direct CLI output is limited
+to `.artifacts/final-caption-video/`; it cannot replace the canonical final video.
+The canonical public SRT is a validated read-only input and is never rewritten or
+replaced as a caption-base build side effect.
+Encoding occurs only in a newly randomized project-contained scratch child; frame,
+concat, log and final `.writing` files are created exclusively without following
+pre-seeded links.
 
-## 4. Build and verify the canonical real-motion final
+## 5. Build and verify the canonical real-motion final
 
 Do **not** run the static builder directly into `demo/final-media/`. Follow the exact
 production sequence in [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md): record the
@@ -154,21 +237,22 @@ The only final judge-facing video records are:
 - `demo/final-media/memoryagent-demo.mp4` — canonical 1920×1080 H.264 real-motion final;
 - `demo/final-media/memoryagent-demo.en.srt` — exact ten-entry measured English SRT;
 - `demo/final-media/memoryagent-demo.manifest.json` — `status: passed`, builder
-  `caption-led-real-motion-compositor-v1`, exact release/capture/live-input/output
-  hashes, frame windows, measured codecs/duration, silence peak and claim locks;
+  `caption-led-real-motion-compositor-v3-narrated-immutable-inputs`, exact release/capture/live-input/output
+  hashes, frame windows, measured codecs/duration, narration bindings and claim locks;
 - `demo/final-media/memoryagent-demo.qa.json` — `status: passed` independent measured
   QA for the shipped MP4/SRT; and
 - `demo/final-media/youtube-thumbnail.png` — thumbnail whose hash is bound by the
   final manifest.
 
-The static post-encode checks—one H.264/yuv420p 1920×1080 stream at 30 fps, exactly
-5,160 frames, one 48 kHz stereo AAC stream, decoded audio peak no greater than four
-signed-16-bit units, 172 measured seconds, and no extra stream or sensitive metadata—
-remain necessary base constraints. They become publication evidence only after the
+The static post-encode checks include one H.264/yuv420p 1920×1080 stream at 30 fps,
+exactly 5,160 frames, one 48 kHz stereo AAC narration stream, meaningful decoded
+signal, zero clipped samples, EBU R128 loudness within the reviewed range, at least
+1 dB of measured true-peak headroom, 172 measured seconds, and no extra stream or
+sensitive metadata. They become publication evidence only after the
 real-motion manifest + QA are green and the independent final `--verify-only` pass
 recomputes every bound hash and measurement.
 
-## 5. Human acceptance remains mandatory
+## 6. Human acceptance remains mandatory
 
 Open the final at normal 1080p playback size and at 0.25×. Confirm captions never
 cover required evidence; every sanitized source label is readable; no secret or

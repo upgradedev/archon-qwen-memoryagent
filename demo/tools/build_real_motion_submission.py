@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-command final MemoryAgent render: exact-gated base + real live motion."""
+"""One-command final MemoryAgent render: narrated exact-gated base + real live motion."""
 from __future__ import annotations
 
 import argparse
@@ -20,6 +20,17 @@ def require(value: bool, message: str) -> None:
         raise motion.GateError(message)
 
 
+def validate_scratch_root(path: Path) -> Path:
+    """Require exact containment below the private final-video artifact root."""
+
+    safe_root = (ROOT / ".artifacts" / "final-video").resolve()
+    try:
+        path.relative_to(safe_root)
+    except ValueError as exc:
+        raise motion.GateError("scratch must stay under .artifacts/final-video") from exc
+    return path
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-sha", required=True)
@@ -28,6 +39,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--live-video", default=".artifacts/final-video/memoryagent-live-interaction.webm")
     parser.add_argument("--interaction-manifest", default=".artifacts/final-video/memoryagent-live-interaction.manifest.json")
     parser.add_argument("--capture-review", default="demo/gallery/CAPTURE_REVIEW.json")
+    parser.add_argument("--narration-audio", default=motion.DEFAULT_NARRATION_AUDIO)
+    parser.add_argument("--narration-manifest", default=motion.DEFAULT_NARRATION_MANIFEST)
     parser.add_argument("--thumbnail", default="demo/final-media/youtube-thumbnail.png")
     parser.add_argument("--output", default="demo/final-media/memoryagent-demo.mp4")
     parser.add_argument("--srt-output", default="demo/final-media/memoryagent-demo.en.srt")
@@ -42,6 +55,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    session: Path | None = None
+    succeeded = False
+    preserve_recovery_material = False
     try:
         expected_sha = str(args.expected_sha).lower()
         require(caption.SHA40.fullmatch(expected_sha) is not None, "--expected-sha must be 40 lowercase hex characters")
@@ -51,13 +67,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         deploy_state = motion.project_path(caption.DEPLOY_STATE_REL, "deployment state", exists=True)
         live_video = motion.project_path(args.live_video, "live video", exists=True)
         interaction_manifest = motion.project_path(args.interaction_manifest, "interaction manifest", exists=True)
+        narration_audio = motion.project_path(args.narration_audio, "narration audio", exists=True)
+        narration_manifest = motion.project_path(args.narration_manifest, "narration manifest", exists=True)
         thumbnail = motion.project_path(args.thumbnail, "thumbnail", exists=True)
         output = motion.project_path(args.output, "output")
         output_srt = motion.project_path(args.srt_output, "SRT output")
         manifest_path = motion.project_path(args.manifest, "manifest")
         qa_path = motion.project_path(args.qa, "QA")
-        scratch_root = motion.project_path(args.scratch, "scratch")
-        require(motion.relative(scratch_root).startswith(".artifacts/final-video"), "scratch must stay under .artifacts/final-video")
+        scratch_root = validate_scratch_root(motion.project_path(args.scratch, "scratch"))
         for final in (output, output_srt, manifest_path, qa_path):
             require(final.parent == ROOT / "demo" / "final-media", "final files must be directly under demo/final-media")
 
@@ -71,22 +88,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         session = scratch_root / f"base-{expected_sha[:12]}-{secrets.token_hex(8)}"
         base_video = session / "caption-base.mp4"
-        base_srt = session / "caption-base.en.srt"
+        canonical_srt = motion.project_path(caption.SRT_REL, "canonical SRT", exists=True)
         base_manifest = session / "caption-base.manifest.json"
         base_scratch = session / "render"
         caption.build_video(
             validated,
             output=base_video,
-            srt_path=base_srt,
+            srt_path=canonical_srt,
             manifest_path=base_manifest,
             scratch=base_scratch,
+            narration_audio=narration_audio,
+            narration_manifest=narration_manifest,
         )
         result = motion.compose(
-            base_video=base_video,
+            base_video=base_video, base_manifest=base_manifest,
+            narration_audio=narration_audio, narration_manifest=narration_manifest,
             live_video=live_video,
             interaction_manifest=interaction_manifest,
             evidence_manifest=capture_review,
-            srt=base_srt,
+            srt=canonical_srt,
             output_srt=output_srt,
             thumbnail=thumbnail,
             output=output,
@@ -99,15 +119,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             overlay_end=args.overlay_end,
             replace=args.replace,
         )
+        # The public bundle and its retained immutable verification session are
+        # committed once compose returns.  Console formatting/output must never
+        # make the finally block delete that session and break manifest paths.
+        succeeded = True
         duration = result["qa"]["duration"]["finalSeconds"]
         print(
             f"MemoryAgent real-motion submission: PASS · {duration:.3f}s · 1920x1080 · "
-            f"silent/caption-led · exact SHA {expected_sha[:12]} · base retained in {motion.relative(session)}"
+            f"narrated/captioned · exact SHA {expected_sha[:12]} · base retained in {motion.relative(session)}"
         )
         return 0
+    except motion.RollbackError as exc:
+        preserve_recovery_material = True
+        print(f"MemoryAgent real-motion submission: FAIL · {exc}", file=sys.stderr)
+        return 2
     except (caption.GateError, motion.GateError, OSError, UnicodeError, ValueError) as exc:
         print(f"MemoryAgent real-motion submission: FAIL · {exc}", file=sys.stderr)
         return 2
+    finally:
+        if session is not None and not succeeded and not preserve_recovery_material:
+            motion._remove_tree(session)
 
 
 if __name__ == "__main__":

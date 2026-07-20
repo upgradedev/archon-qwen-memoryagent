@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
-"""Build the final rights-safe, caption-led MemoryAgent submission video.
+"""Build the narrated, captioned intermediate for the MemoryAgent submission video.
 
 The production path is deliberately fail closed. It consumes only the canonical,
 hash-bound media inventory produced by ``scripts/capture_submission_gallery.py``
 and exact-deployment evidence kept inside this repository. It never captures the
 live service, synthesizes speech, downloads media, or invents judge-facing proof.
 
-The resulting MP4 is 1920x1080 H.264 at 30 fps with a generated silent AAC track.
-Every English caption is burned into the picture and mirrored byte-for-byte in the
-measured SRT. The ten beat windows are frame-exact and total 172 seconds.
+The resulting MP4 is 1920x1080 H.264 at 30 fps with a required, locally generated
+synthetic narration track. Every English caption is burned into the picture and
+mirrored byte-for-byte in the measured SRT. The ten beat windows are frame-exact
+and total 172 seconds.
 """
 
 from __future__ import annotations
 
 import argparse
 from array import array
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import datetime as dt
+import functools
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -37,6 +41,15 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 REPO_HINT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_HINT / "scripts"))
+sys.path.insert(0, str(REPO_HINT / "demo" / "tools"))
+from build_local_narration import (  # noqa: E402
+    DEFAULT_AUDIO_REL as DEFAULT_NARRATION_AUDIO_REL,
+    DEFAULT_MANIFEST_REL as DEFAULT_NARRATION_MANIFEST_REL,
+    NarrationError,
+    canonical_json_sha256,
+    create_synthetic_fixture,
+    validate_narration_bundle,
+)
 from exact_deploy_evidence import (  # noqa: E402
     ExactDeployEvidenceError,
     STRICT_FINAL_MARKER,
@@ -64,9 +77,14 @@ CLAIM_MATRIX_REL = "docs/CLAIM_EVIDENCE_MATRIX.md"
 SRT_REL = "demo/final-media/memoryagent-demo.en.srt"
 ARCHITECTURE_REL = "demo/final-media/judge-architecture.jpg"
 ARCHITECTURE_SOURCE_REL = "docs/judge-architecture.svg"
-DEFAULT_OUTPUT_REL = "demo/final-media/memoryagent-demo.mp4"
-DEFAULT_MANIFEST_REL = "demo/final-media/memoryagent-demo.manifest.json"
+DEFAULT_OUTPUT_REL = ".artifacts/final-caption-video/caption-base.mp4"
+DEFAULT_MANIFEST_REL = ".artifacts/final-caption-video/caption-base.manifest.json"
 DEFAULT_SCRATCH_REL = ".artifacts/final-caption-video"
+TRUSTED_EXECUTABLE_ENV = {
+    "git": "MEMORYAGENT_GIT_EXECUTABLE",
+    "ffmpeg": "MEMORYAGENT_FFMPEG_EXECUTABLE",
+    "ffprobe": "MEMORYAGENT_FFPROBE_EXECUTABLE",
+}
 
 GALLERY_STEMS = (
     "01-grounded-cross-session-recall",
@@ -97,84 +115,111 @@ class Beat:
     treatment: str = "proof"
 
 
+CAPTION_CONTRACT_REL = "demo/caption-timeline.json"
+
+
+def load_caption_contract() -> tuple[ProjectFileSnapshot, tuple[tuple[int, int, str], ...]]:
+    """Read the inert, tracked timeline once; no executable module is imported."""
+    try:
+        snapshot = read_project_file_once(CAPTION_CONTRACT_REL, "caption timeline contract")
+        raw = json.loads(snapshot.text())
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("caption timeline contract is not stable valid UTF-8 JSON") from exc
+    if not isinstance(raw, list) or len(raw) != 10:
+        raise RuntimeError("caption timeline contract must contain exactly ten rows")
+
+    rows: list[tuple[int, int, str]] = []
+    previous_end = 0
+    for index, row in enumerate(raw, start=1):
+        if not isinstance(row, list) or len(row) != 3:
+            raise RuntimeError(f"caption timeline row {index} has the wrong shape")
+        start, end, caption = row
+        if type(start) is not int or type(end) is not int or not isinstance(caption, str) or not caption.strip():
+            raise RuntimeError(f"caption timeline row {index} has invalid fields")
+        if start != previous_end or end <= start:
+            raise RuntimeError(f"caption timeline row {index} is not frame-contiguous")
+        if caption != caption.strip():
+            raise RuntimeError(f"caption timeline row {index} has surrounding whitespace")
+        rows.append((start, end, caption))
+        previous_end = end
+    if rows[0][0] != 0 or rows[-1][1] != EXPECTED_TOTAL_SECONDS:
+        raise RuntimeError("caption timeline contract does not cover the exact 172-second final")
+    return snapshot, tuple(rows)
+
+
+CAPTION_CONTRACT_SNAPSHOT, CAPTION_CONTRACT = load_caption_contract()
+
+
+def beat_from_contract(
+    number: int,
+    title: str,
+    visuals: tuple[str, ...],
+    labels: tuple[str, ...] = (),
+    *,
+    treatment: str = "proof",
+) -> Beat:
+    start, end, caption = CAPTION_CONTRACT[number - 1]
+    return Beat(number, title, end - start, caption, visuals, labels, treatment)
+
+
 BEATS: tuple[Beat, ...] = (
-    Beat(
+    beat_from_contract(
         1,
         "Stakes + Track 1",
-        13,
-        "Persistent memory can preserve yesterday's mistake. Archon MemoryAgent recalls, cites, audits, corrects, consolidates, and forgets across sessions.",
         (PROOF_RELS[0],),
         treatment="title",
     ),
-    Beat(
+    beat_from_contract(
         2,
         "Exact live proof + Qwen vision",
-        19,
-        "Exact release evidence proves source; readiness proves real models. Original synthetic two-PNG qwen-vl-max dry-run: one fused event, zero writes or residue - not raw-PDF parsing.",
         (PROOF_RELS[8], PROOF_RELS[7]),
         ("Live /health + /ready", "Original synthetic qwen-vl-max dry-run"),
     ),
-    Beat(
+    beat_from_contract(
         3,
         "Architecture + bounded scale path",
-        19,
-        "Tenant-scoped REST, MCP, and pg-wire seams surround Qwen plus pgvector. Active topology is Alibaba Cloud ECS; Function Compute and RDS are alternative-only.",
         (ARCHITECTURE_REL,),
         ("Evidence -> Qwen -> pgvector -> cited answer -> human decision",),
     ),
-    Beat(
+    beat_from_contract(
         4,
         "Cross-session memory",
-        22,
-        "Original synthetic Northwind data: a fresh Session B recalls a prior-session fact with numbered citations. This proof shows pure cosine; the product default remains hybrid.",
         (PROOF_RELS[0],),
         ("Fresh session · grounded cited recall",),
     ),
-    Beat(
+    beat_from_contract(
         5,
         "Read-only self-audit + human control",
-        22,
-        "INV-5521 is original synthetic data whose amount field differs across sessions. Audit keeps both values visible and recommends without rewriting. Live control proves Defer only: zero API call or write; Accept and Override remain unexercised.",
         (PROOF_RELS[2], PROOF_RELS[4]),
         ("Read-only field audit", "Live Defer only · zero mutation"),
     ),
-    Beat(
+    beat_from_contract(
         6,
         "Feedback persists across sessions",
-        18,
-        "Session A stores explicit reviewer feedback; a fresh authenticated Session B recalls, cites, and applies it. Durable persisted state - not training, autonomous learning, or a model-weight update.",
         (PROOF_RELS[1],),
         ("Session A correction · fresh Session B cited application",),
     ),
-    Beat(
+    beat_from_contract(
         7,
         "Meaning-level audit + MCP",
-        17,
-        "Original synthetic vendor claims: Qwen checks opposed meaning. The live mechanism is separate from the offline 90% fixture. Four typed MCP tools share one core; HTTP is authenticated, stdio trusted-local.",
         (PROOF_RELS[3], PROOF_RELS[6]),
         ("Authenticated Qwen meaning audit", "Shared core · four typed MCP tools"),
     ),
-    Beat(
+    beat_from_contract(
         8,
         "Timely forgetting",
-        12,
-        "Preview selects exactly one feedback-superseded synthetic candidate; confirm deletes exactly one with audit. Protected memories stay unchanged and marker residue is zero. This is not an age-expired row.",
         (PROOF_RELS[5],),
         ("Preview 1 · delete 1 · protect state · residue 0",),
     ),
-    Beat(
+    beat_from_contract(
         9,
         "Evidence, not hype",
-        20,
-        "Developer-labelled synthetic and offline fixtures - not production accuracy or independent evaluation. No universal superiority claim.",
         (),
         treatment="evidence",
     ),
-    Beat(
+    beat_from_contract(
         10,
         "Alibaba + public-source close",
-        10,
-        "Verified active topology: Alibaba Cloud ECS plus self-hosted pgvector. Function Compute and RDS remain alternatives. Public MIT source.",
         (PROOF_RELS[9], PROOF_RELS[10]),
         ("MemoryAgent-only Alibaba proof", "Public repository · MIT"),
     ),
@@ -230,6 +275,39 @@ class GateError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class TrustedExecutable:
+    """One absolute external executable pinned to its bytes and filesystem identity."""
+
+    name: str
+    path: Path
+    sha256: str
+    size: int
+    device: int
+    inode: int
+    mode_type: int
+    link_count: int
+    mtime_ns: int
+    ctime_ns: int
+
+    def assert_unchanged(self) -> None:
+        current = _snapshot_trusted_executable(self.name, self.path)
+        require(current == self, f"trusted {self.name} executable changed after resolution")
+
+
+@dataclass(frozen=True)
+class TrustedToolchain:
+    """The single Git/ffmpeg/ffprobe trust contract used by every subprocess."""
+
+    git: TrustedExecutable
+    ffmpeg: TrustedExecutable
+    ffprobe: TrustedExecutable
+
+    def executable(self, name: str) -> TrustedExecutable:
+        require(name in TRUSTED_EXECUTABLE_ENV, f"unsupported trusted executable {name}")
+        return {"git": self.git, "ffmpeg": self.ffmpeg, "ffprobe": self.ffprobe}[name]
+
+
+@dataclass(frozen=True)
 class ValidatedInputs:
     exact_runtime_sha: str
     capture_head: str
@@ -239,12 +317,14 @@ class ValidatedInputs:
     exact_deploy_evidence_mode: str
     deployment_producer: dict[str, str | int]
     builder_source: ProjectFileSnapshot
+    narration_source: ProjectFileSnapshot
     capture_review: ProjectFileSnapshot
     deploy_state: ProjectFileSnapshot
     claim_matrix: ProjectFileSnapshot
     deployment_output: ProjectFileSnapshot
     deployment_status: ProjectFileSnapshot
     architecture_source: ProjectFileSnapshot
+    caption_contract: ProjectFileSnapshot
     artifact_files: dict[str, ProjectFileSnapshot]
 
 
@@ -284,6 +364,294 @@ def _is_reparse(metadata: os.stat_result) -> bool:
     return stat.S_ISLNK(metadata.st_mode) or bool(
         reparse_flag and getattr(metadata, "st_file_attributes", 0) & reparse_flag
     )
+
+
+def _same_file_identity(left: os.stat_result, right: os.stat_result) -> bool:
+    return (
+        left.st_dev,
+        left.st_ino,
+        stat.S_IFMT(left.st_mode),
+    ) == (
+        right.st_dev,
+        right.st_ino,
+        stat.S_IFMT(right.st_mode),
+    )
+
+
+def _trusted_executable_filename(name: str) -> str:
+    require(name in TRUSTED_EXECUTABLE_ENV, f"unsupported trusted executable {name}")
+    return f"{name}.exe" if os.name == "nt" else name
+
+
+def _require_allowed_executable_link_count(name: str, link_count: int) -> None:
+    if name == "git":
+        require(link_count >= 1, "trusted git executable has no filesystem link")
+    else:
+        require(link_count == 1, f"trusted {name} executable must have exactly one filesystem link")
+
+
+def _reject_reparse_path_components(path: Path, label: str) -> None:
+    """Reject indirection in every component of one existing absolute path."""
+
+    require(path.is_absolute(), f"{label} must be an absolute path")
+    parts = path.parts
+    require(bool(parts), f"{label} has no filesystem components")
+    current = Path(parts[0])
+    try:
+        root_metadata = current.lstat()
+    except OSError as exc:
+        raise GateError(f"{label} must be an existing non-reparse path") from exc
+    require(not _is_reparse(root_metadata), f"{label} must not traverse a symlink or reparse point")
+    for part in parts[1:]:
+        current /= part
+        try:
+            metadata = current.lstat()
+        except OSError as exc:
+            raise GateError(f"{label} must be an existing non-reparse path") from exc
+        require(not _is_reparse(metadata), f"{label} must not traverse a symlink or reparse point")
+
+
+def _snapshot_trusted_executable(name: str, path: Path) -> TrustedExecutable:
+    """Read and identity-bind one configured executable without following links."""
+
+    expected_name = _trusted_executable_filename(name)
+    candidate = Path(path)
+    require(candidate.is_absolute(), f"{TRUSTED_EXECUTABLE_ENV[name]} must be an absolute path")
+    lexical = Path(os.path.abspath(candidate))
+    names_match = lexical.name.casefold() == expected_name.casefold() if os.name == "nt" else lexical.name == expected_name
+    require(names_match, f"{TRUSTED_EXECUTABLE_ENV[name]} must name exact {expected_name}")
+    _reject_reparse_path_components(lexical, f"trusted {name} executable")
+
+    try:
+        resolved = lexical.resolve(strict=True)
+        before_path = lexical.lstat()
+    except (FileNotFoundError, OSError, RuntimeError) as exc:
+        raise GateError(f"trusted {name} executable must exist as a stable regular file") from exc
+    require(resolved == lexical, f"trusted {name} executable must not use path indirection")
+    require(stat.S_ISREG(before_path.st_mode) and not _is_reparse(before_path),
+            f"trusted {name} executable must be a non-reparse regular file")
+    _require_allowed_executable_link_count(name, before_path.st_nlink)
+    if os.name != "nt":
+        require(os.access(lexical, os.X_OK), f"trusted {name} executable is not executable")
+
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    digest = hashlib.sha256()
+    bytes_read = 0
+    try:
+        descriptor = os.open(lexical, flags)
+        before_fd = os.fstat(descriptor)
+        require(stat.S_ISREG(before_fd.st_mode) and before_fd.st_nlink == before_path.st_nlink,
+                f"trusted {name} executable changed its filesystem link count before it could be pinned")
+        _require_allowed_executable_link_count(name, before_fd.st_nlink)
+        require(_same_file_identity(before_path, before_fd),
+                f"trusted {name} executable changed identity before it could be pinned")
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+            bytes_read += len(chunk)
+        after_fd = os.fstat(descriptor)
+    except OSError as exc:
+        raise GateError(f"trusted {name} executable could not be read through a stable descriptor") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+    try:
+        after_path = lexical.lstat()
+        _reject_reparse_path_components(lexical, f"trusted {name} executable")
+        still_resolved = lexical.resolve(strict=True)
+    except (FileNotFoundError, OSError, RuntimeError) as exc:
+        raise GateError(f"trusted {name} executable changed path identity while it was pinned") from exc
+    require(still_resolved == resolved, f"trusted {name} executable changed its resolved path")
+    require(
+        all(
+            _same_file_identity(left, right)
+            for left, right in (
+                (before_path, before_fd),
+                (before_fd, after_fd),
+                (after_fd, after_path),
+            )
+        ),
+        f"trusted {name} executable changed filesystem identity while it was pinned",
+    )
+    require(after_fd.st_nlink == before_fd.st_nlink == after_path.st_nlink,
+            f"trusted {name} executable changed its filesystem link count")
+    _require_allowed_executable_link_count(name, after_fd.st_nlink)
+    require(
+        before_fd.st_size == after_fd.st_size == bytes_read
+        and before_fd.st_mtime_ns == after_fd.st_mtime_ns
+        and before_fd.st_ctime_ns == after_fd.st_ctime_ns,
+        f"trusted {name} executable changed bytes while it was pinned",
+    )
+    return TrustedExecutable(
+        name=name,
+        path=resolved,
+        sha256=digest.hexdigest(),
+        size=bytes_read,
+        device=after_fd.st_dev,
+        inode=after_fd.st_ino,
+        mode_type=stat.S_IFMT(after_fd.st_mode),
+        link_count=after_fd.st_nlink,
+        mtime_ns=after_fd.st_mtime_ns,
+        ctime_ns=after_fd.st_ctime_ns,
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def trusted_toolchain() -> TrustedToolchain:
+    """Resolve every production subprocess only from explicit absolute trust roots."""
+
+    configured = {
+        name: os.environ.get(variable, "").strip()
+        for name, variable in TRUSTED_EXECUTABLE_ENV.items()
+    }
+    require(
+        all(configured.values()),
+        "subprocess execution requires explicit absolute MEMORYAGENT_GIT_EXECUTABLE, "
+        "MEMORYAGENT_FFMPEG_EXECUTABLE, and MEMORYAGENT_FFPROBE_EXECUTABLE paths",
+    )
+    git_executable = _snapshot_trusted_executable("git", Path(configured["git"]))
+    ffmpeg = _snapshot_trusted_executable("ffmpeg", Path(configured["ffmpeg"]))
+    ffprobe = _snapshot_trusted_executable("ffprobe", Path(configured["ffprobe"]))
+    require(ffmpeg.path.parent == ffprobe.path.parent,
+            "trusted ffmpeg and ffprobe executables must be sibling files from one toolchain directory")
+    require(ffmpeg.path != ffprobe.path, "trusted ffmpeg and ffprobe executables must be distinct")
+    return TrustedToolchain(git=git_executable, ffmpeg=ffmpeg, ffprobe=ffprobe)
+
+
+@contextmanager
+def trusted_invocation(name: str) -> Iterable[str]:
+    """Verify the cached executable immediately before and after one invocation."""
+
+    executable = trusted_toolchain().executable(name)
+    executable.assert_unchanged()
+    try:
+        yield str(executable.path)
+    finally:
+        executable.assert_unchanged()
+
+
+def run_trusted_tool(
+    name: str,
+    arguments: Sequence[str],
+    **kwargs: Any,
+) -> subprocess.CompletedProcess[Any]:
+    """Run one command without ever delegating executable lookup to the OS."""
+
+    with trusted_invocation(name) as executable:
+        return subprocess.run([executable, *arguments], **kwargs)
+
+
+def _self_test_path_directories() -> tuple[Path, ...]:
+    """Enumerate safe absolute PATH directories without using process search order."""
+
+    directories: dict[str, Path] = {}
+    repository = Path(os.path.abspath(REPO))
+    working_directory = Path(os.path.abspath(Path.cwd()))
+    for raw_entry in os.environ.get("PATH", "").split(os.pathsep):
+        entry = raw_entry.strip()
+        if len(entry) >= 2 and entry[0] == entry[-1] == '"':
+            entry = entry[1:-1]
+        if not entry:
+            continue
+        directory = Path(entry)
+        if not directory.is_absolute():
+            continue
+        lexical = Path(os.path.abspath(directory))
+        if lexical == working_directory:
+            continue
+        try:
+            lexical.relative_to(repository)
+        except ValueError:
+            pass
+        else:
+            continue
+        try:
+            _reject_reparse_path_components(lexical, "self-test executable directory")
+            resolved = lexical.resolve(strict=True)
+            metadata = lexical.lstat()
+        except (GateError, FileNotFoundError, OSError, RuntimeError):
+            continue
+        if resolved != lexical or not stat.S_ISDIR(metadata.st_mode) or _is_reparse(metadata):
+            continue
+        directories[os.path.normcase(str(resolved))] = resolved
+    return tuple(directories.values())
+
+
+def _is_self_test_executable_candidate(name: str, path: Path) -> bool:
+    try:
+        metadata = path.lstat()
+    except OSError:
+        return False
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and not _is_reparse(metadata)
+        and (metadata.st_nlink >= 1 if name == "git" else metadata.st_nlink == 1)
+        and (os.name == "nt" or os.access(path, os.X_OK))
+    )
+
+
+def _discover_self_test_executable(name: str) -> Path:
+    """Find one unambiguous executable only for an explicitly non-production fixture."""
+
+    candidates = tuple(
+        directory / _trusted_executable_filename(name)
+        for directory in _self_test_path_directories()
+        if _is_self_test_executable_candidate(name, directory / _trusted_executable_filename(name))
+    )
+    require(
+        len(candidates) == 1,
+        f"self-test {name} discovery requires exactly one complete non-reparse PATH candidate; "
+        f"set {TRUSTED_EXECUTABLE_ENV[name]} explicitly when PATH is ambiguous",
+    )
+    return candidates[0]
+
+
+def _discover_self_test_media_executables() -> tuple[Path, Path]:
+    """Find one unambiguous sibling media-tool pair for a non-production fixture."""
+
+    candidates: list[tuple[Path, Path]] = []
+    for directory in _self_test_path_directories():
+        paths = tuple(directory / _trusted_executable_filename(name) for name in ("ffmpeg", "ffprobe"))
+        if all(_is_self_test_executable_candidate(name, path) for name, path in zip(("ffmpeg", "ffprobe"), paths)):
+            candidates.append((paths[0], paths[1]))
+
+    require(
+        len(candidates) == 1,
+        "self-test media discovery requires exactly one complete non-reparse ffmpeg/ffprobe PATH directory; "
+        "set MEMORYAGENT_FFMPEG_EXECUTABLE and MEMORYAGENT_FFPROBE_EXECUTABLE explicitly when PATH is ambiguous",
+    )
+    return candidates[0]
+
+
+@contextmanager
+def self_test_tool_environment() -> Iterable[None]:
+    """Temporarily configure the fixture-only PATH fallback for ``--self-test``."""
+
+    variables = tuple(TRUSTED_EXECUTABLE_ENV.values())
+    original = {variable: os.environ.get(variable) for variable in variables}
+    populated = [bool(value and value.strip()) for value in original.values()]
+    require(all(populated) or not any(populated),
+            "set all three MEMORYAGENT_*_EXECUTABLE trust paths, or none for a self-test")
+    if not any(populated):
+        git_executable = _discover_self_test_executable("git")
+        ffmpeg, ffprobe = _discover_self_test_media_executables()
+        os.environ[TRUSTED_EXECUTABLE_ENV["git"]] = str(git_executable)
+        os.environ[TRUSTED_EXECUTABLE_ENV["ffmpeg"]] = str(ffmpeg)
+        os.environ[TRUSTED_EXECUTABLE_ENV["ffprobe"]] = str(ffprobe)
+    trusted_toolchain.cache_clear()
+    try:
+        yield
+    finally:
+        for variable, value in original.items():
+            if value is None:
+                os.environ.pop(variable, None)
+            else:
+                os.environ[variable] = value
+        trusted_toolchain.cache_clear()
 
 
 def create_build_session(scratch: Path) -> Path:
@@ -329,8 +697,9 @@ def load_snapshot_json(snapshot: ProjectFileSnapshot, label: str) -> Any:
 
 
 def git(*args: str, check: bool = True) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(REPO), *args],
+    result = run_trusted_tool(
+        "git",
+        ["-C", str(REPO), *args],
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -344,8 +713,9 @@ def git(*args: str, check: bool = True) -> str:
 
 
 def git_success(*args: str) -> bool:
-    result = subprocess.run(
-        ["git", "-C", str(REPO), *args],
+    result = run_trusted_tool(
+        "git",
+        ["-C", str(REPO), *args],
         check=False,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -384,8 +754,9 @@ def ensure_snapshot_matches_head(snapshot: ProjectFileSnapshot, label: str) -> N
 
     rel = snapshot.relative_path
     require(git_success("ls-files", "--error-unmatch", "--", rel), f"{label} must be committed before a production build")
-    result = subprocess.run(
-        ["git", "-C", str(REPO), "hash-object", f"--path={rel}", "--stdin"],
+    result = run_trusted_tool(
+        "git",
+        ["-C", str(REPO), "hash-object", f"--path={rel}", "--stdin"],
         check=False,
         input=snapshot.data,
         stdout=subprocess.PIPE,
@@ -566,6 +937,26 @@ def validate_capture_review(
         and "canonical-unmeasured" not in timing_source,
         "capture review subtitle timing is not measured",
     )
+    subtitle_timeline = review.get("subtitleTimeline")
+    require(isinstance(subtitle_timeline, dict), "capture review has no immutable subtitle timeline binding")
+    canonical_record = subtitle_timeline.get("canonicalContract")
+    require(isinstance(canonical_record, dict), "capture review has no canonical subtitle contract record")
+    require(
+        canonical_record.get("path") == CAPTION_CONTRACT_SNAPSHOT.relative_path
+        and canonical_record.get("sha256") == CAPTION_CONTRACT_SNAPSHOT.sha256
+        and canonical_record.get("size") == CAPTION_CONTRACT_SNAPSHOT.size,
+        "capture review canonical subtitle contract does not match the tracked read-once bytes",
+    )
+    measured_record = subtitle_timeline.get("measuredInput")
+    require(isinstance(measured_record, dict), "capture review has no measured subtitle input binding")
+    require(
+        isinstance(measured_record.get("path"), str)
+        and SHA256.fullmatch(str(measured_record.get("sha256", "")).lower()) is not None
+        and type(measured_record.get("size")) is int
+        and measured_record.get("size") > 0,
+        "capture review measured subtitle input binding is invalid",
+    )
+    require(subtitle_timeline.get("matchesCanonicalContract") is True, "capture review subtitle input did not match the canonical contract")
 
     raw_artifacts = review.get("artifacts")
     require(isinstance(raw_artifacts, dict), "capture review has no artifact hash inventory")
@@ -729,9 +1120,13 @@ def validate_inputs(
     )
     claim_matrix_path = project_path(CLAIM_MATRIX_REL, "claim/evidence matrix", must_exist=True)
     builder_source = snapshot_project_file("demo/tools/build_caption_video.py", "caption video builder")
+    narration_source = snapshot_project_file("demo/tools/build_local_narration.py", "local narration builder and validator")
+    caption_contract_snapshot = CAPTION_CONTRACT_SNAPSHOT
     claim_matrix_snapshot = snapshot_project_file(claim_matrix_path, "claim/evidence matrix")
     if production_mode:
         ensure_snapshot_matches_head(builder_source, "caption video builder")
+        ensure_snapshot_matches_head(narration_source, "local narration builder and validator")
+        ensure_snapshot_matches_head(caption_contract_snapshot, "caption timeline contract")
         ensure_snapshot_matches_head(claim_matrix_snapshot, "claim/evidence matrix")
         ensure_snapshot_matches_head(deploy_state_snapshot, "deployment state")
         ensure_snapshot_matches_head(architecture_source, "architecture source")
@@ -752,12 +1147,14 @@ def validate_inputs(
         exact_deploy_evidence_mode=evidence_mode,
         deployment_producer=producer,
         builder_source=builder_source,
+        narration_source=narration_source,
         capture_review=review_snapshot,
         deploy_state=deploy_state_snapshot,
         deployment_output=deployment_output_snapshot,
         deployment_status=deployment_status_snapshot,
         claim_matrix=claim_matrix_snapshot,
         architecture_source=architecture_source,
+        caption_contract=caption_contract_snapshot,
         artifact_files=artifact_files,
     )
 
@@ -848,7 +1245,7 @@ def render_beat_frame(
         draw.rectangle((0, 0, CANVAS[0], 10), fill="#34d399")
         draw.text((58, 51), f"BEAT {beat.number:02d} / {len(BEATS):02d}", anchor="lm", font=font(23), fill="#65e6ae")
         draw.text((285, 51), beat.title, anchor="lm", font=font(35), fill="#ffffff")
-        draw.text((1860, 51), "CAPTION-LED · NO VOICE", anchor="rm", font=font(21), fill="#9eb8ad")
+        draw.text((1860, 51), "NARRATED · CAPTIONED", anchor="rm", font=font(21), fill="#9eb8ad")
         if beat.treatment == "evidence":
             render_evidence(draw)
         elif len(beat.visuals) == 1:
@@ -876,7 +1273,7 @@ def render_beat_frame(
         draw.text((960, y), line, anchor="ma", font=caption_font, fill="#ffffff")
         y += line_height
     draw.text((58, 1067), f"Exact runtime {inputs.exact_runtime_sha[:12]} · hash-bound sanitized inputs", anchor="lm", font=font(18), fill="#759487")
-    draw.text((1862, 1067), "Procedural digital silence · burned English captions", anchor="rm", font=font(18), fill="#759487")
+    draw.text((1862, 1067), "Local synthetic narration · burned English captions", anchor="rm", font=font(18), fill="#759487")
     if self_test_label:
         draw.rounded_rectangle((650, 12, 1270, 40), radius=12, fill="#a71919", outline="#ff8b8b", width=1)
         draw.text((960, 26), "SYNTHETIC SELF-TEST - NOT SUBMISSION EVIDENCE", anchor="mm", font=font(15), fill="#ffffff")
@@ -889,15 +1286,10 @@ def render_beat_frame(
         require(check.size == CANVAS, f"rendered beat {beat.number} is not 1920x1080")
 
 
-def find_binary(name: str) -> str:
-    resolved = shutil.which(name)
-    require(resolved is not None, f"required executable {name} is unavailable")
-    return str(resolved)
-
-
 def binary_version(name: str) -> str:
-    result = subprocess.run(
-        [find_binary(name), "-version"],
+    result = run_trusted_tool(
+        name,
+        ["-version"],
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -910,9 +1302,15 @@ def binary_version(name: str) -> str:
     return first_line
 
 
-def encode_video(frame_paths: Sequence[Path], beats: Sequence[Beat], output: Path, scratch: Path) -> None:
-    ffmpeg = find_binary("ffmpeg")
+def encode_video(
+    frame_paths: Sequence[Path],
+    beats: Sequence[Beat],
+    narration_audio: Path,
+    output: Path,
+    scratch: Path,
+) -> None:
     require(len(frame_paths) == len(beats) and frame_paths, "video frame/beat inventory is incomplete")
+    require(narration_audio.parent == scratch and narration_audio.is_file(), "validated narration escaped build scratch")
     concat_path = scratch / "caption-video.ffconcat"
     lines = ["ffconcat version 1.0"]
     for frame_path, beat in zip(frame_paths, beats):
@@ -925,7 +1323,6 @@ def encode_video(frame_paths: Sequence[Path], beats: Sequence[Beat], output: Pat
     total_seconds = sum(beat.seconds for beat in beats)
     total_frames = total_seconds * FPS
     command = [
-        ffmpeg,
         "-n",
         "-hide_banner",
         "-loglevel",
@@ -936,10 +1333,8 @@ def encode_video(frame_paths: Sequence[Path], beats: Sequence[Beat], output: Pat
         "0",
         "-i",
         str(concat_path),
-        "-f",
-        "lavfi",
         "-i",
-        "anullsrc=channel_layout=stereo:sample_rate=48000",
+        str(narration_audio),
         "-map",
         "0:v:0",
         "-map",
@@ -979,45 +1374,68 @@ def encode_video(frame_paths: Sequence[Path], beats: Sequence[Beat], output: Pat
         "-1",
         str(output),
     ]
-    result = subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    result = run_trusted_tool(
+        "ffmpeg",
+        command,
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
     exclusive_write_bytes(scratch / "ffmpeg.stderr.log", result.stderr)
     require(result.returncode == 0 and output.is_file() and output.stat().st_size > 1024, f"ffmpeg encode failed (exit {result.returncode}); inspect the repo-local scratch log")
 
 
-def decoded_audio_peak(path: Path) -> int:
-    ffmpeg = find_binary("ffmpeg")
-    process = subprocess.Popen(
-        [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(path), "-map", "0:a:0", "-f", "s16le", "-acodec", "pcm_s16le", "-"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    require(process.stdout is not None, "failed to open decoded audio stream")
-    peak = 0
-    remainder = b""
-    while True:
-        chunk = process.stdout.read(1024 * 1024)
-        if not chunk:
-            break
-        chunk = remainder + chunk
-        remainder = chunk[-1:] if len(chunk) % 2 else b""
-        usable = chunk[:-1] if remainder else chunk
-        samples = array("h")
-        samples.frombytes(usable)
-        if sys.byteorder != "little":
-            samples.byteswap()
-        if samples:
-            peak = max(peak, abs(min(samples)), abs(max(samples)))
-    stderr = process.stderr.read() if process.stderr is not None else b""
-    return_code = process.wait()
-    require(return_code == 0 and not remainder, f"silent-audio verification failed (exit {return_code})")
-    require(not stderr, "silent-audio verification emitted an ffmpeg error")
-    return peak
+def decoded_audio_signal(path: Path) -> dict[str, int | float]:
+    with trusted_invocation("ffmpeg") as ffmpeg:
+        process = subprocess.Popen(
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(path), "-map", "0:a:0", "-f", "s16le", "-acodec", "pcm_s16le", "-"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        require(process.stdout is not None, "failed to open decoded audio stream")
+        peak = 0
+        square_sum = 0
+        sample_count = 0
+        active_samples = 0
+        clipped_samples = 0
+        pcm_digest = hashlib.sha256()
+        remainder = b""
+        while True:
+            chunk = process.stdout.read(1024 * 1024)
+            if not chunk:
+                break
+            chunk = remainder + chunk
+            remainder = chunk[-1:] if len(chunk) % 2 else b""
+            usable = chunk[:-1] if remainder else chunk
+            pcm_digest.update(usable)
+            samples = array("h")
+            samples.frombytes(usable)
+            if sys.byteorder != "little":
+                samples.byteswap()
+            if samples:
+                peak = max(peak, abs(min(samples)), abs(max(samples)))
+                square_sum += sum(int(sample) * int(sample) for sample in samples)
+                sample_count += len(samples)
+                active_samples += sum(1 for sample in samples if abs(sample) >= 64)
+                clipped_samples += sum(1 for sample in samples if abs(sample) >= 32_767)
+        stderr = process.stderr.read() if process.stderr is not None else b""
+        return_code = process.wait()
+    require(return_code == 0 and not remainder, f"narration verification failed (exit {return_code})")
+    require(not stderr and sample_count > 0, "narration verification emitted an ffmpeg error or no samples")
+    return {
+        "peakS16": peak,
+        "rmsS16": round(math.sqrt(square_sum / sample_count), 6),
+        "activeSampleRatio": round(active_samples / sample_count, 9),
+        "clippedSamples": clipped_samples,
+        "sampleCount": sample_count,
+        "pcmSha256": pcm_digest.hexdigest(),
+    }
 
 
 def probe_video(path: Path, expected_seconds: int) -> dict[str, Any]:
-    ffprobe = find_binary("ffprobe")
-    result = subprocess.run(
-        [ffprobe, "-v", "error", "-count_frames", "-show_streams", "-show_format", "-of", "json", str(path)],
+    result = run_trusted_tool(
+        "ffprobe",
+        ["-v", "error", "-count_frames", "-show_streams", "-show_format", "-of", "json", str(path)],
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -1044,14 +1462,17 @@ def probe_video(path: Path, expected_seconds: int) -> dict[str, Any]:
     frame_count = int(video.get("nb_read_frames") or video.get("nb_frames") or 0)
     require(frame_count == expected_seconds * FPS, "final video frame count differs from the deterministic timeline")
     require(audio.get("codec_name") == "aac", "final audio codec is not AAC")
-    require(audio.get("sample_rate") == "48000" and audio.get("channels") == 2, "final silent audio is not 48 kHz stereo")
+    require(audio.get("sample_rate") == "48000" and audio.get("channels") == 2, "final narration audio is not 48 kHz stereo")
     duration = float(probe.get("format", {}).get("duration", 0.0))
     require(abs(duration - expected_seconds) <= max(0.05, 2 / FPS), "measured MP4 duration differs from the frame timeline")
     require(duration < STRICT_LIMIT_SECONDS, "measured MP4 duration reaches the 175-second safety ceiling")
     probe_text = json.dumps(probe, ensure_ascii=False)
     require(BEARER.search(probe_text) is None and EMAIL.search(probe_text) is None and PRIVATE_IPV4.search(probe_text) is None, "final MP4 metadata contains sensitive-shaped content")
-    peak = decoded_audio_peak(path)
-    require(peak <= 4, f"audio track is not digital silence (decoded peak {peak})")
+    signal = decoded_audio_signal(path)
+    require(int(signal["peakS16"]) >= 128, "encoded narration audio is silent or too close to silence")
+    require(float(signal["rmsS16"]) >= 5.0, "encoded narration audio has no meaningful signal")
+    require(float(signal["activeSampleRatio"]) >= 0.0002, "encoded narration audio contains too little non-silent audio")
+    require(int(signal["clippedSamples"]) == 0 and int(signal["peakS16"]) < 32_767, "encoded narration audio contains clipping")
     return {
         "durationSeconds": duration,
         "frameCount": frame_count,
@@ -1063,7 +1484,12 @@ def probe_video(path: Path, expected_seconds: int) -> dict[str, Any]:
         "audioCodec": str(audio["codec_name"]),
         "audioSampleRate": int(audio["sample_rate"]),
         "audioChannels": int(audio["channels"]),
-        "decodedAudioPeakS16": peak,
+        "decodedAudioPeakS16": signal["peakS16"],
+        "decodedAudioRmsS16": signal["rmsS16"],
+        "decodedAudioActiveSampleRatio": signal["activeSampleRatio"],
+        "decodedAudioClippedSamples": signal["clippedSamples"],
+        "decodedAudioSampleCount": signal["sampleCount"],
+        "decodedAudioPcmSha256": signal["pcmSha256"],
     }
 
 
@@ -1101,6 +1527,8 @@ def build_video(
     srt_path: Path,
     manifest_path: Path,
     scratch: Path,
+    narration_audio: Path,
+    narration_manifest: Path,
     beats: Sequence[Beat] = BEATS,
     self_test_label: bool = False,
 ) -> dict[str, Any]:
@@ -1110,9 +1538,35 @@ def build_video(
         require(total_seconds == EXPECTED_TOTAL_SECONDS, "canonical timeline is not exactly 172 seconds")
     require(output.suffix.lower() == ".mp4" and manifest_path.suffix.lower() == ".json", "final output extensions must be .mp4 and .json")
     require(srt_path.suffix.lower() == ".srt", "subtitle output extension must be .srt")
-    require(len({output, srt_path, manifest_path, scratch}) == 4, "output, SRT, manifest, and scratch paths must be distinct")
+    require(
+        len({output, srt_path, manifest_path, scratch, narration_audio, narration_manifest}) == 6,
+        "caption-base outputs, scratch, narration WAV, and narration manifest must all be distinct",
+    )
+    bound_srt = inputs.artifact_files.get(SRT_REL)
+    require(bound_srt is not None, "validated inputs have no canonical SRT snapshot")
+    try:
+        requested_srt = srt_path.resolve(strict=True)
+    except (FileNotFoundError, OSError, RuntimeError) as exc:
+        raise GateError("validated SRT path disappeared before the build") from exc
+    require(requested_srt == bound_srt.path, "requested SRT differs from the validated read-once snapshot")
+    require(bound_srt.data == expected_srt(beats).encode("utf-8"), "validated SRT bytes differ from the active caption timeline")
+
+    narration_windows = tuple(
+        (int(start), int(end), str(caption)) for start, end, caption in caption_windows(beats)
+    )
+    try:
+        narration = validate_narration_bundle(
+            narration_audio,
+            narration_manifest,
+            windows=narration_windows,
+            production_mode=not self_test_label,
+        )
+    except NarrationError as exc:
+        raise GateError(str(exc)) from exc
 
     session_scratch = create_build_session(scratch)
+    retained_narration = session_scratch / f"local-narration-{secrets.token_hex(12)}.wav"
+    exclusive_write_bytes(retained_narration, narration.audio.data)
     frame_paths: list[Path] = []
     for beat in beats:
         frame_path = session_scratch / f"beat-{beat.number:02d}-{secrets.token_hex(12)}.png"
@@ -1120,19 +1574,18 @@ def build_video(
         frame_paths.append(frame_path)
 
     temporary_video = session_scratch / f"memoryagent-caption-video-{secrets.token_hex(16)}.rendering.mp4"
-    encode_video(frame_paths, beats, temporary_video, session_scratch)
+    encode_video(frame_paths, beats, retained_narration, temporary_video, session_scratch)
     technical = probe_video(temporary_video, total_seconds)
 
-    # The gallery gate has already hash-bound this exact SRT. Re-emit only the same
-    # bytes after video verification; a mismatch was rejected before any build write.
-    atomic_write_text(srt_path, expected_srt(beats), session_scratch)
+    # The SRT is canonical, public, human-reviewed evidence. It is a read-only input
+    # to this intermediate builder and must never be rewritten as a build side effect.
     output.parent.mkdir(parents=True, exist_ok=True)
     os.replace(temporary_video, output)
 
     manifest = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "status": "passed",
-        "builder": "memoryagent-caption-led-ten-beat-v3",
+        "builder": "memoryagent-caption-led-ten-beat-v4-narrated",
         "generatedAt": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "exactRuntimeSource": inputs.exact_runtime_sha,
         "captureSubmissionHead": inputs.capture_head,
@@ -1141,6 +1594,11 @@ def build_video(
             "path": inputs.builder_source.relative_path,
             "sha256": inputs.builder_source.sha256,
             "size": inputs.builder_source.size,
+        },
+        "narrationValidatorSource": {
+            "path": inputs.narration_source.relative_path,
+            "sha256": inputs.narration_source.sha256,
+            "size": inputs.narration_source.size,
         },
         "captureReview": {
             "path": inputs.capture_review.relative_path,
@@ -1162,6 +1620,11 @@ def build_video(
             },
         },
         "timeline": {
+            "canonicalContract": {
+                "path": inputs.caption_contract.relative_path,
+                "sha256": inputs.caption_contract.sha256,
+                "size": inputs.caption_contract.size,
+            },
             "fps": FPS,
             "strictLimitSeconds": STRICT_LIMIT_SECONDS,
             "plannedDurationSeconds": total_seconds,
@@ -1169,12 +1632,49 @@ def build_video(
             "totalFrames": total_seconds * FPS,
             "beats": timeline_manifest(beats),
         },
+        "narration": {
+            "manifestPath": narration.manifest.relative_path,
+            "manifestSha256": narration.manifest.sha256,
+            "audioPath": narration.audio.relative_path,
+            "audioSha256": narration.audio.sha256,
+            "generator": narration.payload["generator"],
+            "voice": {
+                "name": narration.payload["voice"]["name"],
+                "culture": narration.payload["voice"]["culture"],
+                "gender": narration.payload["voice"]["gender"],
+            },
+            "timelineContract": {
+                "path": narration.payload["timelineContract"]["path"],
+                "sha256": narration.payload["timelineContract"]["sha256"],
+                "size": narration.payload["timelineContract"]["size"],
+            },
+            "rights": {
+                "syntheticVoiceDisclosure": narration.payload["rights"]["syntheticVoiceDisclosure"],
+                "disclosure": narration.payload["rights"]["disclosure"],
+                "thirdPartyMusic": narration.payload["rights"]["thirdPartyMusic"],
+                "thirdPartyAudio": narration.payload["rights"]["thirdPartyAudio"],
+                "humanVoiceRightsReviewRequired": narration.payload["rights"]["humanVoiceRightsReviewRequired"],
+                "automatedProvenanceIsAuthoritativeRightsProof": narration.payload["rights"]["automatedProvenanceIsAuthoritativeRightsProof"],
+            },
+            "generationEvidence": {
+                "evidenceType": narration.payload["generationEvidence"]["evidenceType"],
+                "sha256": canonical_json_sha256(narration.payload["generationEvidence"]),
+                "generatorSource": narration.payload["generationEvidence"]["generatorSource"],
+                "assurance": narration.payload["generationEvidence"]["assurance"],
+            },
+            "measuredAudio": narration.measured_audio,
+        },
         "rightsSafeAudio": {
-            "voiceUsed": False,
-            "ttsUsed": False,
+            "voiceUsed": True,
+            "ttsUsed": narration.payload["generator"] != "synthetic-self-test-tone-v1",
             "musicUsed": False,
-            "mode": "ffmpeg-generated-digital-silence",
+            "mode": narration.payload["generator"],
             "decodedPeakS16": technical["decodedAudioPeakS16"],
+            "decodedRmsS16": technical["decodedAudioRmsS16"],
+            "decodedActiveSampleRatio": technical["decodedAudioActiveSampleRatio"],
+            "decodedClippedSamples": technical["decodedAudioClippedSamples"],
+            "decodedSampleCount": technical["decodedAudioSampleCount"],
+            "decodedPcmSha256": technical["decodedAudioPcmSha256"],
         },
         "toolVersions": {
             "python": sys.version.split()[0],
@@ -1198,7 +1698,14 @@ def build_video(
         "inputs": {rel: snapshot.sha256 for rel, snapshot in inputs.artifact_files.items()},
         "outputs": {
             "video": {"path": relative_repo_path(output), "sha256": sha256_file(output), **technical},
-            "subtitles": {"path": relative_repo_path(srt_path), "sha256": sha256_file(srt_path), "entries": len(beats), "timing": "frame-exact"},
+            "subtitles": {
+                "path": bound_srt.relative_path,
+                "sha256": bound_srt.sha256,
+                "size": bound_srt.size,
+                "entries": len(beats),
+                "timing": "frame-exact",
+                "role": "validated-read-only-canonical-input",
+            },
         },
     }
     atomic_write_text(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", session_scratch)
@@ -1226,6 +1733,12 @@ def make_fixture_image(path: Path, size: tuple[int, int], label: str) -> None:
 
 
 def self_test(*, full_duration: bool = False) -> int:
+    with self_test_tool_environment():
+        trusted_toolchain()
+        return _self_test_impl(full_duration=full_duration)
+
+
+def _self_test_impl(*, full_duration: bool = False) -> int:
     root = project_path(".artifacts/caption-video-selftest", "self-test root")
     safe_reset_selftest_root(root)
     fixture_root = root / "fixture-root"
@@ -1397,6 +1910,19 @@ def self_test(*, full_duration: bool = False) -> int:
             "rasterSha256": artifact_hashes[ARCHITECTURE_REL],
         },
         "subtitleTimingSource": "measured-caption-windows",
+        "subtitleTimeline": {
+            "canonicalContract": {
+                "path": CAPTION_CONTRACT_SNAPSHOT.relative_path,
+                "sha256": CAPTION_CONTRACT_SNAPSHOT.sha256,
+                "size": CAPTION_CONTRACT_SNAPSHOT.size,
+            },
+            "measuredInput": {
+                "path": ".artifacts/caption-video-selftest/measured-windows.json",
+                "sha256": "0" * 64,
+                "size": 1,
+            },
+            "matchesCanonicalContract": True,
+        },
         "artifacts": artifact_hashes,
     }
     capture_review.write_text(json.dumps(review_payload, indent=2) + "\n", encoding="utf-8")
@@ -1418,17 +1944,38 @@ def self_test(*, full_duration: bool = False) -> int:
     )
     output_dir = root / "output"
     output_stem = "FULL-172S-SELF-TEST-NOT-SUBMISSION-EVIDENCE" if full_duration else "SELF-TEST-NOT-SUBMISSION-EVIDENCE"
+    narration_audio = root / "SYNTHETIC-NOT-SUBMISSION-NARRATION.wav"
+    narration_manifest = root / "SYNTHETIC-NOT-SUBMISSION-NARRATION.manifest.json"
+    create_synthetic_fixture(
+        narration_audio,
+        narration_manifest,
+        windows=tuple(
+            (int(start), int(end), str(caption)) for start, end, caption in caption_windows(test_beats)
+        ),
+    )
+    srt_before = srt_path.lstat()
+    srt_bytes_before = srt_path.read_bytes()
     manifest = build_video(
         inputs,
         output=output_dir / f"{output_stem}.mp4",
         srt_path=srt_path,
         manifest_path=output_dir / f"{output_stem}.manifest.json",
         scratch=root / "build-scratch",
+        narration_audio=narration_audio,
+        narration_manifest=narration_manifest,
         beats=test_beats,
         self_test_label=True,
     )
+    srt_after = srt_path.lstat()
+    require(
+        (srt_before.st_dev, srt_before.st_ino, srt_before.st_size, srt_before.st_mtime_ns, srt_before.st_ctime_ns)
+        == (srt_after.st_dev, srt_after.st_ino, srt_after.st_size, srt_after.st_mtime_ns, srt_after.st_ctime_ns)
+        and srt_path.read_bytes() == srt_bytes_before,
+        "caption video build mutated or replaced the canonical SRT input",
+    )
     require(manifest["outputs"]["video"]["frameCount"] == sum(beat.seconds for beat in test_beats) * FPS, "self-test frame-count assertion failed")
-    require(manifest["rightsSafeAudio"]["decodedPeakS16"] <= 4, "self-test silence assertion failed")
+    require(manifest["rightsSafeAudio"]["decodedPeakS16"] >= 128, "self-test narration assertion failed")
+    require(manifest["rightsSafeAudio"]["decodedClippedSamples"] == 0, "self-test clipping assertion failed")
 
     bad_boundary = root / "CAPTURE_REVIEW.bad-feedback-boundary.json"
     bad_boundary_payload = json.loads(capture_review.read_text(encoding="utf-8"))
@@ -1500,7 +2047,7 @@ def self_test(*, full_duration: bool = False) -> int:
         raise GateError("self-test accepted an output path outside the repository")
     require(not outside.exists(), "path rejection created an outside artifact")
     duration_label = "172 seconds / 5,160 frames" if full_duration else "10 seconds / 300 frames"
-    print(f"caption video self-test: PASS · {duration_label} · digital silence · claim-boundary/hash/origin/SRT/path gates")
+    print(f"caption video self-test: PASS · {duration_label} · non-silent local fixture · claim-boundary/hash/origin/SRT/path gates")
     return 0
 
 
@@ -1513,8 +2060,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--expected-sha", help="40-character exact deployed MemoryAgent runtime SHA")
     parser.add_argument("--deployment-output", help="ignored repo-local exact deployment decoded output")
     parser.add_argument("--deployment-status", help="ignored repo-local sanitized exact deployment status JSON")
-    parser.add_argument("--output", default=DEFAULT_OUTPUT_REL, help="repo-contained final MP4 path")
-    parser.add_argument("--manifest", default=DEFAULT_MANIFEST_REL, help="repo-contained final build manifest path")
+    parser.add_argument("--output", default=DEFAULT_OUTPUT_REL, help="ignored repo-contained caption-base MP4 path")
+    parser.add_argument("--manifest", default=DEFAULT_MANIFEST_REL, help="ignored repo-contained caption-base manifest path")
+    parser.add_argument("--narration-audio", default=DEFAULT_NARRATION_AUDIO_REL, help="project-contained local narration WAV")
+    parser.add_argument("--narration-manifest", default=DEFAULT_NARRATION_MANIFEST_REL, help="project-contained local narration manifest JSON")
     parser.add_argument("--scratch", default=DEFAULT_SCRATCH_REL, help="repo-contained ignored build scratch directory")
     parser.add_argument("--check-only", action="store_true", help="validate every final input without invoking ffmpeg")
     return parser.parse_args(argv)
@@ -1546,12 +2095,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         deployment_status = project_path(args.deployment_status, "deployment status", must_exist=True)
         output = project_path(args.output, "final MP4 output")
         manifest_path = project_path(args.manifest, "final video manifest")
+        narration_audio = project_path(args.narration_audio, "local narration WAV", must_exist=True)
+        narration_manifest = project_path(args.narration_manifest, "local narration manifest", must_exist=True)
         scratch = project_path(args.scratch, "caption video scratch")
         require(relative_repo_path(capture_review) == CAPTURE_REVIEW_REL, "production build requires the canonical capture review")
         require(relative_repo_path(deploy_state) == DEPLOY_STATE_REL, "production build requires the canonical deployment state")
         require(relative_repo_path(srt_path) == SRT_REL, "production build requires the canonical measured SRT")
-        require(Path(relative_repo_path(output)).parent.as_posix() == "demo/final-media", "final MP4 output must be directly under demo/final-media/")
-        require(Path(relative_repo_path(manifest_path)).parent.as_posix() == "demo/final-media", "final video manifest must be directly under demo/final-media/")
+        output_rel = Path(relative_repo_path(output))
+        manifest_rel = Path(relative_repo_path(manifest_path))
+        require(output_rel.parent.as_posix() == ".artifacts/final-caption-video", "direct caption-base MP4 output must stay under ignored .artifacts/final-caption-video/")
+        require(manifest_rel.parent.as_posix() == ".artifacts/final-caption-video", "direct caption-base manifest must stay under ignored .artifacts/final-caption-video/")
+        require(output.name != "memoryagent-demo.mp4", "only the real-motion orchestrator may promote the canonical final MP4")
+        require(manifest_path.name != "memoryagent-demo.manifest.json", "only the real-motion orchestrator may promote the canonical final manifest")
         scratch_rel = relative_repo_path(scratch)
         require(scratch_rel.startswith(".artifacts/") and scratch_rel != ".artifacts", "caption video scratch must be a dedicated directory under ignored .artifacts/")
 
@@ -1564,7 +2119,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             deploy_state=deploy_state,
         )
         if args.check_only:
-            print(f"caption video inputs: PASS · exact runtime {inputs.exact_runtime_sha[:12]} · 11 gallery + 11 proof frames · 10 evidence frames · measured SRT")
+            try:
+                validate_narration_bundle(narration_audio, narration_manifest, production_mode=True)
+            except NarrationError as exc:
+                raise GateError(str(exc)) from exc
+            print(f"caption video inputs: PASS · exact runtime {inputs.exact_runtime_sha[:12]} · 11 gallery + 11 proof frames · 10 evidence frames · measured SRT · local narration")
             return 0
         manifest = build_video(
             inputs,
@@ -1572,9 +2131,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             srt_path=srt_path,
             manifest_path=manifest_path,
             scratch=scratch,
+            narration_audio=narration_audio,
+            narration_manifest=narration_manifest,
         )
         measured = manifest["timeline"]["measuredDurationSeconds"]
-        print(f"caption video build: PASS · {measured:.3f}s · 1920x1080 · 30 fps · silent AAC · exact runtime {inputs.exact_runtime_sha[:12]}")
+        print(f"caption video build: PASS · {measured:.3f}s · 1920x1080 · 30 fps · local narrated AAC · exact runtime {inputs.exact_runtime_sha[:12]}")
         return 0
     except (GateError, OSError, UnicodeError) as exc:
         print(f"caption video build: FAIL · {exc}", file=sys.stderr)

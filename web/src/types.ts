@@ -54,6 +54,9 @@ export interface Resolution {
 
 export interface ContradictionValue {
   memoryId: string;
+  // Complete active carrier set for this tolerance/value bucket. Optional so
+  // the dashboard can still render and act on legacy single-carrier payloads.
+  carrierMemoryIds?: string[];
   sourceRef: string | null;
   value: unknown;
   createdAt: string;

@@ -1,4 +1,4 @@
-# YouTube publication packet — Archon MemoryAgent
+# YouTube publication packet: Archon MemoryAgent
 
 Use this packet only after the exact-release, media, duration, rights and signed-out
 gates are green and the canonical
@@ -14,22 +14,17 @@ authorize or perform publication.
 
 **Description**
 
-> Persistent memory becomes dangerous when it silently chooses between conflicting
-> facts. Archon MemoryAgent is our Qwen Cloud Hackathon Track 1 entry: durable,
-> queryable memory that recalls across sessions, grounds answers in citations,
-> surfaces field-level and meaning-level contradictions, and keeps resolution and
-> forgetting under explicit human control.
+> An agent can remember and still be confidently wrong when two sessions store
+> different versions of the same fact. Archon MemoryAgent makes that conflict visible.
 >
-> The demo shows one verified Alibaba Cloud ECS deployment using real Qwen models:
-> text-embedding-v4 for 1,024-dimensional memory embeddings, qwen-plus for grounded
-> narration and one bounded listwise rerank, a separately health-visible configured
-> Qwen semantic judge, and qwen-vl-max for protected document vision. The semantic
-> demo visibly scans at most one eligible, highest-similarity insight pair. PostgreSQL +
-> pgvector stores durable memory. `/health` and `/ready` evidence model configuration
-> and service readiness; exercised provider execution is evidenced separately
-> by the exact-deploy record and canaries shown in the video. The vision canary is an
-> original synthetic dry-run with zero writes; the exact runtime source is attested by
-> that release evidence. Explicit feedback is persisted state, not model-weight learning.
+> This demo shows fresh-session Qwen recall with citations, field-level and
+> meaning-level self-audits, persisted feedback, safe forgetting, and the live
+> Alibaba Cloud deployment. The audit stays read-only until a human chooses to
+> accept, override, or defer. Feedback updates stored state, not model weights.
+>
+> Built with Qwen text-embedding-v4, qwen-plus, qwen-vl-max, PostgreSQL, and
+> pgvector. Benchmark panels are developer-labelled fixtures, not production
+> accuracy or universal superiority claims.
 >
 > Live app: https://memory.43.106.13.19.sslip.io
 >
@@ -41,13 +36,12 @@ authorize or perform publication.
 >
 > Reproducible deployment path: https://github.com/upgradedev/archon-qwen-memoryagent/blob/main/deploy/redeploy.sh
 >
-> Evaluation numbers shown in the video are frozen, developer-labelled fixtures—not
-> production-traffic accuracy or universal superiority: field audit 5/5 with 0
-> false positives; declared resolution policy 4/4; deterministic semantic fixture
-> 90% recall, 100% precision and 0 false positives; disclosed retrieval fixture MRR
-> 0.883→0.911 and Recall@3 90.0%→96.7%.
+> Audio disclosure: English narration was generated locally with Windows
+> System.Speech using the Microsoft Zira Desktop synthetic voice. No human voice,
+> music, third-party audio, or network speech service is used. Burned English
+> captions and the downloadable SRT mirror the same ten beats.
 >
-> Track 1 — MemoryAgent · Qwen Cloud · Alibaba Cloud · pgvector · MCP · MIT
+> Track 1: MemoryAgent | Qwen Cloud | Alibaba Cloud | pgvector | MCP | MIT
 
 **Tags**
 
@@ -61,8 +55,8 @@ authorize or perform publication.
 
 ## Chapters
 
-These timestamps are the exact transitions of the canonical 5,160-frame caption-led
-real-motion final. Verify them against the final muxed MP4 and again after platform processing;
+These timestamps are the exact transitions of the canonical 5,160-frame narrated,
+captioned real-motion final. Verify them against the final muxed MP4 and again after platform processing;
 do not reuse them for a different edit. YouTube chapter times must be strictly
 increasing and each chapter must last at least ten seconds.
 
@@ -83,6 +77,9 @@ The real-motion manifest and QA must still report those transitions, 172.000 mea
 seconds and 5,160 frames, and `--verify-only` must pass immediately before upload.
 Recheck the chapters after YouTube finishes processing.
 
+Do not upload publicly until the user explicitly confirms that Microsoft Zira
+Desktop synthetic narration may be used and publicly published for this release.
+
 ## Thumbnail and captions
 
 - Upload `demo/final-media/youtube-thumbnail.png`:
@@ -94,8 +91,10 @@ Recheck the chapters after YouTube finishes processing.
   mirrored by the burned captions and final real-motion manifest.
 - Do not publish an SRT whose capture review says
   `canonical-unmeasured-draft`.
-- Do not enable a synthetic voice or make a voice-rights claim here. Voice and all
-  third-party material require the separate human rights sign-off.
+- Do not enable YouTube auto-dubbing or replace the reviewed audio. The canonical
+  track already contains disclosed local Windows System.Speech narration. Its exact
+  voice, WAV, manifest, clipping/silence checks and rights review must remain bound
+  to the final manifest.
 
 ## Visibility and metadata
 
@@ -115,9 +114,9 @@ Recheck the chapters after YouTube finishes processing.
       Google login or access request.
 - [ ] The player reports a duration strictly below 3:00 and the local release gate
       remains below the stricter 175-second publication ceiling.
-- [ ] 1080p is available, text is readable at normal playback size, the compatibility
-      AAC track remains digitally silent, and no frame is blank, stale or from
-      another release.
+- [ ] 1080p is available, text is readable at normal playback size, the narrated AAC
+      track is audible, unclipped and synchronized, and no frame is blank, stale or
+      from another release.
 - [ ] The thumbnail is the reviewed 1280×720 file and survives YouTube's small-card
       crop.
 - [ ] English subtitles load, match the burned captions byte-for-byte, and stay

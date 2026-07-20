@@ -1,0 +1,52 @@
+[
+  [
+    0,
+    13,
+    "An AI memory can be persistent and still be wrong. Archon MemoryAgent makes conflicting facts visible, cited, and safe to review."
+  ],
+  [
+    13,
+    32,
+    "The release card ties this live deployment to exact source. Health checks confirm the service and models. A synthetic two-image Qwen-VL-Max dry run returns one fused event, with zero writes or residue. It is not raw PDF parsing."
+  ],
+  [
+    32,
+    51,
+    "Evidence enters through a tenant-scoped trust boundary, becomes Qwen embeddings, and persists in pgvector. Hybrid recall returns grounded citations, while a read-only audit routes decisions to a human."
+  ],
+  [
+    51,
+    73,
+    "Session A stores a source-linked fact and disconnects. A fresh Session B recalls that prior-session fact with numbered citations. This proof exposes pure cosine for readability; the product default remains hybrid."
+  ],
+  [
+    73,
+    95,
+    "Original synthetic sessions disagree on one invoice amount field. Archon preserves both values with provenance and recommends the newer record without rewriting. The live reviewer chooses Defer only, so there is zero API call or write; Accept and Override remain unexercised."
+  ],
+  [
+    95,
+    113,
+    "Session A stores explicit reviewer feedback. A fresh authenticated Session B recalls, cites, and applies it. This is durable state, not training, autonomous learning, or a model-weight update."
+  ],
+  [
+    113,
+    130,
+    "Qwen also checks opposed meaning in original synthetic vendor claims. The live mechanism is separate from our offline 90% fixture. Four typed MCP tools share the same core; HTTP is authenticated, while standard input and output remain trusted locally."
+  ],
+  [
+    130,
+    142,
+    "Preview finds one feedback-superseded memory; confirmation deletes exactly that one. Protected state stays unchanged, with zero marker residue. It is not age-expired."
+  ],
+  [
+    142,
+    162,
+    "The evidence is labelled and reproducible: field, policy, semantic, and retrieval fixtures. These are developer tests, not production accuracy or independent evaluation, and they do not support a universal superiority claim."
+  ],
+  [
+    162,
+    172,
+    "Alibaba ECS, Qwen, and self-hosted pgvector are live. Function Compute and RDS remain alternatives. The MIT source is public."
+  ]
+]

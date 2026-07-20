@@ -11,7 +11,9 @@ from pathlib import Path
 import re
 import shutil
 import ssl
+import subprocess
 import sys
+import tempfile
 import traceback
 import unittest
 from unittest import mock
@@ -24,6 +26,13 @@ assert SPEC is not None and SPEC.loader is not None
 builder = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = builder
 SPEC.loader.exec_module(builder)
+
+NARRATION_MODULE_PATH = ROOT / "demo" / "tools" / "build_local_narration.py"
+NARRATION_SPEC = importlib.util.spec_from_file_location("memoryagent_local_narration", NARRATION_MODULE_PATH)
+assert NARRATION_SPEC is not None and NARRATION_SPEC.loader is not None
+narration = importlib.util.module_from_spec(NARRATION_SPEC)
+sys.modules[NARRATION_SPEC.name] = narration
+NARRATION_SPEC.loader.exec_module(narration)
 
 CAPTURE_MODULE_PATH = ROOT / "scripts" / "capture_submission_gallery.py"
 CAPTURE_SPEC = importlib.util.spec_from_file_location("memoryagent_capture_gallery_contract", CAPTURE_MODULE_PATH)
@@ -444,6 +453,95 @@ class CaptureQuotaOrderingTests(unittest.TestCase):
 
 
 class CaptionTimelineTests(unittest.TestCase):
+    def test_local_narration_defaults_and_schema_are_stable(self) -> None:
+        self.assertEqual(narration.DEFAULT_AUDIO_REL, ".artifacts/final-narration/memoryagent-narration.wav")
+        self.assertEqual(
+            narration.DEFAULT_MANIFEST_REL,
+            ".artifacts/final-narration/memoryagent-narration.manifest.json",
+        )
+        self.assertEqual(narration.GENERATOR_ID, "windows-system-speech-local-narration-v1")
+        args = builder.parse_args([])
+        self.assertEqual(args.narration_audio, narration.DEFAULT_AUDIO_REL)
+        self.assertEqual(args.narration_manifest, narration.DEFAULT_MANIFEST_REL)
+        self.assertEqual(args.output, ".artifacts/final-caption-video/caption-base.mp4")
+        self.assertEqual(args.manifest, ".artifacts/final-caption-video/caption-base.manifest.json")
+        source = MODULE_PATH.read_text(encoding="utf-8")
+        self.assertIn('"schemaVersion": 4', source)
+        self.assertIn('"builder": "memoryagent-caption-led-ten-beat-v4-narrated"', source)
+        self.assertIn('"narrationValidatorSource"', source)
+
+    def test_cross_platform_narration_fixture_is_non_silent_and_production_rejected(self) -> None:
+        root = ROOT / ".artifacts" / f"narration-unit-{os.getpid()}"
+        shutil.rmtree(root, ignore_errors=True)
+        windows = tuple((index - 1, index, text) for index, (_start, _end, text) in enumerate(builder.CAPTION_CONTRACT, start=1))
+        try:
+            bundle = narration.create_synthetic_fixture(
+                root / "fixture.wav",
+                root / "fixture.manifest.json",
+                windows=windows,
+            )
+            self.assertEqual(bundle.measured_audio["sampleRate"], 48_000)
+            self.assertEqual(bundle.measured_audio["channels"], 2)
+            self.assertEqual(bundle.measured_audio["sampleFrames"], 480_000)
+            self.assertEqual(bundle.measured_audio["nonSilentBeatCount"], 10)
+            self.assertGreater(bundle.measured_audio["peakS16"], 128)
+            self.assertEqual(bundle.measured_audio["clippedSamples"], 0)
+            self.assertEqual(bundle.payload["rights"]["syntheticVoiceDisclosure"], True)
+            self.assertEqual(bundle.payload["rights"]["thirdPartyMusic"], False)
+            self.assertEqual(len(bundle.payload["segments"]), 10)
+            self.assertTrue(all(segment["truncated"] is False for segment in bundle.payload["segments"]))
+            with self.assertRaisesRegex(narration.NarrationError, "wrong generator|production narration"):
+                narration.validate_narration_bundle(bundle.audio.path, bundle.manifest.path, production_mode=True)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_narration_signal_gate_rejects_silence_and_clipping(self) -> None:
+        windows = tuple((index - 1, index, text) for index, (_start, _end, text) in enumerate(builder.CAPTION_CONTRACT, start=1))
+        root = ROOT / ".artifacts" / f"narration-signal-unit-{os.getpid()}"
+        shutil.rmtree(root, ignore_errors=True)
+        try:
+            bundle = narration.create_synthetic_fixture(
+                root / "fixture.wav",
+                root / "fixture.manifest.json",
+                windows=windows,
+            )
+            silent = bytearray(bundle.audio.data)
+            data_index = silent.find(b"data")
+            self.assertGreater(data_index, 0)
+            silent[data_index + 8 :] = b"\x00" * (len(silent) - data_index - 8)
+            with self.assertRaisesRegex(narration.NarrationError, "silent|meaningful|non-silent"):
+                narration.inspect_audio(bytes(silent), windows)
+
+            clipped = bytearray(bundle.audio.data)
+            clipped[data_index + 8 : data_index + 10] = b"\xff\x7f"
+            with self.assertRaisesRegex(narration.NarrationError, "clipped"):
+                narration.inspect_audio(bytes(clipped), windows)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_narration_manifest_hash_binding_rejects_tampering(self) -> None:
+        root = ROOT / ".artifacts" / f"narration-hash-unit-{os.getpid()}"
+        shutil.rmtree(root, ignore_errors=True)
+        windows = tuple((index - 1, index, text) for index, (_start, _end, text) in enumerate(builder.CAPTION_CONTRACT, start=1))
+        try:
+            bundle = narration.create_synthetic_fixture(
+                root / "fixture.wav",
+                root / "fixture.manifest.json",
+                windows=windows,
+            )
+            payload = json.loads(bundle.manifest.text())
+            payload["audio"]["sha256"] = "0" * 64
+            bundle.manifest.path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(narration.NarrationError, "SHA-256 is stale"):
+                narration.validate_narration_bundle(
+                    bundle.audio.path,
+                    bundle.manifest.path,
+                    windows=windows,
+                    production_mode=False,
+                )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
     def test_real_motion_defaults_cover_the_matching_recall_beat(self) -> None:
         build_source = (ROOT / "demo" / "tools" / "build_real_motion_submission.py").read_text(encoding="utf-8")
         compose_source = (ROOT / "demo" / "tools" / "compose_real_motion_video.py").read_text(encoding="utf-8")
@@ -479,8 +577,8 @@ class CaptionTimelineTests(unittest.TestCase):
         self.assertIn("only canonical publication-candidate pipeline", canonical)
         self.assertRegex(canonical, r"build_caption_video\.py[\s\S]*intermediate[\s\S]*base renderer only")
         video_checklist = (ROOT / "demo" / "VIDEO_RECORDING_CHECKLIST.md").read_text(encoding="utf-8")
-        self.assertIn("silence peak `<=8`", video_checklist)
-        self.assertIn("static base retains its stricter `<=4`", video_checklist)
+        self.assertIn("meaningful signal, zero clipped", video_checklist)
+        self.assertIn("local Windows System.Speech narration", video_checklist)
         for relative in routed:
             with self.subTest(route=relative):
                 self.assertIn("REAL_MOTION_VIDEO.md", (ROOT / relative).read_text(encoding="utf-8"))
@@ -531,6 +629,88 @@ class CaptionTimelineTests(unittest.TestCase):
             )
         self.assertEqual("\n".join(blocks).encode("utf-8"), builder.expected_srt().encode("utf-8"))
 
+    def test_capture_preflight_accepts_only_the_tracked_final_video_timeline(self) -> None:
+        canonical = builder.caption_windows()
+        canonical_bytes = json.dumps(canonical).encode("utf-8")
+        canonical_snapshot = capture.ProjectFileSnapshot(
+            path=ROOT / "demo" / "caption-timeline.json",
+            relative_path="demo/caption-timeline.json",
+            data=canonical_bytes,
+            sha256=hashlib.sha256(canonical_bytes).hexdigest(),
+            size=len(canonical_bytes),
+        )
+        measured_snapshot = capture.ProjectFileSnapshot(
+            path=ROOT / ".artifacts" / "ignored-canonical-windows.json",
+            relative_path=".artifacts/ignored-canonical-windows.json",
+            data=canonical_bytes,
+            sha256=hashlib.sha256(canonical_bytes).hexdigest(),
+            size=len(canonical_bytes),
+        )
+        self.assertEqual(
+            capture.validate_canonical_caption_windows(measured_snapshot, canonical_snapshot),
+            capture.normalize_caption_windows(canonical, "canonical test timeline"),
+        )
+        self.assertIsNone(
+            capture.validate_production_caption_inputs(
+                caption_windows=".artifacts/ignored-canonical-windows.json",
+                allow_canonical_fallback=False,
+                video_manifest=None,
+                web_narration=None,
+            )
+        )
+
+        stale = [list(row) for row in canonical]
+        stale[3][2] = "Stale pre-humanization caption copy"
+        stale_bytes = json.dumps(stale).encode("utf-8")
+        stale_snapshot = capture.ProjectFileSnapshot(
+            path=ROOT / ".artifacts" / "ignored-stale-windows.json",
+            relative_path=".artifacts/ignored-stale-windows.json",
+            data=stale_bytes,
+            sha256=hashlib.sha256(stale_bytes).hexdigest(),
+            size=len(stale_bytes),
+        )
+        with self.assertRaisesRegex(
+            capture.GateError,
+            "do not exactly match the canonical ten-beat final-video timeline",
+        ):
+            capture.validate_canonical_caption_windows(stale_snapshot, canonical_snapshot)
+
+        output = ROOT / ".artifacts" / "caption-snapshot-contract-test.srt"
+        try:
+            with mock.patch.object(
+                capture,
+                "parse_measured_windows",
+                side_effect=AssertionError("snapshot-backed emission must not reopen the input path"),
+            ):
+                capture.emit_srt(
+                    output,
+                    measured_windows=measured_snapshot,
+                    allow_canonical_fallback=False,
+                    video_manifest=None,
+                    web_narration=None,
+                )
+            self.assertEqual(output.read_text(encoding="utf-8"), builder.expected_srt())
+        finally:
+            output.unlink(missing_ok=True)
+
+    def test_canonical_capture_rejects_legacy_eleventh_beat_before_file_reads(self) -> None:
+        argv = [
+            "--expected-sha", "0" * 40,
+            "--deployment-output", ".artifacts/deploy.txt",
+            "--deployment-status", ".artifacts/deploy.json",
+            "--alibaba-raw", ".artifacts/alibaba.png",
+            "--caption-windows", ".artifacts/caption-windows.json",
+            "--video-manifest", ".artifacts/video-manifest.json",
+            "--web-narration", ".artifacts/web-narration.txt",
+        ]
+        with mock.patch.object(
+            capture,
+            "snapshot_project_file",
+            side_effect=AssertionError("legacy caption inputs must fail before project-file reads"),
+        ) as snapshot:
+            self.assertEqual(capture.main(argv), 2)
+        snapshot.assert_not_called()
+
     def test_every_canonical_proof_frame_is_used_and_hash_required(self) -> None:
         used = {visual for beat in builder.BEATS for visual in beat.visuals}
         self.assertEqual(set(builder.PROOF_RELS) - used, set())
@@ -543,15 +723,15 @@ class CaptionTimelineTests(unittest.TestCase):
 
     def test_captions_retain_every_material_claim_boundary(self) -> None:
         captions = " ".join(beat.caption for beat in builder.BEATS).lower()
-        self.assertIn("fresh session b recalls a prior-session fact with numbered citations", captions)
-        self.assertIn("amount field differs across sessions", captions)
+        self.assertIn("fresh session b recalls that prior-session fact with numbered citations", captions)
+        self.assertIn("original synthetic sessions disagree on one invoice amount field", captions)
         self.assertNotRegex(captions, r"(?:€|eur|euros?|\b8,?400\b|\b8,?900\b|\b10,?800\b|\b14,?600\b)")
         for lock in (
             "original synthetic",
-            "two-png",
+            "two-image",
             "qwen-vl-max",
             "zero writes or residue",
-            "not raw-pdf parsing",
+            "not raw pdf parsing",
             "pure cosine",
             "product default remains hybrid",
             "defer only",
@@ -562,16 +742,16 @@ class CaptionTimelineTests(unittest.TestCase):
             "not training, autonomous learning, or a model-weight update",
             "offline 90% fixture",
             "http is authenticated",
-            "stdio trusted-local",
+            "standard input and output remain trusted locally",
             "feedback-superseded",
-            "exactly one",
-            "marker residue is zero",
-            "not an age-expired row",
+            "deletes exactly that one",
+            "zero marker residue",
+            "not age-expired",
             "not production accuracy",
             "independent evaluation",
-            "no universal superiority claim",
+            "do not support a universal superiority claim",
             "function compute and rds",
-            "alternative-only",
+            "remain alternatives",
         ):
             self.assertIn(lock, captions)
 
@@ -763,6 +943,128 @@ class ExactDeployEvidenceTests(unittest.TestCase):
                         validator(self.SHA, self.status_for(output), output)
 
 
+class TrustedExecutableBoundaryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_path = os.environ.get("PATH")
+        self.original_trust = {
+            variable: os.environ.get(variable)
+            for variable in builder.TRUSTED_EXECUTABLE_ENV.values()
+        }
+        for variable in self.original_trust:
+            os.environ.pop(variable, None)
+        builder.trusted_toolchain.cache_clear()
+
+    def tearDown(self) -> None:
+        if self.original_path is None:
+            os.environ.pop("PATH", None)
+        else:
+            os.environ["PATH"] = self.original_path
+        for variable, value in self.original_trust.items():
+            if value is None:
+                os.environ.pop(variable, None)
+            else:
+                os.environ[variable] = value
+        builder.trusted_toolchain.cache_clear()
+
+    @staticmethod
+    def external_temp_parent() -> Path:
+        parent = Path("C:/tmp") if os.name == "nt" else Path(tempfile.gettempdir())
+        parent.mkdir(parents=True, exist_ok=True)
+        return parent
+
+    def test_production_argv_ignores_external_path_shims_and_uses_explicit_absolute_tools(self) -> None:
+        git_executable = builder._discover_self_test_executable("git")
+        ffmpeg, ffprobe = builder._discover_self_test_media_executables()
+        trusted_paths = {"git": git_executable, "ffmpeg": ffmpeg, "ffprobe": ffprobe}
+
+        with tempfile.TemporaryDirectory(
+            prefix="memoryagent-external-path-shim-",
+            dir=self.external_temp_parent(),
+        ) as temporary:
+            shim_root = Path(temporary)
+            for name in trusted_paths:
+                shim = shim_root / builder._trusted_executable_filename(name)
+                shim.write_bytes(f"external {name} PATH shim must never execute\n".encode("ascii"))
+                shim.chmod(0o700)
+            os.environ["PATH"] = str(shim_root) + os.pathsep + (self.original_path or "")
+
+            with self.assertRaisesRegex(builder.GateError, "explicit absolute MEMORYAGENT_GIT_EXECUTABLE"):
+                builder.trusted_toolchain()
+
+            builder.trusted_toolchain.cache_clear()
+            for name, path in trusted_paths.items():
+                os.environ[builder.TRUSTED_EXECUTABLE_ENV[name]] = str(path)
+            toolchain = builder.trusted_toolchain()
+            self.assertEqual(toolchain.git.path, git_executable)
+            self.assertEqual(toolchain.ffmpeg.path, ffmpeg)
+            self.assertEqual(toolchain.ffprobe.path, ffprobe)
+            self.assertEqual(toolchain.ffmpeg.path.parent, toolchain.ffprobe.path.parent)
+            self.assertTrue(all(toolchain.executable(name).path.is_absolute() for name in trusted_paths))
+
+            completed = subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
+            with (
+                mock.patch.object(builder.TrustedExecutable, "assert_unchanged", return_value=None),
+                mock.patch.object(builder.subprocess, "run", return_value=completed) as run,
+            ):
+                for name in trusted_paths:
+                    builder.run_trusted_tool(
+                        name,
+                        ["--version"],
+                        check=False,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+
+            self.assertEqual(run.call_count, 3)
+            for name, call in zip(trusted_paths, run.call_args_list):
+                argv = call.args[0]
+                self.assertEqual(Path(argv[0]), toolchain.executable(name).path)
+                self.assertNotEqual(argv[0], name)
+                self.assertEqual(argv[1:], ["--version"])
+                self.assertNotEqual(Path(argv[0]).parent, shim_root)
+
+    def test_trusted_executable_rejects_content_and_link_count_identity_changes(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="memoryagent-executable-identity-",
+            dir=self.external_temp_parent(),
+        ) as temporary:
+            root = Path(temporary)
+            executable = root / builder._trusted_executable_filename("git")
+            executable.write_bytes(b"trusted-fixture-v1\n")
+            executable.chmod(0o700)
+            trusted = builder._snapshot_trusted_executable("git", executable)
+            trusted.assert_unchanged()
+            self.assertRegex(trusted.sha256, r"^[0-9a-f]{64}$")
+
+            executable.write_bytes(b"trusted-fixture-v2\n")
+            executable.chmod(0o700)
+            with self.assertRaises(builder.GateError):
+                trusted.assert_unchanged()
+
+            link_root = root / "link-count"
+            link_root.mkdir()
+            link_target = link_root / builder._trusted_executable_filename("git")
+            link_target.write_bytes(b"trusted-link-count\n")
+            link_target.chmod(0o700)
+            link_bound = builder._snapshot_trusted_executable("git", link_target)
+            alias = link_root / "git-hardlink-alias"
+            os.link(link_target, alias)
+            with self.assertRaises(builder.GateError):
+                link_bound.assert_unchanged()
+            self.assertEqual(builder._snapshot_trusted_executable("git", link_target).link_count, 2)
+
+            for name in ("ffmpeg", "ffprobe"):
+                media_root = root / name
+                media_root.mkdir()
+                media_target = media_root / builder._trusted_executable_filename(name)
+                media_target.write_bytes(f"trusted-{name}-fixture\n".encode("ascii"))
+                media_target.chmod(0o700)
+                os.link(media_target, media_root / f"{name}-hardlink-alias")
+                with self.subTest(name=name):
+                    with self.assertRaisesRegex(builder.GateError, "exactly one filesystem link"):
+                        builder._snapshot_trusted_executable(name, media_target)
+
+
 class ReleaseBoundaryTests(unittest.TestCase):
     SHA = "1" * 40
 
@@ -877,16 +1179,17 @@ class ReleaseBoundaryTests(unittest.TestCase):
 
     def test_tracked_snapshot_is_compared_directly_with_head_blob(self) -> None:
         snapshot = read_project_file_once(ROOT / "docs" / "CLAIM_EVIDENCE_MATRIX.md", "tracked test input")
-        builder.ensure_snapshot_matches_head(snapshot, "tracked test input")
-        changed = builder.ProjectFileSnapshot(
-            path=snapshot.path,
-            relative_path=snapshot.relative_path,
-            data=snapshot.data + b"tampered",
-            sha256=hashlib.sha256(snapshot.data + b"tampered").hexdigest(),
-            size=snapshot.size + len(b"tampered"),
-        )
-        with self.assertRaises(builder.GateError):
-            builder.ensure_snapshot_matches_head(changed, "tracked test input")
+        with builder.self_test_tool_environment():
+            builder.ensure_snapshot_matches_head(snapshot, "tracked test input")
+            changed = builder.ProjectFileSnapshot(
+                path=snapshot.path,
+                relative_path=snapshot.relative_path,
+                data=snapshot.data + b"tampered",
+                sha256=hashlib.sha256(snapshot.data + b"tampered").hexdigest(),
+                size=snapshot.size + len(b"tampered"),
+            )
+            with self.assertRaises(builder.GateError):
+                builder.ensure_snapshot_matches_head(changed, "tracked test input")
 
     def test_read_once_snapshot_rejects_hardlinks_and_symlinks(self) -> None:
         root = ROOT / ".artifacts" / "snapshot-identity-unit-test"
