@@ -2,29 +2,8 @@
 
 *Global AI Hackathon Series with Qwen Cloud, MemoryAgent track.*
 
-<!--
-PUBLISHER-ONLY CHECKLIST: remove this comment before publishing:
-
-- [ ] Publish from the final default branch; do not paste from an unmerged worktree.
-- [ ] Keep the absolute architecture-image URL below. Open it in a signed-out/private
-      browser and confirm that the 1600×900 image renders without a GitHub login.
-- [ ] Open https://memory.43.106.13.19.sslip.io and the repository CTA in a
-      signed-out/private browser. Confirm the landing page, public health state, and
-      linked source are reachable without an access request.
-- [ ] Run every outbound link through a signed-out/private window; remove any draft,
-      localhost, credential-bearing, or private-console URL.
-- [ ] Replace {{PUBLIC_VIDEO_URL}} and {{DEVPOST_PROJECT_URL}} only after those pages
-      are public, then add them to the optional CTA sentence below.
-- [ ] Confirm the published post visibly credits Qwen Cloud / Alibaba Cloud and add
-      its final public URL to the Devpost blog/social field.
-- [ ] Save a signed-out screenshot of the published article under the project-local,
-      ignored `demo/private-originals/publication/` directory; never store login
-      tokens or private console data.
-
-Optional sentence after both placeholders resolve:
-“Watch the under-three-minute demo at {{PUBLIC_VIDEO_URL}} and see the competition
-entry at {{DEVPOST_PROJECT_URL}}.”
--->
+[Watch the public 172-second demo](https://www.youtube.com/watch?v=pvfe8ZDfMfM)
+with English narration, burned captions, and the downloadable English subtitle track.
 
 Most "agent memory" demos prove one useful thing: the agent can write a fact in
 one session and read it back in another. That matters, but it is only the first

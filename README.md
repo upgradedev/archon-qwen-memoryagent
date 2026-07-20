@@ -5,9 +5,8 @@
 [![CI](https://github.com/upgradedev/archon-qwen-memoryagent/actions/workflows/ci.yml/badge.svg)](https://github.com/upgradedev/archon-qwen-memoryagent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Alibaba%20Cloud-ff6a00?logo=alibabacloud&logoColor=white)](https://memory.43.106.13.19.sslip.io)
-![Demo Video](https://img.shields.io/badge/Demo%20Video-pending%20upload-lightgrey?logo=youtube)
+[![Demo Video](https://img.shields.io/badge/Demo%20Video-2%3A53%20on%20YouTube-red?logo=youtube)](https://www.youtube.com/watch?v=pvfe8ZDfMfM)
 [![Project Story](https://img.shields.io/badge/Project%20Story-Devpost-003e54)](demo/SUBMISSION.md)
-<!-- USER: replace with YouTube URL before submit. Make the Demo Video badge a link to the uploaded video. -->
 
 **Documentation map:** judges can start with the
 [`2-minute guide`](docs/JUDGE-GUIDE.md), the
