@@ -1,0 +1,202 @@
+name: Canonical Final Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_source_sha:
+        description: Exact 40-character main SHA authorized for this final render.
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: canonical-final-video
+  cancel-in-progress: false
+
+env:
+  EXACT_RUNTIME_SHA: 0910ab7fe03631321d37e73002054ae7bb740c49
+  LIVE_BASE_URL: https://memory.43.106.13.19.sslip.io
+  NARRATION_RUN_ID: '29733820211'
+  NARRATION_SOURCE_SHA: 004bf9262c46d30391574e86e8d0b83440fba24d
+  NARRATION_AUDIO_SHA256: 4ca7f130c297a4f7156a7ac917d8b10596f7f95ff7bcc1ce41a04f478acc35a7
+  NARRATION_MANIFEST_SHA256: 7d64a5ff47049b3a6584216e2f51a753c754b26c56bd5e04d5725911cf0a9802
+  DEPLOY_OUTPUT_PATH: .artifacts/deploy/exact-merged-deploy-output-attempt-27.txt
+  DEPLOY_OUTPUT_SHA256: 72ab37901f57422d58f758ed7d598acc32284cf8b17240fc9f03b398d1e5ed70
+  DEPLOY_OUTPUT_BYTES: '10436'
+  DEPLOY_STATUS_PATH: .artifacts/deploy/exact-merged-deploy-status-attempt-27.json
+  DEPLOY_STATUS_SHA256: 3c4210a7fcca7cb125af9fee2b89ecd1c3c4743b13dbfee73ef81766027adb53
+  DEPLOY_STATUS_BYTES: '754'
+  MEMORYAGENT_GIT_EXECUTABLE: /usr/bin/git
+  MEMORYAGENT_FFMPEG_EXECUTABLE: /usr/bin/ffmpeg
+  MEMORYAGENT_FFPROBE_EXECUTABLE: /usr/bin/ffprobe
+  PYTHONHASHSEED: '0'
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11.15'
+
+      - name: Pin authorized main source and immutable release inputs
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test -x "$MEMORYAGENT_GIT_EXECUTABLE"
+          test -x "$MEMORYAGENT_FFMPEG_EXECUTABLE"
+          test -x "$MEMORYAGENT_FFPROBE_EXECUTABLE"
+          test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_SOURCE_SHA"
+          git merge-base --is-ancestor "$EXACT_RUNTIME_SHA" "$EXPECTED_SOURCE_SHA"
+          git merge-base --is-ancestor "$NARRATION_SOURCE_SHA" "$EXPECTED_SOURCE_SHA"
+          python -m py_compile \
+            demo/tools/materialize_ci_evidence.py \
+            demo/tools/record_live_motion.py \
+            demo/tools/build_caption_video.py \
+            demo/tools/compose_real_motion_video.py \
+            demo/tools/build_real_motion_submission.py
+
+      - name: Install hash-locked media dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --require-hashes -r requirements/video-demo.lock
+          python -m playwright install --with-deps chromium
+
+      - name: Run offline release-contract tests before live capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest \
+            demo.tests.test_canonical_final_video_ci \
+            demo.tests.test_live_motion_recorder \
+            demo.tests.test_real_motion_compositor
+
+      - name: Download the exact approved ElevenLabs narration artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: canonical-elevenlabs-narration-${{ env.NARRATION_SOURCE_SHA }}
+          path: .artifacts/final-narration
+          repository: upgradedev/archon-qwen-memoryagent
+          run-id: ${{ env.NARRATION_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Materialize and verify protected exact-deployment evidence
+        shell: bash
+        env:
+          MEMORYAGENT_DEPLOY_OUTPUT_B64: ${{ secrets.MEMORYAGENT_DEPLOY_OUTPUT_B64 }}
+          MEMORYAGENT_DEPLOY_STATUS_B64: ${{ secrets.MEMORYAGENT_DEPLOY_STATUS_B64 }}
+        run: |
+          set -euo pipefail
+          python demo/tools/materialize_ci_evidence.py \
+            --output-path "$DEPLOY_OUTPUT_PATH" \
+            --output-sha256 "$DEPLOY_OUTPUT_SHA256" \
+            --output-bytes "$DEPLOY_OUTPUT_BYTES" \
+            --status-path "$DEPLOY_STATUS_PATH" \
+            --status-sha256 "$DEPLOY_STATUS_SHA256" \
+            --status-bytes "$DEPLOY_STATUS_BYTES"
+
+      - name: Verify exact narration bundle and immutable tracked inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find .artifacts/final-narration -type f | wc -l)" -eq 2
+          echo "$NARRATION_AUDIO_SHA256  .artifacts/final-narration/memoryagent-narration.wav" | sha256sum --check --strict
+          echo "$NARRATION_MANIFEST_SHA256  .artifacts/final-narration/memoryagent-narration.manifest.json" | sha256sum --check --strict
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, 'demo/tools')
+          import build_local_narration as narration
+          bundle = narration.validate_narration_bundle(
+              '.artifacts/final-narration/memoryagent-narration.wav',
+              '.artifacts/final-narration/memoryagent-narration.manifest.json',
+              production_mode=True,
+          )
+          print(f'narration verification: PASS | {bundle.audio.sha256} | {bundle.manifest.sha256}')
+          PY
+          git diff --exit-code
+          test -z "$(git ls-files demo/private-originals .artifacts)"
+
+      - name: Record one public live interaction pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          python demo/tools/record_live_motion.py \
+            --expected-sha "$EXACT_RUNTIME_SHA" \
+            --capture-review demo/gallery/CAPTURE_REVIEW.json \
+            --base-url "$LIVE_BASE_URL"
+
+      - name: Build canonical narrated real-motion final
+        shell: bash
+        run: |
+          set -euo pipefail
+          python demo/tools/build_real_motion_submission.py \
+            --expected-sha "$EXACT_RUNTIME_SHA" \
+            --deployment-output "$DEPLOY_OUTPUT_PATH" \
+            --deployment-status "$DEPLOY_STATUS_PATH" \
+            --replace
+
+      - name: Independently verify final bundle and publication boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python demo/tools/compose_real_motion_video.py --verify-only
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('demo/final-media/memoryagent-demo.manifest.json').read_text(encoding='utf-8'))
+          qa = json.loads(Path('demo/final-media/memoryagent-demo.qa.json').read_text(encoding='utf-8'))
+          if manifest.get('status') != 'passed' or qa.get('status') != 'passed':
+              raise SystemExit('final manifest or QA is not passed')
+          forbidden = ('ELEVEN_LABS_KEY', 'MEMORYAGENT_JUDGE_API_KEY', 'Bearer ')
+          public = [
+              Path('demo/final-media/memoryagent-demo.en.srt'),
+              Path('demo/final-media/memoryagent-demo.manifest.json'),
+              Path('demo/final-media/memoryagent-demo.qa.json'),
+              Path('.artifacts/final-video/memoryagent-live-interaction.manifest.json'),
+              Path('.artifacts/final-narration/memoryagent-narration.manifest.json'),
+          ]
+          for path in public:
+              text = path.read_text(encoding='utf-8', errors='strict')
+              if any(value in text for value in forbidden):
+                  raise SystemExit(f'forbidden credential-shaped marker in {path}')
+          print('final publication boundary: PASS | verified bundle contains no credential marker')
+          PY
+
+      - name: Upload verified final-video bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canonical-final-video-${{ github.sha }}
+          path: |
+            demo/final-media/memoryagent-demo.mp4
+            demo/final-media/memoryagent-demo.en.srt
+            demo/final-media/memoryagent-demo.manifest.json
+            demo/final-media/memoryagent-demo.qa.json
+            demo/final-media/youtube-thumbnail.png
+            .artifacts/deploy/exact-merged-deploy-output-attempt-27.txt
+            .artifacts/deploy/exact-merged-deploy-status-attempt-27.json
+            .artifacts/final-video/base-*/caption-base.mp4
+            .artifacts/final-video/base-*/caption-base.manifest.json
+            .artifacts/final-video/memoryagent-live-interaction.webm
+            .artifacts/final-video/memoryagent-live-interaction.manifest.json
+            .artifacts/final-video/memoryagent-live-interaction-poster.png
+            .artifacts/final-narration/memoryagent-narration.wav
+            .artifacts/final-narration/memoryagent-narration.manifest.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+          compression-level: 0

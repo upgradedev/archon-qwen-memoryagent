@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 3,
+  "status": "passed",
+  "capturedAt": "2026-07-20T06:32:05Z",
+  "liveBaseUrl": "https://memory.43.106.13.19.sslip.io",
+  "exactRuntimeSource": "0910ab7fe03631321d37e73002054ae7bb740c49",
+  "submissionPackHeadAtCapture": "51828a20337c1d2d2605fa3b547b1d2213759abb",
+  "deploymentEvidence": {
+    "mode": "terminal-success-truncated-output",
+    "producer": {
+      "invocationId": "t-sgp6rgpjajd9fk0",
+      "commandId": "c-sgp6rgpjaiya1hc",
+      "outputSha256": "72ab37901f57422d58f758ed7d598acc32284cf8b17240fc9f03b398d1e5ed70",
+      "outputBytes": 10436
+    },
+    "status": {
+      "path": ".artifacts/deploy/exact-merged-deploy-status-attempt-27.json",
+      "sha256": "3c4210a7fcca7cb125af9fee2b89ecd1c3c4743b13dbfee73ef81766027adb53",
+      "size": 754
+    },
+    "output": {
+      "path": ".artifacts/deploy/exact-merged-deploy-output-attempt-27.txt",
+      "sha256": "72ab37901f57422d58f758ed7d598acc32284cf8b17240fc9f03b398d1e5ed70",
+      "size": 10436
+    }
+  },
+  "captureRun": {
+    "captureRunId": "20260720T063203Z-f594312d",
+    "policy": {
+      "maxAttempts": 3,
+      "backoffSeconds": [
+        1.0,
+        2.0
+      ],
+      "retryableHttpResults": [
+        "typed narrator upstream unavailability after HTTP 200",
+        "typed semantic judge unavailability after HTTP 200"
+      ],
+      "neverRetried": [
+        "mutations",
+        "transport errors",
+        "non-200 responses",
+        "malformed or unknown payloads",
+        "grounding or content safety failures",
+        "embedding failures or truncation",
+        "unparseable judge output"
+      ]
+    },
+    "quotaBounds": {
+      "session-b-recall": {
+        "pool": "judge-recall",
+        "workUnitsPerAttempt": 4,
+        "limit": 200,
+        "maxStageWorkUnits": 12
+      },
+      "explorer-recall": {
+        "pool": "public-recall",
+        "workUnitsPerAttempt": 4,
+        "limit": 200,
+        "maxStageWorkUnits": 12
+      },
+      "semantic-audit": {
+        "pool": "judge-semantic",
+        "workUnitsPerAttempt": 1,
+        "limit": 500,
+        "maxStageWorkUnits": 3
+      }
+    },
+    "selectedAttempts": {
+      "session-b-recall": {
+        "selectedAttempt": 1,
+        "attemptCount": 1,
+        "evidencePath": "demo/private-originals/runs/20260720T063203Z-f594312d/attempts/session-b-recall-attempt-01.json",
+        "evidenceSha256": "a25cd61d232ee276860296404ea71bc11f1821c55e71bb6816b068ea2e82a29f"
+      },
+      "explorer-recall": {
+        "selectedAttempt": 1,
+        "attemptCount": 1,
+        "evidencePath": "demo/private-originals/runs/20260720T063203Z-f594312d/attempts/explorer-recall-attempt-01.json",
+        "evidenceSha256": "fa183f4e28fceb1f7f49a8ca4b7577f8c9d41d4c4134c298b7f0d393b143b95d"
+      },
+      "semantic-audit": {
+        "selectedAttempt": 1,
+        "attemptCount": 1,
+        "evidencePath": "demo/private-originals/runs/20260720T063203Z-f594312d/attempts/semantic-audit-attempt-01.json",
+        "evidenceSha256": "53e4a318029d7082776980e16e0b5edabab289ac130dec22adea07ad16567bf3"
+      }
+    },
+    "attemptEvidence": [
+      {
+        "stage": "session-b-recall",
+        "attempt": 1,
+        "outcome": "selected",
+        "classification": "strict-qwen-narrator",
+        "backoffSecondsBeforeNextAttempt": null,
+        "quota": {
+          "pool": "judge-recall",
+          "workUnitsUpperBoundThisAttempt": 4,
+          "maxStageWorkUnits": 12,
+          "dailyLimit": 200
+        },
+        "observation": {
+          "httpStatus": 200,
+          "payloadShape": "object",
+          "modelClass": "expected",
+          "groundingClass": "passed",
+          "groundingAttempts": 1,
+          "degradationClass": "none",
+          "degradationAttempts": null,
+          "hitCount": 1,
+          "citationCount": 1
+        },
+        "path": "demo/private-originals/runs/20260720T063203Z-f594312d/attempts/session-b-recall-attempt-01.json",
+        "sha256": "a25cd61d232ee276860296404ea71bc11f1821c55e71bb6816b068ea2e82a29f"
+      },
+      {
+        "stage": "explorer-recall",
+        "attempt": 1,
+        "outcome": "selected",
+        "classification": "strict-qwen-narrator",
+        "backoffSecondsBeforeNextAttempt": null,
+        "quota": {
+          "pool": "public-recall",
+          "workUnitsUpperBoundThisAttempt": 4,
+          "maxStageWorkUnits": 12,
+          "dailyLimit": 200
+        },
+        "observation": {
+          "httpStatus": 200,
+          "payloadShape": "object",
+          "modelClass": "expected",
+          "groundingClass": "passed",
+          "groundingAttempts": 1,
+          "degradationClass": "none",
+          "degradationAttempts": null,
+          "hitCount": 3,
+          "citationCount": 3
+        },
+        "path": "demo/private-originals/runs/20260720T063203Z-f594312d/attempts/explorer-recall-attempt-01.json",
+        "sha256": "fa183f4e28fceb1f7f49a8ca4b7577f8c9d41d4c4134c298b7f0d393b143b95d"
+      },
+      {
+        "stage": "semantic-audit",
+        "attempt": 1,
+        "outcome": "selected",
+        "classification": "strict-complete-semantic-audit",
+        "backoffSecondsBeforeNextAttempt": null,
+        "quota": {
+          "pool": "judge-semantic",
+          "workUnitsUpperBoundThisAttempt": 1,
+          "maxStageWorkUnits": 3,
+          "dailyLimit": 500
+        },
+        "observation": {
+          "httpStatus": 200,
+          "payloadShape": "object",
+          "statusClass": "complete",
+          "compared": 1,
+          "judged": 1,
+          "failed": 0,
+          "embeddingFailed": 0,
+          "truncated": false,
+          "findingCount": 1,
+          "errorClasses": [],
+          "judgeUnavailableErrorCount": 0,
+          "otherErrorCount": 0
+        },
+        "path": "demo/private-originals/runs/20260720T063203Z-f594312d/attempts/semantic-audit-attempt-01.json",
+        "sha256": "53e4a318029d7082776980e16e0b5edabab289ac130dec22adea07ad16567bf3"
+      }
+    ]
+  },
+  "models": {
+    "embedder": "text-embedding-v4",
+    "narrator": "qwen-plus",
+    "judge": "qwen-plus",
+    "vision": "qwen-vl-max",
+    "embedDim": 1024
+  },
+  "gates": {
+    "exactDeploymentEvidence": true,
+    "exactDeploymentEvidenceMode": "terminal-success-truncated-output",
+    "publicHealthReady": true,
+    "authenticatedDeepReadiness": true,
+    "publicSeedIdempotent": true,
+    "selectedCompanyPnl": true,
+    "qwenVlOriginalSyntheticDryRun": {
+      "modelIdReported": "qwen-vl-max",
+      "written": 0,
+      "reviewerCountUnchanged": true,
+      "uniquePrefixResidue": 0
+    },
+    "feedbackPersistence": {
+      "sessionAStoredCorrection": true,
+      "freshSessionBRecalledCorrection": true,
+      "freshSessionBAppliedPreference": true,
+      "boundary": "explicit persisted feedback; no model-weight update"
+    },
+    "lifecycleOneRow": {
+      "retentionBasis": "feedback-superseded original synthetic fact",
+      "previewCandidates": 1,
+      "confirmedForgotten": 1,
+      "protectedSeedUnchanged": true,
+      "protectedCorrectionUnchanged": true,
+      "postProofCleanupApplied": true,
+      "uniquePrefixResidue": 0
+    },
+    "humanControlCapture": "Defer-only live proof; Accept/Override are not claimed by this frame",
+    "reviewerCredentialRendered": false,
+    "rawCapturesTracked": false,
+    "alibabaProfileShaBound": true
+  },
+  "subtitleTimingSource": "measured-caption-windows",
+  "subtitleTimeline": {
+    "canonicalContract": {
+      "path": "demo/caption-timeline.json",
+      "sha256": "31f6dedf06eeab861bedeb88d40be4088228c1f9a6cf08743f05c6fc5744ebc0",
+      "size": 2335
+    },
+    "measuredInput": {
+      "path": ".artifacts/final-caption-video/caption_windows.json",
+      "sha256": "31f6dedf06eeab861bedeb88d40be4088228c1f9a6cf08743f05c6fc5744ebc0",
+      "size": 2335
+    },
+    "matchesCanonicalContract": true
+  },
+  "architecture": {
+    "sourcePath": "docs/judge-architecture.svg",
+    "sourceSha256": "7bceb8820202e543916bca6dee9229abbcf76401f0c7b7b1021879d162634b94",
+    "rasterPath": "demo/final-media/judge-architecture.jpg",
+    "rasterSha256": "9c123b736f60c12c115ddfaca7806a1efa4b093daba0c365da7ec936935dc0ad"
+  },
+  "artifacts": {
+    "demo/gallery/01-grounded-cross-session-recall.png": "a85193da265e864dbfafd5bf1b40d1589b299304bf293647c9826e003ea71402",
+    "demo/gallery/02-session-feedback-persistence.png": "92390a2746116f2794f959082bca35e2cfdfaacc3291b4506964c546f071080e",
+    "demo/gallery/03-read-only-field-self-audit.png": "68b501c26c7550bb564a83eb5b4e53db2510d91a1f7208e61faac6ab99f03ac1",
+    "demo/gallery/04-qwen-semantic-self-audit.png": "35a9087840804c16e656a681339daf7a664addd35f2cf0a0593d9c02a0b8822b",
+    "demo/gallery/05-human-resolution-control.png": "918277ac9ba608a16cc75c265bd5fc9b17bc421b48e976a995617be4481cca19",
+    "demo/gallery/06-safe-memory-lifecycle.png": "0fdbccf5304911cb44b72bd4e36deae25f8755e1c0f4d1406869cefd2873e30b",
+    "demo/gallery/07-qwen-memoryagent-architecture.png": "ad49c97d67971c7dcb0885cba901ef577ac899b80845fdc2f3c6f5c8e7bcfb69",
+    "demo/gallery/08-qwen-vl-document-canary.png": "88d8b50ae10002e7b92131763e42df710a679fa219e1371dd712f0b679c4216d",
+    "demo/gallery/09-live-health-readiness.png": "a77eda573710789cdcdb59a1eff03b359c1ed1bc03f74d63112ec64d571b7448",
+    "demo/gallery/10-alibaba-runtime-proof.png": "b9dbdd975134212b4e5301835e0cf4f809437ba7a27913582e1d1a536b82f350",
+    "demo/gallery/11-public-repository-license.png": "e8dfcbb9b7d1c85a7b8b96ac8be2a165e6d0415a01e8d2f0f2ae4726c455ce2b",
+    "demo/final-media/judge-architecture.jpg": "9c123b736f60c12c115ddfaca7806a1efa4b093daba0c365da7ec936935dc0ad",
+    "demo/final-media/youtube-thumbnail.png": "13148d2162564016092a81e841c227039294a8bb3e2b5c9f0733a8ee4eea4c1d",
+    "demo/final-media/memoryagent-demo.en.srt": "651d9d4dba76ed72dff59aca320981534f678266a156a3f0d43928dccfb4d1a9",
+    "demo/final-media/proof-frames/01-grounded-cross-session-recall-16x9.png": "de0221470724879ae271dabcc42b74504ffde3d03c5062a1114a4d1b41bb98ef",
+    "demo/final-media/proof-frames/02-session-feedback-persistence-16x9.png": "e904be9900afab293d9c466f3e033e1f646271423272f08a45352f4a5aa8db18",
+    "demo/final-media/proof-frames/03-read-only-field-self-audit-16x9.png": "fe6629f707ad28c12cde61ef1e6937acd77465a0cfdb5b9dd68787aaea3c6bfc",
+    "demo/final-media/proof-frames/04-qwen-semantic-self-audit-16x9.png": "396f791d0946ddca173e7af7a88244ed0647badfdb81100225d2e0d3534e2170",
+    "demo/final-media/proof-frames/05-human-resolution-control-16x9.png": "230a8a36250229802b4f6a501df82856d3c3f0a1037159d6648e0ed20370801b",
+    "demo/final-media/proof-frames/06-safe-memory-lifecycle-16x9.png": "c9c4059c42b55dc63f9c7981bb6e83a25aa0b553b6aae46851b36d3fb058e7a0",
+    "demo/final-media/proof-frames/07-qwen-memoryagent-architecture-16x9.png": "8c3ad7017b687222cb32754d6c3dcd0bb6ae6b0cf774d30aba92a77951b58e60",
+    "demo/final-media/proof-frames/08-qwen-vl-document-canary-16x9.png": "f98bfdf10d2543551a693d0de04ae73dd4c3bc7a27023c9b78aa43d3c35415c7",
+    "demo/final-media/proof-frames/09-live-health-readiness-16x9.png": "480783009a553dfa4a1bbac8c28023a985f14816f84c3fefc9448de3627dd11a",
+    "demo/final-media/proof-frames/10-alibaba-runtime-proof-16x9.png": "3e3a685cc983e1b6bb61b1a885c6f13b2c9b0a2b036e5c6790aa28722a6c0ce6",
+    "demo/final-media/proof-frames/11-public-repository-license-16x9.png": "6a5807c6e18cf20fb9b07d609467aaced73fee898fb95b04a8055347ee54e48f"
+  }
+}

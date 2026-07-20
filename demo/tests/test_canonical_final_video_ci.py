@@ -1,0 +1,124 @@
+"""Release-contract tests for the canonical final-video GitHub Actions path."""
+from __future__ import annotations
+
+import base64
+import hashlib
+import importlib.util
+import os
+from pathlib import Path
+import shutil
+import sys
+import unittest
+from unittest import mock
+import uuid
+
+
+ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = ROOT / ".github" / "workflows" / "canonical-final-video.yml"
+TOOLS = ROOT / "demo" / "tools"
+sys.path.insert(0, str(TOOLS))
+SPEC = importlib.util.spec_from_file_location("materialize_ci_evidence", TOOLS / "materialize_ci_evidence.py")
+assert SPEC is not None and SPEC.loader is not None
+evidence = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(evidence)
+
+
+class CanonicalFinalVideoWorkflowTests(unittest.TestCase):
+    def test_workflow_is_main_only_hash_pinned_and_has_read_only_permissions(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("test \"$GITHUB_REF\" = 'refs/heads/main'", text)
+        self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"', text)
+        self.assertIn("actions: read\n  contents: read", text)
+        self.assertNotIn("pull_request:", text)
+        self.assertNotIn("push:", text)
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("uses:") or stripped.startswith("- uses:"):
+                target = stripped.split("uses:", 1)[1].strip().split()[0]
+                self.assertRegex(target, r"^[^@]+@[0-9a-f]{40}$")
+
+    def test_workflow_reuses_exact_narration_and_never_synthesizes_or_uses_reviewer_key(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("NARRATION_RUN_ID: '29733820211'", text)
+        self.assertIn("4ca7f130c297a4f7156a7ac917d8b10596f7f95ff7bcc1ce41a04f478acc35a7", text)
+        self.assertIn("7d64a5ff47049b3a6584216e2f51a753c754b26c56bd5e04d5725911cf0a9802", text)
+        self.assertIn("actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093", text)
+        self.assertNotIn("ELEVEN_LABS_KEY:", text)
+        self.assertNotIn("MEMORYAGENT_JUDGE_API_KEY:", text)
+        self.assertNotIn("build_elevenlabs_narration.py", text)
+        self.assertNotIn("edge-tts", text)
+
+    def test_workflow_orders_public_capture_build_verify_then_upload(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        capture = text.index("Record one public live interaction pass")
+        build = text.index("Build canonical narrated real-motion final")
+        verify = text.index("Independently verify final bundle")
+        upload = text.index("Upload verified final-video bundle")
+        self.assertLess(capture, build)
+        self.assertLess(build, verify)
+        self.assertLess(verify, upload)
+        self.assertEqual(text.count("python demo/tools/record_live_motion.py \\"), 1)
+        self.assertIn("python demo/tools/compose_real_motion_video.py --verify-only", text)
+        self.assertIn("canonical-final-video-${{ github.sha }}", text)
+        for required_input in (
+            ".artifacts/deploy/exact-merged-deploy-output-attempt-27.txt",
+            ".artifacts/deploy/exact-merged-deploy-status-attempt-27.json",
+            ".artifacts/final-video/base-*/caption-base.mp4",
+            ".artifacts/final-video/base-*/caption-base.manifest.json",
+            ".artifacts/final-video/memoryagent-live-interaction.webm",
+            ".artifacts/final-narration/memoryagent-narration.wav",
+        ):
+            self.assertIn(required_input, text)
+
+
+class MaterializeCiEvidenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = ROOT / ".artifacts" / "deploy" / f"materialize-test-{os.getpid()}-{uuid.uuid4().hex}"
+        self.root.mkdir(parents=True)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def run_materializer(self, output: bytes, status: bytes, *, output_hash: str | None = None) -> int:
+        output_rel = (self.root / "output.txt").relative_to(ROOT).as_posix()
+        status_rel = (self.root / "status.json").relative_to(ROOT).as_posix()
+        env = {
+            evidence.SECRET_NAMES["output"]: base64.b64encode(output).decode("ascii"),
+            evidence.SECRET_NAMES["status"]: base64.b64encode(status).decode("ascii"),
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            return evidence.main([
+                "--output-path", output_rel,
+                "--output-sha256", output_hash or hashlib.sha256(output).hexdigest(),
+                "--output-bytes", str(len(output)),
+                "--status-path", status_rel,
+                "--status-sha256", hashlib.sha256(status).hexdigest(),
+                "--status-bytes", str(len(status)),
+            ])
+
+    def test_materializes_exact_bytes_once_without_logging_secret_values(self) -> None:
+        output = b"sanitized exact deployment output\n"
+        status = b'{"status":"Success"}\n'
+        with mock.patch("builtins.print") as printed:
+            self.assertEqual(self.run_materializer(output, status), 0)
+        self.assertEqual((self.root / "output.txt").read_bytes(), output)
+        self.assertEqual((self.root / "status.json").read_bytes(), status)
+        rendered = " ".join(str(call) for call in printed.call_args_list)
+        self.assertNotIn(base64.b64encode(output).decode("ascii"), rendered)
+        self.assertNotIn(output.decode().strip(), rendered)
+        self.assertEqual(self.run_materializer(output, status), 2)
+
+    def test_rejects_hash_mismatch_without_materializing_any_file(self) -> None:
+        output = b"sanitized exact deployment output\n"
+        status = b'{"status":"Success"}\n'
+        self.assertEqual(self.run_materializer(output, status, output_hash="0" * 64), 2)
+        self.assertFalse((self.root / "output.txt").exists())
+        self.assertFalse((self.root / "status.json").exists())
+
+    def test_rejects_destination_outside_ignored_deploy_root(self) -> None:
+        with self.assertRaises(evidence.EvidenceError):
+            evidence.project_output("demo/final-media/evidence.txt", "deployment output")
+
+
+if __name__ == "__main__":
+    unittest.main()
