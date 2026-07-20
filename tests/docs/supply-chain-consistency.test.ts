@@ -29,6 +29,7 @@ const ACTION_PINS = new Map([
   ["actions/checkout", { sha: "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", release: "v7.0.0" }],
   ["actions/setup-node", { sha: "820762786026740c76f36085b0efc47a31fe5020", release: "v7.0.0" }],
   ["actions/setup-python", { sha: "ece7cb06caefa5fff74198d8649806c4678c61a1", release: "v6.3.0" }],
+  ["actions/download-artifact", { sha: "d3f86a106a0bac45b974a628896c90dbdf5c8093", release: "v4.3.0" }],
   ["actions/upload-artifact", { sha: "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", release: "v7.0.1" }],
   ["github/codeql-action", { sha: "7188fc363630916deb702c7fdcf4e481b751f97a", release: "v4.37.1" }],
 ]);
@@ -100,7 +101,7 @@ test("CHECK 4b — CI runtimes, runner OS, Docker base, and package metadata agr
     }
   }
   assert.ok(nodeSetups >= 9, `expected all Node jobs to be checked, found ${nodeSetups}`);
-  assert.equal(pythonSetups, 3, `expected all three Python media workflows, found ${pythonSetups}`);
+  assert.equal(pythonSetups, 4, `expected all four Python media workflows, found ${pythonSetups}`);
 
   const dockerfile = readText("Dockerfile");
   const nodeBases = [...dockerfile.matchAll(/^FROM\s+(node:\S+)\s+AS\s+/gm)].map((match) => match[1]);

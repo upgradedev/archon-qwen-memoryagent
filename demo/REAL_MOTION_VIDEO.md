@@ -56,40 +56,38 @@ AAC narration preservation, clipping and digital-silence rejection, EBU R128
 loudness and true-peak headroom, SRT bounds,
 evidence hashes and independent post-build re-verification.
 
-## Final production run
+## Final production run via CI/CD
 
-Set the exact deployed runtime and matching evidence from the current green
-`deploy/DEPLOY_STATE.md` record:
+The canonical final is built by the manual, main-only
+[`canonical-final-video.yml`](../.github/workflows/canonical-final-video.yml) workflow.
+It downloads the exact already-approved narration artifact from successful run
+`29733820211`; it never calls ElevenLabs, uses a fallback voice, or reads a reviewer
+credential. The exact ignored deployment transcript/status are supplied through the
+protected `MEMORYAGENT_DEPLOY_OUTPUT_B64` and `MEMORYAGENT_DEPLOY_STATUS_B64`
+repository inputs and are decoded only after their byte counts and SHA-256 hashes
+match `CAPTURE_REVIEW.json`.
+
+Dispatch only from the exact current `main` SHA:
 
 ```powershell
-$sha = '<FINAL_RUNTIME_SHA>'
-$deployOutput = '.artifacts/deploy/<FINAL_DEPLOY_OUTPUT>.txt'
-$deployStatus = '.artifacts/deploy/<FINAL_DEPLOY_STATUS>.json'
-$env:MEMORYAGENT_GIT_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_GIT_EXECUTABLE>'
-$env:MEMORYAGENT_FFMPEG_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFMPEG_EXECUTABLE>'
-$env:MEMORYAGENT_FFPROBE_EXECUTABLE = '<ABSOLUTE_PRE_REVIEWED_FFPROBE_EXECUTABLE>'
-
-gh workflow run canonical-elevenlabs-narration.yml `
+$mainSha = gh api repos/upgradedev/archon-qwen-memoryagent/commits/main --jq .sha
+gh workflow run canonical-final-video.yml `
   --repo upgradedev/archon-qwen-memoryagent `
   --ref main `
-  -f expected_source_sha='<FINAL_MAIN_SHA>' `
-  -f commercial_rights_approved=true
-
-# After the one authorized run passes, download its exact two-file artifact into
-# .artifacts/final-narration/ without renaming either file.
-
-python demo/tools/record_live_motion.py `
-  --expected-sha $sha `
-  --capture-review demo/gallery/CAPTURE_REVIEW.json
-
-python demo/tools/build_real_motion_submission.py `
-  --expected-sha $sha `
-  --deployment-output $deployOutput `
-  --deployment-status $deployStatus `
-  --replace
-
-python demo/tools/compose_real_motion_video.py --verify-only
+  -f expected_source_sha=$mainSha
 ```
+
+The job installs the hash-locked Python/Playwright environment, runs offline
+contract tests before the single public capture pass, records only the
+idempotent public seed/recall/browse interaction, renders the 172-second narrated
+real-motion final, independently runs `--verify-only`, scans the public metadata for
+credential markers, and only then uploads
+`canonical-final-video-<EXACT_MAIN_SHA>` for 14 days. A failed public capture is not
+automatically retried. The artifact retains the sanitized deployment proof, caption
+base, public interaction recording, narration source, final MP4 and sidecars at their
+manifest-bound paths, so `--verify-only` can be repeated from the exact source
+checkout. Downloading that artifact is not publication; YouTube/Devpost upload
+remains a separate entrant-approved step.
 
 The recorder fails unless the tracked `scripts/capture_submission_gallery.py` at
 final `HEAD` contains the reviewed capture-specific, one-sentence citation question.

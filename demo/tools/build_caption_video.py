@@ -255,7 +255,10 @@ REQUIRED_CLAIM_SNIPPETS = (
 SAFE_POST_CAPTURE_PATTERNS = (
     re.compile(r"^(?:README\.md|SECURITY\.md|deploy/DEPLOY_STATE\.md)$"),
     re.compile(r"^(?:demo|docs)/"),
-    re.compile(r"^\.github/workflows/demo-video\.yml$"),
+    re.compile(
+        r"^\.github/workflows/(?:demo-video|canonical-elevenlabs-narration|canonical-final-video)\.yml$"
+    ),
+    re.compile(r"^tests/docs/supply-chain-consistency\.test\.ts$"),
 )
 SHA40 = re.compile(r"[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
