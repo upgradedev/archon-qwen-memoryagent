@@ -79,7 +79,11 @@ gh workflow run canonical-final-video.yml `
 
 The job provisions ffmpeg 7.1 from exact GitHub release asset `482421474`, checks its
 `118992068`-byte size and pinned SHA-256 before extraction, installs the hash-locked
-Python/Playwright environment, runs offline contract tests before the single public capture pass, records only the
+Python/Playwright environment, and installs a root-owned AppArmor profile scoped to
+the exact Playwright headless-shell path. The profile permits the user namespace
+required by Chromium's sandbox; the job then proves a sandboxed launch succeeds and
+never uses `--no-sandbox` or the global AppArmor sysctl escape hatch. It runs offline
+contract tests before the single public capture pass and records only the
 idempotent public seed/recall/browse interaction, renders the 172-second narrated
 real-motion final, independently runs `--verify-only`, scans the public metadata for
 credential markers, and only then uploads

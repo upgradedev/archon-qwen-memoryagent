@@ -78,6 +78,18 @@ class CanonicalFinalVideoWorkflowTests(unittest.TestCase):
         self.assertLess(preflight, capture)
         self.assertNotIn("apt-get install -y ffmpeg", text)
 
+    def test_workflow_uses_a_narrow_apparmor_profile_and_keeps_chromium_sandboxed(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        profile = text.index("Allow user namespaces only for the exact Playwright Chromium binary")
+        capture = text.index("Record one public live interaction pass")
+        self.assertLess(profile, capture)
+        self.assertIn("profile memoryagent-playwright-chromium %s flags=(unconfined)", text)
+        self.assertIn("'  userns,'", text)
+        self.assertIn("chromium_sandbox=True", text)
+        self.assertIn("Chromium sandbox smoke test: PASS", text)
+        self.assertNotIn("apparmor_restrict_unprivileged_userns=0", text)
+        self.assertNotIn("--no-sandbox", text)
+
     def test_workflow_orders_public_capture_build_verify_then_upload(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         capture = text.index("Record one public live interaction pass")
