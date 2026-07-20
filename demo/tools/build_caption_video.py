@@ -6,7 +6,7 @@ hash-bound media inventory produced by ``scripts/capture_submission_gallery.py``
 and exact-deployment evidence kept inside this repository. It never captures the
 live service, synthesizes speech, downloads media, or invents judge-facing proof.
 
-The resulting MP4 is 1920x1080 H.264 at 30 fps with a required, locally generated
+The resulting MP4 is 1920x1080 H.264 at 30 fps with the required, approved ElevenLabs
 synthetic narration track. Every English caption is burned into the picture and
 mirrored byte-for-byte in the measured SRT. The ten beat windows are frame-exact
 and total 172 seconds.
@@ -1288,7 +1288,12 @@ def render_beat_frame(
         draw.text((960, y), line, anchor="ma", font=caption_font, fill="#ffffff")
         y += line_height
     draw.text((58, 1067), f"Exact runtime {inputs.exact_runtime_sha[:12]} · hash-bound sanitized inputs", anchor="lm", font=font(18), fill="#759487")
-    draw.text((1862, 1067), "Local synthetic narration · burned English captions", anchor="rm", font=font(18), fill="#759487")
+    audio_footer = (
+        "Local synthetic fixture · burned English captions"
+        if self_test_label
+        else "ElevenLabs synthetic narration · burned English captions"
+    )
+    draw.text((1862, 1067), audio_footer, anchor="rm", font=font(18), fill="#759487")
     if self_test_label:
         draw.rounded_rectangle((650, 12, 1270, 40), radius=12, fill="#a71919", outline="#ff8b8b", width=1)
         draw.text((960, 26), "SYNTHETIC SELF-TEST - NOT SUBMISSION EVIDENCE", anchor="mm", font=font(15), fill="#ffffff")

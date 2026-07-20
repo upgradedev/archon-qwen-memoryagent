@@ -2,7 +2,7 @@
 
 This guide covers the deterministic **intermediate base** used by the only canonical
 publication pipeline, [`REAL_MOTION_VIDEO.md`](./REAL_MOTION_VIDEO.md). The base is a
-**172-second**, ten-beat composition with locally generated synthetic narration and
+**172-second**, ten-beat composition with approved ElevenLabs synthetic narration and
 no third-party music. Every English caption is burned into the 1920×1080 picture and
 mirrored in an exact measured SRT. Production rejects digital silence: audio must
 come from the SHA-bound canonical ElevenLabs narration bundle described below.

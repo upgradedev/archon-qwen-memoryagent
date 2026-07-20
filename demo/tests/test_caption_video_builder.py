@@ -518,6 +518,9 @@ class CaptionTimelineTests(unittest.TestCase):
         self.assertIn('"schemaVersion": 5', source)
         self.assertIn('"builder": "memoryagent-caption-led-ten-beat-v5-narrated-gain-normalized"', source)
         self.assertIn('"narrationValidatorSource"', source)
+        self.assertIn('"ElevenLabs synthetic narration · burned English captions"', source)
+        self.assertIn('"Local synthetic fixture · burned English captions"', source)
+        self.assertNotIn('"Local synthetic narration · burned English captions"', source)
         self.assertEqual(builder.PUBLICATION_NARRATION_GAIN_DB, -1.5)
         self.assertEqual(builder.PUBLICATION_NARRATION_FILTER, "volume=-1.5dB:precision=fixed")
         self.assertEqual(
