@@ -63,6 +63,21 @@ class CanonicalFinalVideoWorkflowTests(unittest.TestCase):
         self.assertNotIn("build_elevenlabs_narration.py", text)
         self.assertNotIn("edge-tts", text)
 
+    def test_workflow_provisions_exact_external_ffmpeg_before_any_live_capture(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/assets/482421474", text)
+        self.assertIn("9b9efbd57c146eb2fc32d27c64c36b9ad5134eb0692b757836baaf298793afa0", text)
+        self.assertIn("FFMPEG_ASSET_BYTES: '118992068'", text)
+        self.assertIn("echo \"$FFMPEG_ASSET_SHA256  $archive\" | sha256sum --check --strict", text)
+        self.assertIn('echo "MEMORYAGENT_FFMPEG_EXECUTABLE=$ffmpeg" >> "$GITHUB_ENV"', text)
+        self.assertIn('echo "MEMORYAGENT_FFPROBE_EXECUTABLE=$ffprobe" >> "$GITHUB_ENV"', text)
+        provision = text.index("Provision exact hash-gated ffmpeg and ffprobe")
+        preflight = text.index("Pin authorized main source and immutable release inputs")
+        capture = text.index("Record one public live interaction pass")
+        self.assertLess(provision, preflight)
+        self.assertLess(preflight, capture)
+        self.assertNotIn("apt-get install -y ffmpeg", text)
+
     def test_workflow_orders_public_capture_build_verify_then_upload(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         capture = text.index("Record one public live interaction pass")

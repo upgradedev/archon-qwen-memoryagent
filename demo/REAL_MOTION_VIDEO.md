@@ -77,8 +77,9 @@ gh workflow run canonical-final-video.yml `
   -f expected_source_sha=$mainSha
 ```
 
-The job installs the hash-locked Python/Playwright environment, runs offline
-contract tests before the single public capture pass, records only the
+The job provisions ffmpeg 7.1 from exact GitHub release asset `482421474`, checks its
+`118992068`-byte size and pinned SHA-256 before extraction, installs the hash-locked
+Python/Playwright environment, runs offline contract tests before the single public capture pass, records only the
 idempotent public seed/recall/browse interaction, renders the 172-second narrated
 real-motion final, independently runs `--verify-only`, scans the public metadata for
 credential markers, and only then uploads
