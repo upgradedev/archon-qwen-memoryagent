@@ -49,9 +49,9 @@ authorize or perform publication.
 > PostgreSQL, Model Context Protocol, MCP, RAG, semantic search, human in the loop,
 > explainable AI, TypeScript, open source, hackathon
 
-**Public video URL after upload**
+**Published public video URL**
 
-> `[PUBLIC_VIDEO_URL]`
+> https://www.youtube.com/watch?v=pvfe8ZDfMfM
 
 ## Chapters
 

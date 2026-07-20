@@ -37,10 +37,12 @@ self-tests when all three variables are unset.
   deterministic time-fit, with no fallback voice, human voice, or third-party music.
   Digital silence is rejected. The exact narration WAV and JSON manifest are created
   under ignored `.artifacts/final-narration/` by
-  [`../tools/build_local_narration.py`](../tools/build_local_narration.py). The final
-  remains absent until the exact deploy, sanitized gallery, SHA-bound capture review,
-  narration gate, live recording, automated checks, and every human item in
-  `../FINAL_MEDIA_CHECKLIST.md` pass.
+  [`../tools/build_local_narration.py`](../tools/build_local_narration.py). The
+  canonical 172-second artifact was produced and independently verified by
+  [run 29742958323](https://github.com/upgradedev/archon-qwen-memoryagent/actions/runs/29742958323).
+  Generated MP4/manifest/QA files remain CI artifacts rather than tracked repository
+  blobs. Public upload, signed-out platform checks, and the remaining human items in
+  `../FINAL_MEDIA_CHECKLIST.md` are separate publication gates.
 - `memoryagent-demo.en.srt` — exact ten-beat measured captions. The final builder
   refuses any byte/timing mismatch with the burned 5,160-frame timeline.
 - The inert, tracked [`../caption-timeline.json`](../caption-timeline.json) is the

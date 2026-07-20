@@ -39,7 +39,7 @@ values must remain readable on a small project card.
 | Built with | **Qwen Cloud, Alibaba Cloud, Qwen, Model Context Protocol (MCP), TypeScript, Fastify, PostgreSQL, pgvector, Docker, OpenAI SDK** |
 | Project Story | Paste only the canonical body between the horizontal separators in [`SUBMISSION.md`](./SUBMISSION.md). |
 | Try it out | <https://memory.43.106.13.19.sslip.io> |
-| Video demo | `[PUBLIC_YOUTUBE_VIMEO_OR_YOUKU_URL]`: public, no login, strictly under 3:00 |
+| Video demo | <https://www.youtube.com/watch?v=pvfe8ZDfMfM>: public, no login, 2:53 |
 | Image gallery | Upload the approved 1500×1000 files in the order and with the captions in [`SCREENSHOT_MANIFEST.md`](./SCREENSHOT_MANIFEST.md). Do not substitute the 16:9 video proof frames. |
 | Gallery evidence gate | Require `gallery/CAPTURE_REVIEW.json` status `passed` for the exact deployed SHA, including qwen-vl dry-run/absence, fresh-session feedback, one-row lifecycle/cleanup, human Defer-only and artifact-hash gates. |
 | Public source | <https://github.com/upgradedev/archon-qwen-memoryagent> |
