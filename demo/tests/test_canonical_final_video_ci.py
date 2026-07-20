@@ -33,8 +33,11 @@ class CanonicalFinalVideoWorkflowTests(unittest.TestCase):
             ".github/workflows/canonical-final-video.yml",
         ):
             self.assertTrue(caption.allowed_submission_path(allowed))
+        self.assertTrue(caption.allowed_submission_path("tests/docs/supply-chain-consistency.test.ts"))
         self.assertFalse(caption.allowed_submission_path(".github/workflows/unreviewed.yml"))
         self.assertFalse(caption.allowed_submission_path(".github/workflows/canonical-final-video.yaml"))
+        self.assertFalse(caption.allowed_submission_path("tests/docs/unreviewed.test.ts"))
+        self.assertFalse(caption.allowed_submission_path("tests/runtime/unreviewed.test.ts"))
 
     def test_workflow_is_main_only_hash_pinned_and_has_read_only_permissions(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
