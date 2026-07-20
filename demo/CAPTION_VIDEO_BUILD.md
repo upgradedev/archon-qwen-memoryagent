@@ -194,8 +194,10 @@ a filename check and not publication approval. It requires:
   tracked caption contract; production requires the exact approved ElevenLabs
   voice/model/request contract named in that manifest; and
 - exactly 172 seconds of 48 kHz stereo PCM with meaningful signal in all ten beats,
-  no speech truncation, no clipping, no music or fallback media, and the canonical
-  synthetic-voice disclosure.
+  no speech truncation, no clipping, no music or fallback media, the canonical
+  synthetic-voice disclosure, and a declared deterministic
+  `volume=-1.5dB:precision=fixed` gain applied only while encoding the publication
+  AAC; the manifest-bound source WAV remains unchanged.
 
 Missing media, a changed byte, stale source ancestry, a runtime-affecting working-tree
 change, a red deploy state, or an unmeasured/mismatched SRT stops the build before an
@@ -237,7 +239,7 @@ The only final judge-facing video records are:
 - `demo/final-media/memoryagent-demo.mp4` — canonical 1920×1080 H.264 real-motion final;
 - `demo/final-media/memoryagent-demo.en.srt` — exact ten-entry measured English SRT;
 - `demo/final-media/memoryagent-demo.manifest.json` — `status: passed`, builder
-  `caption-led-real-motion-compositor-v3-narrated-immutable-inputs`, exact release/capture/live-input/output
+  `caption-led-real-motion-compositor-v4-narrated-gain-normalized-immutable-inputs`, exact release/capture/live-input/output
   hashes, frame windows, measured codecs/duration, narration bindings and claim locks;
 - `demo/final-media/memoryagent-demo.qa.json` — `status: passed` independent measured
   QA for the shipped MP4/SRT; and

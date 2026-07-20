@@ -356,6 +356,37 @@ class RealMotionCompositorTests(unittest.TestCase):
                     base, measured | mutation, 360, allow_fixture=True,
                 )
 
+    def test_source_loudness_is_measured_without_waiving_publication_headroom(self) -> None:
+        class TrustedFfmpeg:
+            path = ROOT / "trusted-ffmpeg"
+            assert_unchanged = mock.Mock()
+
+        trusted = TrustedFfmpeg()
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr=(
+                "Summary:\n\n"
+                "  Integrated loudness:\n"
+                "    I:         -14.4 LUFS\n\n"
+                "  Loudness range:\n"
+                "    LRA:         4.2 LU\n\n"
+                "  True peak:\n"
+                "    Peak:       -0.8 dBFS\n"
+            ),
+        )
+        source = ROOT / ".artifacts" / "final-narration" / "source.wav"
+        with (
+            mock.patch.object(motion, "resolve_trusted_executable", return_value=trusted),
+            mock.patch.object(motion.subprocess, "run", return_value=completed),
+        ):
+            measured = motion.ebur128_stats(source, enforce_headroom=False)
+            self.assertEqual(measured["truePeakDbfs"], -0.8)
+            with self.assertRaisesRegex(motion.GateError, "less than 1 dB"):
+                motion.ebur128_stats(source)
+        self.assertEqual(trusted.assert_unchanged.call_count, 4)
+
     def final_binding_fixture(self) -> tuple[dict[str, object], dict[str, object], dict[str, object], dict[str, object]]:
         record = lambda name: {"path": name, "sha256": name * 64, "size": len(name)}
         inventory = {
@@ -381,6 +412,7 @@ class RealMotionCompositorTests(unittest.TestCase):
             "audio": inventory["narrationAudio"],
             "manifest": inventory["narrationManifest"],
             "generator": "local",
+            "publicationProcessing": copy.deepcopy(motion.PUBLICATION_AUDIO_PROCESSING),
             "voice": {"name": "fixture"},
             "timelineContract": {"sha256": "6" * 64},
             "rights": {"syntheticVoiceDisclosure": True},
@@ -403,7 +435,9 @@ class RealMotionCompositorTests(unittest.TestCase):
         narration = motion.validate_final_input_cross_bindings(evidence, live, inputs, inventory)
         base_evidence = {"narration": {
             key: narration[key]
-            for key in ("generator", "voice", "timelineContract", "rights", "generationEvidence")
+            for key in (
+                "generator", "publicationProcessing", "voice", "timelineContract", "rights", "generationEvidence",
+            )
         }}
         motion.validate_final_narration_evidence_bindings(
             narration, base_evidence, narration["sourceDecoded"], narration["baseDecoded"],

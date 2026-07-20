@@ -77,8 +77,14 @@ MIN_INTEGRATED_LUFS = -28.0
 MAX_INTEGRATED_LUFS = -10.0
 MAX_TRUE_PEAK_DBFS = -1.0
 MAX_LOUDNESS_RANGE_LU = 20.0
-BASE_SCHEMA_VERSION = 4
-BASE_BUILDER_ID = "memoryagent-caption-led-ten-beat-v4-narrated"
+PUBLICATION_AUDIO_PROCESSING = {
+    "filter": "volume=-1.5dB:precision=fixed",
+    "gainDb": -1.5,
+    "sourceAudioUnchanged": True,
+    "purpose": "Provide at least 1 dB true-peak headroom in the encoded publication audio.",
+}
+BASE_SCHEMA_VERSION = 5
+BASE_BUILDER_ID = "memoryagent-caption-led-ten-beat-v5-narrated-gain-normalized"
 RELEASE_SOURCE_RELS = (
     "demo/tools/build_local_narration.py",
     "demo/tools/build_elevenlabs_narration.py",
@@ -90,8 +96,8 @@ RELEASE_SOURCE_RELS = (
     "scripts/exact_deploy_evidence.py",
     "scripts/capture_submission_gallery.py",
 )
-FINAL_SCHEMA_VERSION = 2
-FINAL_BUILDER_ID = "caption-led-real-motion-compositor-v3-narrated-immutable-inputs"
+FINAL_SCHEMA_VERSION = 3
+FINAL_BUILDER_ID = "caption-led-real-motion-compositor-v4-narrated-gain-normalized-immutable-inputs"
 CLAIM_BOUNDARY = (
     "Live footage demonstrates interaction with the deployed app; benchmark and security claims "
     "remain bounded by CAPTURE_REVIEW and the existing caption source."
@@ -950,7 +956,7 @@ def require_audio_preserved(base: dict[str, Any], final: dict[str, Any]) -> None
             "final decoded narration sample count differs from the base AAC stream")
 
 
-def ebur128_stats(path: Path) -> dict[str, float]:
+def ebur128_stats(path: Path, *, enforce_headroom: bool = True) -> dict[str, float]:
     executable = resolve_trusted_executable("ffmpeg")
     executable.assert_unchanged()
     try:
@@ -988,8 +994,9 @@ def ebur128_stats(path: Path) -> dict[str, float]:
             f"{relative(path)} integrated loudness is outside the reviewed narration range")
     require(0.0 <= measured["loudnessRangeLu"] <= MAX_LOUDNESS_RANGE_LU,
             f"{relative(path)} loudness range is too wide")
-    require(measured["truePeakDbfs"] <= MAX_TRUE_PEAK_DBFS,
-            f"{relative(path)} true peak leaves less than 1 dB of headroom")
+    if enforce_headroom:
+        require(measured["truePeakDbfs"] <= MAX_TRUE_PEAK_DBFS,
+                f"{relative(path)} true peak leaves less than 1 dB of headroom")
     return measured
 
 
@@ -1365,8 +1372,8 @@ def validate_base_and_narration(
                 "production narration audio must use the canonical ignored path")
         require(_logical_relative(narration_manifest_path, narration_manifest_source) == DEFAULT_NARRATION_MANIFEST,
                 "production narration manifest must use the canonical ignored path")
-        require(base_manifest.get("schemaVersion") == BASE_SCHEMA_VERSION, "caption-base schema is not canonical narrated v4")
-        require(base_manifest.get("builder") == BASE_BUILDER_ID, "caption-base builder is not canonical narrated v4")
+        require(base_manifest.get("schemaVersion") == BASE_SCHEMA_VERSION, "caption-base schema is not canonical narrated v5")
+        require(base_manifest.get("builder") == BASE_BUILDER_ID, "caption-base builder is not canonical narrated v5")
         require_builder_source_head(base_manifest)
         require(narration_manifest.get("fixtureOnly") is False,
                 "production rejects a fixture-only narration manifest")
@@ -1476,7 +1483,7 @@ def validate_base_and_narration(
     require(isinstance(narration, dict), "caption-base manifest has no narration evidence")
     expected_narration_keys = {
         "manifestPath", "manifestSha256", "audioPath", "audioSha256", "generator", "voice",
-        "timelineContract", "rights", "measuredAudio",
+        "publicationProcessing", "timelineContract", "rights", "measuredAudio",
     }
     if not allow_fixture:
         expected_narration_keys.add("generationEvidence")
@@ -1490,6 +1497,8 @@ def validate_base_and_narration(
             "caption-base narration-audio path mismatch")
     require(narration.get("audioSha256") == sha256_file(narration_audio),
             "caption-base narration-audio hash mismatch")
+    require(narration.get("publicationProcessing") == PUBLICATION_AUDIO_PROCESSING,
+            "caption-base narration publication processing is not the exact reviewed gain contract")
     generator = str(narration.get("generator") or "")
     if allow_fixture:
         require(bool(generator), "fixture caption-base narration has no generator disclosure")
@@ -1578,7 +1587,7 @@ def validate_base_and_narration(
     base_stats = decoded_audio_stats(base_video)
     require_narration_quality(source_stats, "narration source")
     require_narration_quality(base_stats, "caption-base AAC narration")
-    source_stats["ebuR128"] = ebur128_stats(narration_audio)
+    source_stats["ebuR128"] = ebur128_stats(narration_audio, enforce_headroom=False)
     base_stats["ebuR128"] = ebur128_stats(base_video)
     if not allow_fixture:
         expected_rights_safe = {
@@ -2214,6 +2223,7 @@ def compose(
             "audio": {
                 "policy": CANONICAL_AUDIO_POLICY,
                 "generator": base_evidence["narration"]["generator"],
+                "publicationProcessing": base_evidence["narration"]["publicationProcessing"],
                 "voice": base_evidence["narration"]["voice"],
                 "rights": base_evidence["narration"]["rights"],
                 "generationEvidence": base_evidence["narration"].get("generationEvidence"),
@@ -2268,6 +2278,7 @@ def compose(
                     "audio": inventory["narrationAudio"].record(),
                     "manifest": inventory["narrationManifest"].record(),
                     "generator": base_evidence["narration"]["generator"],
+                    "publicationProcessing": base_evidence["narration"]["publicationProcessing"],
                     "voice": base_evidence["narration"]["voice"],
                     "timelineContract": base_evidence["narration"]["timelineContract"],
                     "rights": base_evidence["narration"]["rights"],
@@ -2396,7 +2407,7 @@ def validate_final_input_cross_bindings(
         inputs.get("narration"),
         {
             "audio", "manifest", "generator", "voice", "timelineContract", "rights",
-            "generationEvidence", "sourceDecoded", "baseDecoded",
+            "publicationProcessing", "generationEvidence", "sourceDecoded", "baseDecoded",
         },
         "final manifest narration",
     )
@@ -2412,7 +2423,9 @@ def validate_final_narration_evidence_bindings(
     source_audio_stats: dict[str, Any],
     base_audio_stats: dict[str, Any],
 ) -> None:
-    for key in ("generator", "voice", "timelineContract", "rights", "generationEvidence"):
+    for key in (
+        "generator", "publicationProcessing", "voice", "timelineContract", "rights", "generationEvidence",
+    ):
         require(narration_record.get(key) == base_evidence["narration"].get(key),
                 f"final narration {key} differs from immutable caption-base evidence")
     require(narration_record.get("sourceDecoded") == source_audio_stats
@@ -2708,6 +2721,7 @@ def verify_existing(manifest_path: Path, qa_path: Path, *, allow_fixture: bool =
             "audio": {
                 "policy": CANONICAL_AUDIO_POLICY,
                 "generator": base_evidence["narration"]["generator"],
+                "publicationProcessing": base_evidence["narration"]["publicationProcessing"],
                 "voice": base_evidence["narration"]["voice"],
                 "rights": base_evidence["narration"]["rights"],
                 "generationEvidence": base_evidence["narration"].get("generationEvidence"),
@@ -2815,7 +2829,8 @@ def self_test() -> int:
     narration_manifest.write_text(json.dumps(narration_payload) + "\n", encoding="utf-8")
     run_tool("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "color=c=0x071b16:s=1920x1080:r=30:d=12",
          "-i", str(narration_audio), "-t", "12", "-c:v", "libx264", "-preset", "ultrafast",
-         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+         "-pix_fmt", "yuv420p", "-af", PUBLICATION_AUDIO_PROCESSING["filter"],
+         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
          "-shortest", str(base)], "make self-test narrated base")
     run_tool("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=30:d=5",
          "-an", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(live)], "make self-test live motion")
@@ -2846,6 +2861,7 @@ def self_test() -> int:
             "manifestPath": relative(narration_manifest), "manifestSha256": sha256_file(narration_manifest),
             "audioPath": relative(narration_audio), "audioSha256": sha256_file(narration_audio),
             "generator": narration_payload["generator"],
+            "publicationProcessing": dict(PUBLICATION_AUDIO_PROCESSING),
             "voice": {key: voice[key] for key in ("name", "culture", "gender")},
             "timelineContract": {key: timeline_record[key] for key in ("path", "sha256", "size")},
             "rights": {key: rights[key] for key in (

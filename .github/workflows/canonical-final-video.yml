@@ -7,6 +7,16 @@ on:
         description: Exact 40-character main SHA authorized for this final render.
         required: true
         type: string
+      reuse_capture_run_id:
+        description: Optional prior successful checkpoint run ID; provide together with its source SHA.
+        required: false
+        default: ''
+        type: string
+      reuse_capture_source_sha:
+        description: Optional exact source SHA naming the prior live-capture checkpoint artifact.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   actions: read
@@ -99,6 +109,8 @@ jobs:
         shell: bash
         env:
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          REUSE_CAPTURE_RUN_ID: ${{ inputs.reuse_capture_run_id }}
+          REUSE_CAPTURE_SOURCE_SHA: ${{ inputs.reuse_capture_source_sha }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/main'
@@ -110,6 +122,12 @@ jobs:
           test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_SOURCE_SHA"
           git merge-base --is-ancestor "$EXACT_RUNTIME_SHA" "$EXPECTED_SOURCE_SHA"
           git merge-base --is-ancestor "$NARRATION_SOURCE_SHA" "$EXPECTED_SOURCE_SHA"
+          if [[ -n "$REUSE_CAPTURE_RUN_ID" || -n "$REUSE_CAPTURE_SOURCE_SHA" ]]; then
+            [[ "$REUSE_CAPTURE_RUN_ID" =~ ^[0-9]+$ ]]
+            [[ "$REUSE_CAPTURE_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            git cat-file -e "$REUSE_CAPTURE_SOURCE_SHA^{commit}"
+            git merge-base --is-ancestor "$REUSE_CAPTURE_SOURCE_SHA" "$EXPECTED_SOURCE_SHA"
+          fi
           python -m py_compile \
             demo/tools/materialize_ci_evidence.py \
             demo/tools/record_live_motion.py \
@@ -179,6 +197,7 @@ jobs:
           test -z "$(git ls-files demo/private-originals .artifacts)"
 
       - name: Allow user namespaces only for the exact Playwright Chromium binary
+        if: ${{ inputs.reuse_capture_run_id == '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -223,6 +242,7 @@ jobs:
           PY
 
       - name: Record one public live interaction pass
+        if: ${{ inputs.reuse_capture_run_id == '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -230,6 +250,30 @@ jobs:
             --expected-sha "$EXACT_RUNTIME_SHA" \
             --capture-review demo/gallery/CAPTURE_REVIEW.json \
             --base-url "$LIVE_BASE_URL"
+
+      - name: Checkpoint the successful public live capture immediately
+        if: ${{ inputs.reuse_capture_run_id == '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canonical-live-capture-${{ github.sha }}
+          path: |
+            .artifacts/final-video/memoryagent-live-interaction.webm
+            .artifacts/final-video/memoryagent-live-interaction.manifest.json
+            .artifacts/final-video/memoryagent-live-interaction-poster.png
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+          compression-level: 0
+
+      - name: Reuse one exact successful public live-capture checkpoint
+        if: ${{ inputs.reuse_capture_run_id != '' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: canonical-live-capture-${{ inputs.reuse_capture_source_sha }}
+          path: .artifacts/final-video
+          repository: upgradedev/archon-qwen-memoryagent
+          run-id: ${{ inputs.reuse_capture_run_id }}
+          github-token: ${{ github.token }}
 
       - name: Build canonical narrated real-motion final
         shell: bash

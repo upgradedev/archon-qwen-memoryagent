@@ -65,6 +65,14 @@ CANVAS = (1920, 1080)
 GALLERY_CANVAS = (1500, 1000)
 STRICT_LIMIT_SECONDS = 175
 EXPECTED_TOTAL_SECONDS = 172
+PUBLICATION_NARRATION_GAIN_DB = -1.5
+PUBLICATION_NARRATION_FILTER = "volume=-1.5dB:precision=fixed"
+PUBLICATION_AUDIO_PROCESSING = {
+    "filter": PUBLICATION_NARRATION_FILTER,
+    "gainDb": PUBLICATION_NARRATION_GAIN_DB,
+    "sourceAudioUnchanged": True,
+    "purpose": "Provide at least 1 dB true-peak headroom in the encoded publication audio.",
+}
 EXPECTED_EMBEDDER = "text-embedding-v4"
 EXPECTED_NARRATOR = "qwen-plus"
 EXPECTED_VISION = "qwen-vl-max"
@@ -1344,6 +1352,8 @@ def encode_video(
         "1:a:0",
         "-vf",
         f"fps={FPS},scale=1920:1080:flags=lanczos,format=yuv420p",
+        "-af",
+        PUBLICATION_NARRATION_FILTER,
         "-frames:v",
         str(total_frames),
         "-t",
@@ -1586,9 +1596,9 @@ def build_video(
     os.replace(temporary_video, output)
 
     manifest = {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "status": "passed",
-        "builder": "memoryagent-caption-led-ten-beat-v4-narrated",
+        "builder": "memoryagent-caption-led-ten-beat-v5-narrated-gain-normalized",
         "generatedAt": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "exactRuntimeSource": inputs.exact_runtime_sha,
         "captureSubmissionHead": inputs.capture_head,
@@ -1641,6 +1651,7 @@ def build_video(
             "audioPath": narration.audio.relative_path,
             "audioSha256": narration.audio.sha256,
             "generator": narration.payload["generator"],
+            "publicationProcessing": dict(PUBLICATION_AUDIO_PROCESSING),
             "voice": {
                 "name": narration.payload["voice"]["name"],
                 "culture": narration.payload["voice"]["culture"],

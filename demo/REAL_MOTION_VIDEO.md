@@ -67,6 +67,12 @@ protected `MEMORYAGENT_DEPLOY_OUTPUT_B64` and `MEMORYAGENT_DEPLOY_STATUS_B64`
 repository inputs and are decoded only after their byte counts and SHA-256 hashes
 match `CAPTURE_REVIEW.json`.
 
+The narration source WAV and its manifest remain byte-identical to that approved
+artifact. The caption-base encoder applies only the declared deterministic
+`volume=-1.5dB:precision=fixed` publication gain, providing at least 1 dB of measured
+true-peak headroom. The final compositor stream-copies that base AAC and independently
+verifies the source, base, and final measurements and provenance bindings.
+
 Dispatch only from the exact current `main` SHA:
 
 ```powershell
@@ -88,7 +94,11 @@ idempotent public seed/recall/browse interaction, renders the 172-second narrate
 real-motion final, independently runs `--verify-only`, scans the public metadata for
 credential markers, and only then uploads
 `canonical-final-video-<EXACT_MAIN_SHA>` for 14 days. A failed public capture is not
-automatically retried. The artifact retains the sanitized deployment proof, caption
+automatically retried. Immediately after a successful fresh capture, the workflow
+uploads `canonical-live-capture-<EXACT_MAIN_SHA>` as a 14-day checkpoint before any
+render begins. A later dispatch may set both `reuse_capture_run_id` and
+`reuse_capture_source_sha` to reuse that exact ancestor-bound checkpoint without a
+second public interaction. The final artifact retains the sanitized deployment proof, caption
 base, public interaction recording, narration source, final MP4 and sidecars at their
 manifest-bound paths, so `--verify-only` can be repeated from the exact source
 checkout. Downloading that artifact is not publication; YouTube/Devpost upload
@@ -125,7 +135,7 @@ upload; decoded audio must be meaningfully non-silent and contain zero clipped s
 Publication is blocked unless both
 `demo/final-media/memoryagent-demo.manifest.json` and
 `demo/final-media/memoryagent-demo.qa.json` report `status: passed`, the manifest
-identifies `caption-led-real-motion-compositor-v3-narrated-immutable-inputs` and binds the exact capture
+identifies `caption-led-real-motion-compositor-v4-narrated-gain-normalized-immutable-inputs` and binds the exact capture
 review, caption base, narration source/manifest and live-interaction bytes, and the
 final `--verify-only` command exits successfully
 against those unchanged files. No static-base output, workflow candidate, or manually

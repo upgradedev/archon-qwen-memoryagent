@@ -466,9 +466,20 @@ class CaptionTimelineTests(unittest.TestCase):
         self.assertEqual(args.output, ".artifacts/final-caption-video/caption-base.mp4")
         self.assertEqual(args.manifest, ".artifacts/final-caption-video/caption-base.manifest.json")
         source = MODULE_PATH.read_text(encoding="utf-8")
-        self.assertIn('"schemaVersion": 4', source)
-        self.assertIn('"builder": "memoryagent-caption-led-ten-beat-v4-narrated"', source)
+        self.assertIn('"schemaVersion": 5', source)
+        self.assertIn('"builder": "memoryagent-caption-led-ten-beat-v5-narrated-gain-normalized"', source)
         self.assertIn('"narrationValidatorSource"', source)
+        self.assertEqual(builder.PUBLICATION_NARRATION_GAIN_DB, -1.5)
+        self.assertEqual(builder.PUBLICATION_NARRATION_FILTER, "volume=-1.5dB:precision=fixed")
+        self.assertEqual(
+            builder.PUBLICATION_AUDIO_PROCESSING,
+            {
+                "filter": "volume=-1.5dB:precision=fixed",
+                "gainDb": -1.5,
+                "sourceAudioUnchanged": True,
+                "purpose": "Provide at least 1 dB true-peak headroom in the encoded publication audio.",
+            },
+        )
 
     def test_cross_platform_narration_fixture_is_non_silent_and_production_rejected(self) -> None:
         root = ROOT / ".artifacts" / f"narration-unit-{os.getpid()}"
