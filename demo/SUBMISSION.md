@@ -74,8 +74,8 @@ reusable beyond this financial proof without claiming unmeasured production scal
   separately named contradiction/resolution method matched the disclosed `dir()`
   probe. Zep is cited rather than claimed as a run. The differentiator is a portable,
   explainable, read-only audit plus explicit human resolution.
-- **What the release proves**: exact source `cfd485de…` is live-verified from
-  project-contained attempt 26. Alibaba Cloud Assistant finished successfully with
+- **What the release proves**: exact source `0910ab7…` is live-verified from
+  project-contained attempt 27. Alibaba Cloud Assistant finished successfully with
   exit code `0`. Its retained log ends at the SHA-bound application marker rather
   than the aggregate final marker, so this is verified success with a truncated
   provider log. A separately published
