@@ -78,7 +78,7 @@ gh workflow run canonical-final-video.yml `
 ```
 
 The job installs the hash-locked Python/Playwright environment, runs offline
-contract tests before spending the single public capture pass, records only the
+contract tests before the single public capture pass, records only the
 idempotent public seed/recall/browse interaction, renders the 172-second narrated
 real-motion final, independently runs `--verify-only`, scans the public metadata for
 credential markers, and only then uploads
